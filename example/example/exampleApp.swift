@@ -28,7 +28,7 @@ struct exampleApp: App {
                     .environmentObject(paraManager)
                     .environmentObject(appRootManager)
             case .home:
-                WalletView()
+                WalletsView()
                     .environmentObject(paraManager)
                     .environmentObject(appRootManager)
                     .environmentObject(paraEvmSigner)

@@ -8,6 +8,8 @@ struct WalletView: View {
     @EnvironmentObject var paraEvmSigner: ParaEvmSigner
     @EnvironmentObject var appRootManager: AppRootManager
     
+    let selectedWallet: Wallet
+    
     @State private var messageToSign = ""
     @State private var result = ""
     @State private var creatingWallet = false
@@ -19,7 +21,7 @@ struct WalletView: View {
     private let web3 = Web3(provider: Web3HttpProvider(url: URL(string: "https://sepolia.infura.io/v3/961364684c7346c080994baab1469ea8")!, network: .Custom(networkID: 11155111)))
     
     private func fetchBalance() {
-        let ethAddress = EthereumAddress(paraManager.wallets.first!.address!)!
+        let ethAddress = EthereumAddress(selectedWallet.address!)!
         Task {
             let balance = try! await web3.eth.getBalance(for: ethAddress)
             self.balance = Int(balance)
@@ -74,15 +76,7 @@ struct WalletView: View {
     
     var body: some View {
         VStack(spacing: 20) {
-            Text("Welcome to your Wallet Home")
-                .font(.title2)
-                .bold()
-            
-            if let firstWallet = paraManager.wallets.first {
-                // Unwrap address safely
-                let address = firstWallet.address ?? "No Address Available"
-                
-                Text("Wallet Address: \(address)")
+            Text("Wallet Address: \(selectedWallet.address!)")
                     .font(.body)
                     .padding(.horizontal)
                 
@@ -119,7 +113,7 @@ struct WalletView: View {
                             guard let base64Message = messageBytes?.base64EncodedString() else {
                                 throw ParaError.bridgeError("Failed to encode message.")
                             }
-                            let messageSignature = try await paraManager.signMessage(walletId: firstWallet.id, message: base64Message)
+                            let messageSignature = try await paraManager.signMessage(walletId: selectedWallet.id, message: base64Message)
                             result = "Message Signature: \(messageSignature)"
                             isSigning = false
                         } catch {
@@ -172,7 +166,7 @@ struct WalletView: View {
                     .buttonStyle(.bordered)
                     
                     Button("Copy Address") {
-                        UIPasteboard.general.string = paraManager.wallets.first!.address!
+                        UIPasteboard.general.string = selectedWallet.address!
                     }
                     .buttonStyle(.bordered)
                 }
@@ -213,49 +207,12 @@ struct WalletView: View {
                     }
                 }
                 .buttonStyle(.bordered)
-            } else {
-                // No wallets found
-                Text("No wallets found. Create one to get started.")
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
-                
-                if let errorMessage = errorMessage {
-                    Text(errorMessage)
-                        .foregroundColor(.red)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal)
-                }
-                
-                if creatingWallet {
-                    ProgressView("Creating Wallet...")
-                }
-                
-                Button("Create Wallet") {
-                    creatingWallet = true
-                    errorMessage = nil
-                    Task {
-                        do {
-                            try await paraManager.createWallet(skipDistributable: false)
-                            creatingWallet = false
-                        } catch {
-                            creatingWallet = false
-                            errorMessage = "Failed to create wallet: \(error.localizedDescription)"
-                        }
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(creatingWallet)
-                .padding(.horizontal)
-                
-                Spacer()
-            }
         }
         .padding()
         .navigationTitle("Home")
         .onAppear {
             Task {
-                try! await paraEvmSigner.selectWallet(walletId: paraManager.wallets.first!.id)
+                try! await paraEvmSigner.selectWallet(walletId: selectedWallet.id)
             }
         }
     }

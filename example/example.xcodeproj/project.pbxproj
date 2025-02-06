@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		E8315DAD2D51A1A100FFF8C8 /* web3swift in Frameworks */ = {isa = PBXBuildFile; productRef = E8315DAC2D51A1A100FFF8C8 /* web3swift */; };
+		E8315DD82D5548F100FFF8C8 /* WalletsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8315DD72D5548F100FFF8C8 /* WalletsView.swift */; };
 		E86A473F2D0CA0A400546CC2 /* EmailAuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E86A473E2D0CA0A400546CC2 /* EmailAuthView.swift */; };
 		E86A47412D0CA63700546CC2 /* AppRootManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E86A47402D0CA62F00546CC2 /* AppRootManager.swift */; };
 		E86A475B2D1F13CB00546CC2 /* PhoneAuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E86A475A2D1F13CB00546CC2 /* PhoneAuthView.swift */; };
@@ -25,6 +26,7 @@
 /* Begin PBXFileReference section */
 		8C95CF282D1732E400BF9103 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		8C95CF292D1735A900BF9103 /* EnvDebug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = EnvDebug.xcconfig; sourceTree = "<group>"; };
+		E8315DD72D5548F100FFF8C8 /* WalletsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalletsView.swift; sourceTree = "<group>"; };
 		E86A473E2D0CA0A400546CC2 /* EmailAuthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailAuthView.swift; sourceTree = "<group>"; };
 		E86A47402D0CA62F00546CC2 /* AppRootManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRootManager.swift; sourceTree = "<group>"; };
 		E86A475A2D1F13CB00546CC2 /* PhoneAuthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneAuthView.swift; sourceTree = "<group>"; };
@@ -85,6 +87,7 @@
 				E86A475A2D1F13CB00546CC2 /* PhoneAuthView.swift */,
 				E8F93B3F2C21ED00006AA3F6 /* VerifyEmailView.swift */,
 				E8C5B8652D272DCD00B151C4 /* VerifyPhoneView.swift */,
+				E8315DD72D5548F100FFF8C8 /* WalletsView.swift */,
 				E8F93B412C21ED05006AA3F6 /* WalletView.swift */,
 				E8F93B2F2C21EBEE006AA3F6 /* Assets.xcassets */,
 				E8F93B312C21EBEE006AA3F6 /* Preview Content */,
@@ -195,6 +198,7 @@
 				E8F93B3E2C21ECFB006AA3F6 /* UserAuthView.swift in Sources */,
 				E86A475B2D1F13CB00546CC2 /* PhoneAuthView.swift in Sources */,
 				E86A47412D0CA63700546CC2 /* AppRootManager.swift in Sources */,
+				E8315DD82D5548F100FFF8C8 /* WalletsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
