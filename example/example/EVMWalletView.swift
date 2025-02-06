@@ -3,7 +3,7 @@ import ParaSwift
 import web3swift
 import Web3Core
 
-struct WalletView: View {
+struct EVMWalletView: View {
     @EnvironmentObject var paraManager: ParaManager
     @EnvironmentObject var paraEvmSigner: ParaEvmSigner
     @EnvironmentObject var appRootManager: AppRootManager
@@ -209,7 +209,7 @@ struct WalletView: View {
                 .buttonStyle(.bordered)
         }
         .padding()
-        .navigationTitle("Home")
+        .navigationTitle("EVM Wallet")
         .onAppear {
             Task {
                 try! await paraEvmSigner.selectWallet(walletId: selectedWallet.id)

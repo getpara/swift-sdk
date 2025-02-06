@@ -12,20 +12,34 @@ struct WalletsView: View {
     @EnvironmentObject var paraManager: ParaManager
     
     @State private var selectedWalletType: WalletType = .evm
+    @State private var showSelectCreateWalletTypeView = false
+    
+    private func createWallet(type: WalletType) {
+        Task {
+            try! await paraManager.createWallet(type: type, skipDistributable: false)
+        }
+    }
     
     var body: some View {
         NavigationStack {
             VStack {
                 Picker("Select Wallet Type", selection: $selectedWalletType) {
-                    Text("EVM").tag("EVM")
-                    Text("Solana").tag("SOLANA")
-                    Text("Cosmos").tag("COSMOS")
+                    Text("EVM").tag(WalletType.evm)
+                    Text("Solana").tag(WalletType.solana)
+                    Text("Cosmos").tag(WalletType.cosmos)
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
                 List(paraManager.wallets.filter({ $0.type == selectedWalletType }), id: \.id) { wallet in
                     NavigationLink {
-                        WalletView(selectedWallet: wallet)
+                        switch wallet.type! {
+                        case .evm:
+                            EVMWalletView(selectedWallet: wallet)
+                        case .solana:
+                            SolanaWalletView()
+                        case .cosmos:
+                            CosmosWalletView()
+                        }
                     } label: {
                         Text(wallet.address ?? "unknown")
                     }
@@ -33,8 +47,23 @@ struct WalletsView: View {
             }
             .navigationTitle("Wallets")
             .toolbar { Button("Create") {
-                print("New wallet")
+                showSelectCreateWalletTypeView = true
             }}
+            .confirmationDialog("Wallet Type", isPresented: $showSelectCreateWalletTypeView) {
+                Button("EVM") {
+                    createWallet(type: .evm)
+                }
+                Button("Solana") {
+                    createWallet(type: .solana)
+                }
+                Button("Cosmos") {
+                    createWallet(type: .cosmos)
+                }
+                
+                Button("Cancel", role: .cancel) {
+                    showSelectCreateWalletTypeView = false
+                }
+            }
         }
     }
 }
