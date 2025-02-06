@@ -11,7 +11,7 @@ import ParaSwift
 struct WalletsView: View {
     @EnvironmentObject var paraManager: ParaManager
     
-    @State private var selectedWalletType = "EVM"
+    @State private var selectedWalletType: WalletType = .evm
     
     var body: some View {
         NavigationStack {

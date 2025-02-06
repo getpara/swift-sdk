@@ -7,10 +7,14 @@
 
 import Foundation
 
+public enum WalletType: String {
+    case evm = "EVM", solana = "SOLANA", cosmos = "COSMOS"
+}
+
 public struct Wallet {
     public let id: String
     public let userId: String?
-    public let type: String?
+    public let type: WalletType?
     public let pregenIdentifier: String?
     public let pregenIdentifierType: String?
     public let keyGenComplete: Bool?
@@ -45,7 +49,9 @@ public struct Wallet {
         dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZ"
         id = result["id"]! as! String
         userId = result["userId"] as? String
-        type = result["type"] as? String
+        
+        let typeString = result["type"] as? String
+        type = typeString.flatMap(WalletType.init)
         pregenIdentifier = result["pregenIdentifier"] as? String
         pregenIdentifierType = result["pregenIdentifierType"] as? String
         keyGenComplete = result["keyGenComplete"] as? Bool

@@ -58,7 +58,7 @@ struct VerifyPhoneView: View {
                         loadingStateText = "Generating Passkey..."
                         try await paraManager.generatePasskey(identifier: "\(countryCode)\(phoneNumber)", biometricsId: biometricsId, authorizationController: authorizationController)
                         loadingStateText = "Creating Wallet..."
-                        try await paraManager.createWallet(skipDistributable: false)
+                        try await paraManager.createWallet(type: .evm, skipDistributable: false)
                         isLoading = false
                         appRootManager.currentRoot = .home
                     } catch {
