@@ -221,8 +221,8 @@ extension ParaManager {
 @available(iOS 16.4,*)
 extension ParaManager {
     @MainActor
-    public func createWallet(skipDistributable: Bool) async throws {
-        _ = try await postMessage(method: "createWallet", arguments: ["EVM", skipDistributable])
+    public func createWallet(type: WalletType, skipDistributable: Bool) async throws {
+        _ = try await postMessage(method: "createWallet", arguments: [type.rawValue, skipDistributable])
         self.wallets = try await fetchWallets()
         self.sessionState = .activeLoggedIn
     }

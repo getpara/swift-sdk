@@ -59,6 +59,7 @@ struct EmailAuthView: View {
                             shouldNavigateToVerifyEmail = true
                         }
                     } catch {
+                        print(error.localizedDescription)
                         errorMessage = "Failed to create user: \(error.localizedDescription)"
                         isLoading = false
                     }

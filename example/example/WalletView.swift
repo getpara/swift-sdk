@@ -236,7 +236,7 @@ struct WalletView: View {
                     errorMessage = nil
                     Task {
                         do {
-                            try await paraManager.createWallet(skipDistributable: false)
+                            try await paraManager.createWallet(type: .evm, skipDistributable: false)
                             creatingWallet = false
                         } catch {
                             creatingWallet = false
