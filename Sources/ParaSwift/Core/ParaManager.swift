@@ -256,6 +256,19 @@ extension ParaManager {
     }
 }
 
+@available(iOS 16.4,*)
+extension ParaManager {
+    /// Logs in with an external wallet address
+    /// - Parameters:
+    ///   - externalAddress: The external wallet address
+    ///   - type: The type of wallet (e.g. "EVM")
+    public func externalWalletLogin(externalAddress: String, type: String) async throws {
+        _ = try await postMessage(method: "externalWalletLogin", arguments: [externalAddress, type])
+        self.wallets = try await fetchWallets()
+        self.sessionState = .activeLoggedIn
+    }
+}
+
 public enum ParaError: Error, CustomStringConvertible {
     case bridgeError(String)
     case bridgeTimeoutError
