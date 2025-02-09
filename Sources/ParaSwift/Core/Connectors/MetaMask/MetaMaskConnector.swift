@@ -170,15 +170,25 @@ public class MetaMaskConnector: ObservableObject {
     }
     
     private func handleConnectResult(_ response: ConnectResponse) {
+        logger.debug("Handling connect result: chainId=\(response.data.chainId), accounts=\(response.data.accounts)")
         self.chainId = response.data.chainId
         self.accounts = response.data.accounts
         self.isConnected = true
         
         Task {
             do {
-                try await para.externalWalletLogin(externalAddress: accounts.first ?? "", type: "EVM")
+                guard let address = accounts.first, !address.isEmpty else {
+                    logger.error("No valid address found in connect response")
+                    complete(with: MetaMaskError.invalidResponse)
+                    return
+                }
+                
+                logger.debug("Attempting external wallet login: address=\(address)")
+                try await para.externalWalletLogin(externalAddress: address, type: "EVM")
+                logger.debug("External wallet login completed")
                 complete(with: ())
             } catch {
+                logger.error("External wallet login failed: \(error.localizedDescription)")
                 complete(with: error)
             }
         }
@@ -188,17 +198,17 @@ public class MetaMaskConnector: ObservableObject {
 
     /// Initiates a connection request to MetaMask.
     public func connect() async throws {
-        logger.debug("Initiating connection to MetaMask.")
+        logger.debug("Initiating MetaMask connection")
         try await withContinuation(type: .connect) { (continuation: CheckedContinuation<Void, Error>) in
             do {
                 let originatorData = try originatorInfo.encode()
                 let url = try makeMetaMaskURL(host: "connect", originatorInfo: originatorData)
-                logger.debug("Connect URL: \(url.absoluteString)")
+                logger.debug("Opening MetaMask URL: \(url.absoluteString)")
                 DispatchQueue.main.async {
                     UIApplication.shared.open(url)
                 }
             } catch {
-                logger.error("Error constructing connect URL: \(error.localizedDescription)")
+                logger.error("Failed to construct connect URL: \(error.localizedDescription)")
                 throw error
             }
         }

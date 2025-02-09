@@ -21,6 +21,8 @@ public class ParaWebView: NSObject, ObservableObject {
     private var pendingRequests: [String: (continuation: CheckedContinuation<Any?, Error>, timeoutTask: Task<Void, Never>?)] = [:]
     private var isParaInitialized = false
     
+    private let logger = Logger(subsystem: "com.paraSwift", category: "ParaWebView")
+    
     public init(environment: ParaEnvironment, apiKey: String, requestTimeout: TimeInterval = 30.0) {
         self.environment = environment
         self.apiKey = apiKey
@@ -49,18 +51,26 @@ public class ParaWebView: NSObject, ObservableObject {
     @discardableResult
     public func postMessage(method: String, arguments: [Encodable]) async throws -> Any? {
         guard isReady else {
+            logger.error("WebView not ready for method: \(method)")
             throw ParaWebViewError.webViewNotReady
+        }
+        
+        guard isParaInitialized else {
+            logger.error("Para not initialized for method: \(method)")
+            throw ParaWebViewError.bridgeError("Para not initialized")
         }
         
         return try await withCheckedThrowingContinuation { continuation in
             let requestId = "req-\(UUID().uuidString)"
+            logger.debug("Sending message: method=\(method) requestId=\(requestId)")
             
             let encodedArgs: Any
             do {
                 let data = try JSONEncoder().encode(arguments.map { AnyEncodable($0) })
                 encodedArgs = try JSONSerialization.jsonObject(with: data, options: [])
             } catch {
-                continuation.resume(throwing: ParaWebViewError.invalidArguments("Failed to encode arguments"))
+                logger.error("Failed to encode arguments: \(error.localizedDescription)")
+                continuation.resume(throwing: ParaWebViewError.invalidArguments("Failed to encode arguments: \(error)"))
                 return
             }
             
@@ -73,15 +83,16 @@ public class ParaWebView: NSObject, ObservableObject {
             
             guard let jsonData = try? JSONSerialization.data(withJSONObject: message, options: []),
                   let jsonString = String(data: jsonData, encoding: .utf8) else {
+                logger.error("Failed to serialize message for method: \(method)")
                 continuation.resume(throwing: ParaWebViewError.invalidArguments("Unable to serialize message"))
                 return
             }
             
             let timeoutTask: Task<Void, Never> = Task { [weak self] in
                 let duration = self?.requestTimeout ?? 30.0
-                
                 do {
                     try await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
+                    logger.warning("Request timed out: method=\(method) requestId=\(requestId)")
                 } catch {
                     return
                 }
@@ -97,6 +108,7 @@ public class ParaWebView: NSObject, ObservableObject {
             webView.evaluateJavaScript("window.postMessage(\(jsonString));") { [weak self] _, error in
                 guard let self = self else { return }
                 if let error = error {
+                    logger.error("JavaScript evaluation failed: \(error.localizedDescription)")
                     let entry = self.pendingRequests.removeValue(forKey: requestId)
                     entry?.timeoutTask?.cancel()
                     continuation.resume(throwing: error)
@@ -140,34 +152,53 @@ public class ParaWebView: NSObject, ObservableObject {
     
     private func handleCallback(response: [String: Any]) {
         guard let method = response["method"] as? String else {
+            logger.error("Invalid response: missing method")
             lastError = ParaWebViewError.bridgeError("Invalid response: missing 'method'")
             return
         }
         
         if method == "Capsule#init" && response["requestId"] == nil {
+            logger.debug("Para initialization completed")
             self.isParaInitialized = true
             self.isReady = true
             return
         }
         
         guard let requestId = response["requestId"] as? String else {
+            logger.error("Invalid response: missing requestId for method=\(method)")
             lastError = ParaWebViewError.bridgeError("Invalid response: missing 'requestId' for \(method)")
             return
         }
         
         guard let entry = pendingRequests.removeValue(forKey: requestId) else {
+            logger.error("Unknown requestId received: \(requestId)")
             lastError = ParaWebViewError.bridgeError("Received response for unknown requestId: \(requestId)")
             return
         }
         
         entry.timeoutTask?.cancel()
         
-        if let errorMessage = response["error"] as? String {
+        if let errorValue = response["error"] {
+            var errorMessage = ""
+            if let dict = errorValue as? [String: Any] {
+                if let data = try? JSONSerialization.data(withJSONObject: dict, options: .prettyPrinted),
+                   let jsonStr = String(data: data, encoding: .utf8) {
+                    errorMessage = jsonStr
+                } else {
+                    errorMessage = String(describing: dict)
+                }
+            } else if let message = errorValue as? String {
+                errorMessage = message
+            } else {
+                errorMessage = String(describing: errorValue)
+            }
+            logger.error("Bridge error received: method=\(method) error=\(errorMessage)")
             entry.continuation.resume(throwing: ParaWebViewError.bridgeError(errorMessage))
             return
         }
         
         let responseData = response["responseData"]
+        logger.debug("Request completed: method=\(method) requestId=\(requestId)")
         entry.continuation.resume(returning: responseData)
     }
 }

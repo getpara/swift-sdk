@@ -1,11 +1,14 @@
 import SwiftUI
 import AuthenticationServices
 import WebKit
+import os
 
 #if os(iOS)
 @available(iOS 16.4,*)
 @MainActor
 public class ParaManager: NSObject, ObservableObject {
+    private let logger = Logger(subsystem: "com.paraSwift", category: "ParaManager")
+    
     @Published public var wallets: [Wallet] = []
     @Published public var sessionState: ParaSessionState = .unknown
     
@@ -263,9 +266,28 @@ extension ParaManager {
     ///   - externalAddress: The external wallet address
     ///   - type: The type of wallet (e.g. "EVM")
     public func externalWalletLogin(externalAddress: String, type: String) async throws {
+        logger.debug("Starting external wallet login: address=\(externalAddress) type=\(type)")
+        if !paraWebView.isReady {
+            logger.warning("WebView not ready, waiting for initialization...")
+            await waitForParaReady()
+            guard paraWebView.isReady else {
+                logger.error("WebView failed to become ready")
+                throw ParaError.bridgeError("WebView is not ready")
+            }
+        }
+        
         _ = try await postMessage(method: "externalWalletLogin", arguments: [externalAddress, type])
-        self.wallets = try await fetchWallets()
+        
+        do {
+            self.wallets = try await fetchWallets()
+            logger.debug("Successfully fetched \(self.wallets.count) wallets")
+        } catch {
+            logger.error("Failed to fetch wallets: \(error.localizedDescription)")
+            self.wallets = []
+        }
+        
         self.sessionState = .activeLoggedIn
+        logger.debug("External wallet login completed")
     }
 }
 
