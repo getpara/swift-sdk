@@ -278,14 +278,7 @@ extension ParaManager {
         
         _ = try await postMessage(method: "externalWalletLogin", arguments: [externalAddress, type])
         
-        do {
-            self.wallets = try await fetchWallets()
-            logger.debug("Successfully fetched \(self.wallets.count) wallets")
-        } catch {
-            logger.error("Failed to fetch wallets: \(error.localizedDescription)")
-            self.wallets = []
-        }
-        
+        // Wallet update is deferred to a later time, similar to the Flutter implementation
         self.sessionState = .activeLoggedIn
         logger.debug("External wallet login completed")
     }
