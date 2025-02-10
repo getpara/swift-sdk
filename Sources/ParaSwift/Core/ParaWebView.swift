@@ -92,7 +92,7 @@ public class ParaWebView: NSObject, ObservableObject {
                 let duration = self?.requestTimeout ?? 30.0
                 do {
                     try await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
-                    logger.warning("Request timed out: method=\(method) requestId=\(requestId)")
+                    self?.logger.warning("Request timed out: method=\(method) requestId=\(requestId)")
                 } catch {
                     return
                 }
