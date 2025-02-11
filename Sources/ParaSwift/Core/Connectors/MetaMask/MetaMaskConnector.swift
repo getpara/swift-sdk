@@ -93,7 +93,6 @@ public class MetaMaskConnector: ObservableObject {
         self.appUrl = appUrl
         self.deepLink = deepLink
         self.config = config
-        setupDeepLinkHandling()
         logger.debug("Initialized MetaMaskConnector with appUrl: \(appUrl) and deepLink: \(deepLink)")
     }
     
@@ -103,19 +102,14 @@ public class MetaMaskConnector: ObservableObject {
     
     // MARK: - Deep Link Handling
     
-    private func setupDeepLinkHandling() {
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(handleDeepLink(_:)),
-            name: Notification.Name("MetaMaskDeepLink"),
-            object: nil
-        )
-    }
-    
-    @objc private func handleDeepLink(_ notification: Notification) {
-        guard let url = notification.object as? URL, url.host == "mmsdk" else {
-            logger.debug("Received deep link with invalid URL: \(String(describing: notification.object))")
-            return
+    /// Handles deep link URLs from MetaMask
+    /// - Parameter url: The URL to handle
+    /// - Returns: Whether the URL was handled successfully
+    @discardableResult
+    public func handleURL(_ url: URL) -> Bool {
+        guard url.host == "mmsdk" else {
+            logger.debug("Received deep link with invalid URL: \(url)")
+            return false
         }
 
         logger.debug("Handling deep link: \(url.absoluteString)")
@@ -140,9 +134,11 @@ public class MetaMaskConnector: ObservableObject {
                 logger.debug("No active message type for deep link handling.")
                 break
             }
+            return true
         } catch {
             logger.error("Error handling deep link: \(error.localizedDescription)")
             complete(with: MetaMaskError.invalidResponse)
+            return false
         }
     }
     

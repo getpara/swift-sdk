@@ -277,27 +277,44 @@ ParaSwift provides seamless integration with MetaMask Mobile through the `MetaMa
 Initialize the MetaMask connector with your app's configuration:
 
 ```swift
+// Create MetaMask configuration
+let bundleId = Bundle.main.bundleIdentifier ?? ""
+let urlScheme = "your-app-scheme" // Must match URL scheme in Info.plist
 let metaMaskConfig = MetaMaskConfig(
     appName: "Your App Name",
-    appId: Bundle.main.bundleIdentifier ?? "",
+    appId: bundleId,
     apiVersion: "1.0"
 )
 
+// Initialize the connector
 let metaMaskConnector = MetaMaskConnector(
     para: paraManager,
-    appUrl: "https://your.app.bundle.id",
-    deepLink: "your-app-scheme",
+    appUrl: "https://\(bundleId)",  // Your app's URL
+    deepLink: urlScheme,            // Your app's custom URL scheme
     config: metaMaskConfig
 )
 ```
 
+> **Note:** Make sure to configure your app's URL scheme in Info.plist under `CFBundleURLTypes`. The `deepLink` parameter should match this URL scheme.
+
 ### Handle Deep Links
 
-Add deep link handling in your app's main entry point:
+Add deep link handling in your SwiftUI app's main entry point:
 
 ```swift
-.onOpenURL { url in
-    NotificationCenter.default.post(name: Notification.Name("MetaMaskDeepLink"), object: url)
+@main
+struct YourApp: App {
+    @StateObject private var metaMaskConnector: MetaMaskConnector
+    
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+                .onOpenURL { url in
+                    // Handle MetaMask deep links
+                    metaMaskConnector.handleURL(url)
+                }
+        }
+    }
 }
 ```
 
