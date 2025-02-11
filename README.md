@@ -1,4 +1,3 @@
-
 # Para Swift SDK
 
   
@@ -268,3 +267,101 @@ let b64EncodedTransaction = encodedTransaction.base64EncodedString()
 let signedTx = try! await paraEvmSigner.sendTransaction(b64EncodedTransaction)
 print(signedTx)
 ```
+
+## MetaMask Integration
+
+ParaSwift provides seamless integration with MetaMask Mobile through the `MetaMaskConnector` class. This allows your iOS app to connect with MetaMask wallets, sign messages, and send transactions.
+
+### Setup MetaMask Connector
+
+Initialize the MetaMask connector with your app's configuration:
+
+```swift
+let metaMaskConfig = MetaMaskConfig(
+    appName: "Your App Name",
+    appId: Bundle.main.bundleIdentifier ?? "",
+    apiVersion: "1.0"
+)
+
+let metaMaskConnector = MetaMaskConnector(
+    para: paraManager,
+    appUrl: "https://your.app.bundle.id",
+    deepLink: "your-app-scheme",
+    config: metaMaskConfig
+)
+```
+
+### Handle Deep Links
+
+Add deep link handling in your app's main entry point:
+
+```swift
+.onOpenURL { url in
+    NotificationCenter.default.post(name: Notification.Name("MetaMaskDeepLink"), object: url)
+}
+```
+
+### Connect to MetaMask
+
+Connect to MetaMask and get the user's accounts:
+
+```swift
+do {
+    try await metaMaskConnector.connect()
+    // Connection successful
+    // Access connected accounts via metaMaskConnector.accounts
+} catch {
+    // Handle connection error
+}
+```
+
+### Sign Messages
+
+Request message signing from the connected MetaMask wallet:
+
+```swift
+guard let account = metaMaskConnector.accounts.first else { return }
+
+do {
+    let signature = try await metaMaskConnector.signMessage(
+        "Message to sign",
+        account: account
+    )
+    // Use the signature
+} catch {
+    // Handle signing error
+}
+```
+
+### Send Transactions
+
+Send transactions through the connected MetaMask wallet:
+
+```swift
+guard let account = metaMaskConnector.accounts.first else { return }
+
+let transaction: [String: String] = [
+    "from": account,
+    "to": "0x...", // Recipient address
+    "value": "0x...", // Value in wei (hex)
+    "gasLimit": "0x..." // Gas limit (hex)
+]
+
+do {
+    let txHash = try await metaMaskConnector.sendTransaction(
+        transaction,
+        account: account
+    )
+    // Transaction sent successfully
+} catch {
+    // Handle transaction error
+}
+```
+
+### Properties
+
+The MetaMask connector provides several useful properties:
+
+- `isConnected`: Boolean indicating if MetaMask is connected
+- `accounts`: Array of connected MetaMask account addresses
+- `chainId`: Current chain ID (e.g., "0x1" for Ethereum mainnet)
