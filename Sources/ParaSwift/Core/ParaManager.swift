@@ -291,7 +291,7 @@ extension ParaManager {
     /// - Parameters:
     ///   - externalAddress: The external wallet address
     ///   - type: The type of wallet (e.g. "EVM")
-    public func externalWalletLogin(externalAddress: String, type: String) async throws {
+    internal func externalWalletLogin(externalAddress: String, type: String) async throws {
         try await ensureWebViewReady()
         
         _ = try await postMessage(method: "externalWalletLogin", arguments: [externalAddress, type])
