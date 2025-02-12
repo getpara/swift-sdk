@@ -200,9 +200,7 @@ public class MetaMaskConnector: ObservableObject {
                 let originatorData = try originatorInfo.encode()
                 let url = try makeMetaMaskURL(host: "connect", originatorInfo: originatorData)
                 logger.debug("Opening MetaMask URL: \(url.absoluteString)")
-                DispatchQueue.main.async {
-                    UIApplication.shared.open(url)
-                }
+                try self.openMetaMaskURL(url)
             } catch {
                 logger.error("Failed to construct connect URL: \(error.localizedDescription)")
                 throw error
@@ -224,9 +222,7 @@ public class MetaMaskConnector: ObservableObject {
             do {
                 let url = try makeMetaMaskURL(host: "mmsdk", message: encodedMessage, account: "\(account)@\(chainId ?? "")")
                 logger.debug("SignMessage URL: \(url.absoluteString)")
-                DispatchQueue.main.async {
-                    UIApplication.shared.open(url)
-                }
+                try self.openMetaMaskURL(url)
             } catch {
                 logger.error("Error constructing signMessage URL: \(error.localizedDescription)")
                 throw error
@@ -248,9 +244,7 @@ public class MetaMaskConnector: ObservableObject {
             do {
                 let url = try makeMetaMaskURL(host: "mmsdk", message: encodedMessage, account: "\(account)@\(chainId ?? "")")
                 logger.debug("SendTransaction URL: \(url.absoluteString)")
-                DispatchQueue.main.async {
-                    UIApplication.shared.open(url)
-                }
+                try self.openMetaMaskURL(url)
             } catch {
                 logger.error("Error constructing sendTransaction URL: \(error.localizedDescription)")
                 throw error
@@ -263,6 +257,16 @@ public class MetaMaskConnector: ObservableObject {
 
 @available(iOS 16.4, *)
 private extension MetaMaskConnector {
+    private func openMetaMaskURL(_ url: URL) throws {
+        if !UIApplication.shared.canOpenURL(url) {
+            logger.error("MetaMask is not installed. Cannot open URL: \(url.absoluteString)")
+            throw MetaMaskError.notInstalled
+        }
+        DispatchQueue.main.async {
+            UIApplication.shared.open(url)
+        }
+    }
+
     /// Constructs a URL for MetaMask communication
     func makeMetaMaskURL(
         host: String,

@@ -6,6 +6,7 @@ public enum MetaMaskError: LocalizedError {
     case invalidURL
     case invalidResponse
     case metaMaskError(String)
+    case notInstalled
     
     public var errorDescription: String? {
         switch self {
@@ -17,6 +18,8 @@ public enum MetaMaskError: LocalizedError {
             return "Invalid response from MetaMask"
         case .metaMaskError(let message):
             return message
+        case .notInstalled:
+            return "MetaMask is not installed."
         }
     }
 } 
