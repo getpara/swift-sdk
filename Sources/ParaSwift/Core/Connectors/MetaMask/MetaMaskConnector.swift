@@ -79,7 +79,7 @@ public class MetaMaskConnector: ObservableObject {
             break
         }
     }
-
+    
     // MARK: - Initialization
     
     /// Initialize a new MetaMask connector
@@ -111,7 +111,7 @@ public class MetaMaskConnector: ObservableObject {
             logger.debug("Received deep link with invalid URL: \(url)")
             return false
         }
-
+        
         logger.debug("Handling deep link: \(url.absoluteString)")
         do {
             guard let components = URLComponents(url: url, resolvingAgainstBaseURL: true),
@@ -189,9 +189,9 @@ public class MetaMaskConnector: ObservableObject {
             }
         }
     }
-
+    
     // MARK: - Public Methods
-
+    
     /// Initiates a connection request to MetaMask.
     public func connect() async throws {
         logger.debug("Initiating MetaMask connection")
@@ -207,7 +207,7 @@ public class MetaMaskConnector: ObservableObject {
             }
         }
     }
-
+    
     /// Initiates a personal sign request.
     /// - Parameters:
     ///   - message: The message to sign
@@ -229,7 +229,7 @@ public class MetaMaskConnector: ObservableObject {
             }
         }
     }
-
+    
     /// Initiates a transaction request.
     /// - Parameters:
     ///   - transaction: The transaction details
@@ -270,7 +270,7 @@ private extension MetaMaskConnector {
             UIApplication.shared.open(url)
         }
     }
-
+    
     /// Constructs a URL for MetaMask communication
     func makeMetaMaskURL(
         host: String,

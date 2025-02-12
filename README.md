@@ -274,7 +274,18 @@ ParaSwift provides seamless integration with MetaMask Mobile through the `MetaMa
 
 ### Setup MetaMask Connector
 
-Initialize the MetaMask connector with your app's configuration:
+First, configure your app's Info.plist to allow querying MetaMask URL schemes:
+
+```xml
+<key>LSApplicationQueriesSchemes</key>
+<array>
+    <string>metamask</string>
+</array>
+```
+
+This configuration is required to detect if MetaMask is installed on the device.
+
+Then initialize the MetaMask connector with your app's configuration:
 
 ```swift
 // Create MetaMask configuration
