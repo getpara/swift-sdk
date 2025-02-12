@@ -230,12 +230,14 @@ public class MetaMaskConnector: ObservableObject {
         }
     }
     
-    /// Initiates a transaction request.
+    /// Internal implementation for sending transactions.
+    /// This method handles the low-level communication with MetaMask.
+    /// For general usage, prefer the EVMTransaction-based overload.
     /// - Parameters:
-    ///   - transaction: The transaction details
+    ///   - transaction: The transaction details in MetaMask's expected format
     ///   - account: The account to send from
     /// - Returns: The transaction hash
-    public func sendTransaction(_ transaction: [String: String], account: String) async throws -> String {
+    internal func sendTransaction(_ transaction: [String: String], account: String) async throws -> String {
         logger.debug("Initiating sendTransaction for account: \(account)")
         let request = SendTransactionRequest(params: [transaction])
         let encodedMessage = try request.encode()
@@ -250,6 +252,17 @@ public class MetaMaskConnector: ObservableObject {
                 throw error
             }
         }
+    }
+    
+    /// Initiates a transaction request using an EVMTransaction.
+    /// This is the recommended method for sending transactions.
+    /// - Parameters:
+    ///   - transaction: The EVMTransaction object containing the transaction details
+    ///   - account: The account to send from
+    /// - Returns: The transaction hash
+    public func sendTransaction(_ transaction: EVMTransaction, account: String) async throws -> String {
+        let metaMaskTx = transaction.toMetaMaskFormat(from: account)
+        return try await sendTransaction(metaMaskTx, account: account)
     }
 }
 
