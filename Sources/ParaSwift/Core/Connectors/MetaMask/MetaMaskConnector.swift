@@ -259,7 +259,11 @@ public class MetaMaskConnector: ObservableObject {
 private extension MetaMaskConnector {
     private func openMetaMaskURL(_ url: URL) throws {
         if !UIApplication.shared.canOpenURL(url) {
-            logger.error("MetaMask is not installed. Cannot open URL: \(url.absoluteString)")
+            logger.debug("MetaMask is not installed. Opening App Store...")
+            let appStoreURL = URL(string: "https://apps.apple.com/us/app/metamask-blockchain-wallet/id1438144202")!
+            DispatchQueue.main.async {
+                UIApplication.shared.open(appStoreURL)
+            }
             throw MetaMaskError.notInstalled
         }
         DispatchQueue.main.async {
