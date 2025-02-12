@@ -15,8 +15,13 @@ struct MetaMaskResponse<T: Codable>: Codable {
 
 /// Data container for MetaMask responses
 struct MetaMaskResponseData<T: Codable>: Codable {
+    struct ErrorResponse: Codable {
+        let code: Int
+        let message: String
+    }
+    
     /// Optional error message from MetaMask
-    let error: String?
+    let error: ErrorResponse?
     /// Optional successful result from MetaMask
     let result: T?
 }

@@ -5,7 +5,7 @@ public enum MetaMaskError: LocalizedError {
     case alreadyProcessing
     case invalidURL
     case invalidResponse
-    case metaMaskError(String)
+    case metaMaskError(code: Int, message: String)
     case notInstalled
     
     public var errorDescription: String? {
@@ -16,10 +16,18 @@ public enum MetaMaskError: LocalizedError {
             return "Invalid URL construction"
         case .invalidResponse:
             return "Invalid response from MetaMask"
-        case .metaMaskError(let message):
-            return message
+        case .metaMaskError(let code, let message):
+            return "MetaMask error (\(code)): \(message)"
         case .notInstalled:
             return "MetaMask is not installed."
         }
+    }
+    
+    /// Whether the error represents a user rejection
+    public var isUserRejected: Bool {
+        if case .metaMaskError(code: 4001, _) = self {
+            return true
+        }
+        return false
     }
 } 

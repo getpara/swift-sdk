@@ -144,7 +144,7 @@ public class MetaMaskConnector: ObservableObject {
     
     private func handleResponse<T>(_ response: MetaMaskResponse<T>) {
         if let error = response.data.error {
-            complete(with: MetaMaskError.metaMaskError(error))
+            complete(with: MetaMaskError.metaMaskError(code: error.code, message: error.message))
             return
         }
         
