@@ -6,12 +6,16 @@ import os
 #if os(iOS)
 @available(iOS 16.4,*)
 @MainActor
+/// Para Manager class for interacting with para services
 public class ParaManager: NSObject, ObservableObject {
     private let logger = Logger(subsystem: "com.paraSwift", category: "ParaManager")
     
+    /// Available Para wallets connected to this instance
     @Published public var wallets: [Wallet] = []
+    /// Current state of the Para Manager session
     @Published public var sessionState: ParaSessionState = .unknown
     
+    /// Indicates if the ParaManager is ready to receive requests
     public var isReady: Bool {
         return paraWebView.isReady
     }
@@ -29,6 +33,13 @@ public class ParaManager: NSObject, ObservableObject {
     
     internal let deepLink: String
     
+    // MARK: - Initialization
+    
+    /// Initialize a new MetaMask connector
+    /// - Parameters:
+    ///   - environment: The Para Environment enum
+    ///   - apiKey: Your api key
+    ///   - deepLink: An optional deepLink for your application. Defaults to the apps Bundle Identifier.
     public init(environment: ParaEnvironment, apiKey: String, deepLink: String? = nil) {
         self.environment = environment
         self.apiKey = apiKey

@@ -122,7 +122,15 @@ ParaSwift provides an interface to Capsule services from within iOS applications
 
 To configure the capsule instance, you will need to create an instance of the capsule object as well as the globally available authorizationController environment object. This will be needed in several functions later on. If you need an API Key, please reach out to the Capsule Team.
 
-  
+```swift
+// Load Para configuration
+let config = ParaConfig.fromEnvironment()
+
+// Initialize Para manager
+let paraManager = ParaManager(environment: config.environment, apiKey: config.apiKey)
+```
+
+> **Note:** Make sure to configure your app's URL scheme in Info.plist under `CFBundleURLTypes`. The `deepLink` parameter should match this URL scheme. By default, the deepLink parameter will be your Bundle Identifier.
 
 ### Creating a User
 
@@ -290,7 +298,6 @@ Then initialize the MetaMask connector with your app's configuration:
 ```swift
 // Create MetaMask configuration
 let bundleId = Bundle.main.bundleIdentifier ?? ""
-let urlScheme = "your-app-scheme" // Must match URL scheme in Info.plist
 let metaMaskConfig = MetaMaskConfig(
     appName: "Your App Name",
     appId: bundleId,
@@ -301,12 +308,9 @@ let metaMaskConfig = MetaMaskConfig(
 let metaMaskConnector = MetaMaskConnector(
     para: paraManager,
     appUrl: "https://\(bundleId)",  // Your app's URL
-    deepLink: urlScheme,            // Your app's custom URL scheme
     config: metaMaskConfig
 )
 ```
-
-> **Note:** Make sure to configure your app's URL scheme in Info.plist under `CFBundleURLTypes`. The `deepLink` parameter should match this URL scheme.
 
 ### Handle Deep Links
 
