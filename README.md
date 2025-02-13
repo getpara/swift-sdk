@@ -99,10 +99,13 @@ In the associated domains section that appears after adding it, you will need to
 
 This will allow you to use passkeys that have been created on any app that uses the Capsule system, so if your users already have a Capsule wallet they will be able to use it in your app.  
 
+### DeepLink URL Scheme
 
-### Env File
+Under **Targets**->**AppName**->**Info**, click on **URL Types**
 
-In order to set your API Key and desired environment in the example app, please copy the file locations at Configs/example into the root level of your project and name it EnvDebug for development, and EnvRelease for production. This is only an example of how to manage your environment variables.
+Add a new **URL Type** and set the **URL Schemes** value to whatever you would like to use for deeplinking. By default, the ParaManager uses the apps Bundle Identifier, but this can be manually set when instantiating the class.
+
+This will allow you to use OAuth and Connectors with Para
 
 ## Using ParaSwift
 
