@@ -18,7 +18,6 @@ public class MetaMaskConnector: ObservableObject {
     
     private let para: ParaManager
     private let appUrl: String
-    private let deepLink: String
     private let config: MetaMaskConfig
     private let channelId = UUID().uuidString
     
@@ -86,14 +85,12 @@ public class MetaMaskConnector: ObservableObject {
     /// - Parameters:
     ///   - para: The Para manager instance
     ///   - appUrl: Your application's URL
-    ///   - deepLink: Your application's deep link scheme
     ///   - config: MetaMask configuration
-    public init(para: ParaManager, appUrl: String, deepLink: String, config: MetaMaskConfig) {
+    public init(para: ParaManager, appUrl: String, config: MetaMaskConfig) {
         self.para = para
         self.appUrl = appUrl
-        self.deepLink = deepLink
         self.config = config
-        logger.debug("Initialized MetaMaskConnector with appUrl: \(appUrl) and deepLink: \(deepLink)")
+        logger.debug("Initialized MetaMaskConnector with appUrl: \(appUrl) and deepLink: \(para.deepLink)")
     }
     
     deinit {
@@ -296,7 +293,7 @@ private extension MetaMaskConnector {
         components.host = host
         
         var queryItems = [
-            URLQueryItem(name: "scheme", value: deepLink),
+            URLQueryItem(name: "scheme", value: para.deepLink),
             URLQueryItem(name: "channelId", value: channelId),
         ]
         

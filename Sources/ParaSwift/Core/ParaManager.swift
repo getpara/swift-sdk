@@ -27,14 +27,14 @@ public class ParaManager: NSObject, ObservableObject {
     private let passkeysManager: PasskeysManager
     private let paraWebView: ParaWebView
     
-    internal let deeplinkUrl: String?
+    internal let deepLink: String
     
-    public init(environment: ParaEnvironment, apiKey: String, deeplinkUrl: String? = nil) {
+    public init(environment: ParaEnvironment, apiKey: String, deepLink: String? = nil) {
         self.environment = environment
         self.apiKey = apiKey
         self.passkeysManager = PasskeysManager(relyingPartyIdentifier: environment.relyingPartyId)
         self.paraWebView = ParaWebView(environment: environment, apiKey: apiKey)
-        self.deeplinkUrl = deeplinkUrl
+        self.deepLink = deepLink ?? Bundle.main.bundleIdentifier!
         super.init()
         Task {
             await waitForParaReady()

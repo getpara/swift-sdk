@@ -17,7 +17,7 @@ public enum OAuthProvider: String {
 @available(iOS 16.4,*)
 extension ParaManager {
     private func getOAuthURL(provider: OAuthProvider) async throws -> String {
-        let result = try await postMessage(method: "getOAuthURL", arguments: [provider.rawValue, deeplinkUrl ?? Bundle.main.bundleIdentifier ?? ""])
+        let result = try await postMessage(method: "getOAuthURL", arguments: [provider.rawValue, deepLink])
         return try decodeResult(result, expectedType: String.self, method: "getOAuthURL")
     }
     
@@ -27,7 +27,7 @@ extension ParaManager {
             throw ParaError.error("Invalid url")
         }
         
-        let urlWithToken = try await webAuthenticationSession.authenticate(using: url, callbackURLScheme: deeplinkUrl ?? Bundle.main.bundleIdentifier ?? "")
+        let urlWithToken = try await webAuthenticationSession.authenticate(using: url, callbackURLScheme: deepLink)
         guard let email = urlWithToken.valueOf("email") else {
             throw ParaError.error("No email found in returned url")
         }
