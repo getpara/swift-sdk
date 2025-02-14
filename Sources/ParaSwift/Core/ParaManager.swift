@@ -6,12 +6,16 @@ import os
 #if os(iOS)
 @available(iOS 16.4,*)
 @MainActor
+/// Para Manager class for interacting with para services
 public class ParaManager: NSObject, ObservableObject {
     private let logger = Logger(subsystem: "com.paraSwift", category: "ParaManager")
     
+    /// Available Para wallets connected to this instance
     @Published public var wallets: [Wallet] = []
+    /// Current state of the Para Manager session
     @Published public var sessionState: ParaSessionState = .unknown
     
+    /// Indicates if the ParaManager is ready to receive requests
     public var isReady: Bool {
         return paraWebView.isReady
     }
@@ -27,11 +31,21 @@ public class ParaManager: NSObject, ObservableObject {
     private let passkeysManager: PasskeysManager
     private let paraWebView: ParaWebView
     
-    public init(environment: ParaEnvironment, apiKey: String) {
+    internal let deepLink: String
+    
+    // MARK: - Initialization
+    
+    /// Initialize a new MetaMask connector
+    /// - Parameters:
+    ///   - environment: The Para Environment enum
+    ///   - apiKey: Your api key
+    ///   - deepLink: An optional deepLink for your application. Defaults to the apps Bundle Identifier.
+    public init(environment: ParaEnvironment, apiKey: String, deepLink: String? = nil) {
         self.environment = environment
         self.apiKey = apiKey
         self.passkeysManager = PasskeysManager(relyingPartyIdentifier: environment.relyingPartyId)
         self.paraWebView = ParaWebView(environment: environment, apiKey: apiKey)
+        self.deepLink = deepLink ?? Bundle.main.bundleIdentifier!
         super.init()
         Task {
             await waitForParaReady()
@@ -105,13 +119,26 @@ extension ParaManager {
         _ = try await postMessage(method: "createUserByPhone", arguments: [phoneNumber, countryCode])
     }
     
+    private func authInfoHelper(authInfo: AuthInfo?) async throws -> Any? {
+        if let authInfo = authInfo as? EmailAuthInfo {
+            return try await postMessage(method: "getWebChallenge", arguments: [authInfo])
+        }
+        
+        if let authInfo = authInfo as? PhoneAuthInfo {
+            return try await postMessage(method: "getWebChallenge", arguments: [authInfo])
+        }
+        
+        return try await postMessage(method: "getWebChallenge", arguments: [])
+    }
+    
     @available(macOS 13.3, iOS 16.4, *)
     @MainActor
-    public func login(authorizationController: AuthorizationController) async throws {
-        let getWebChallengeResult = try await postMessage(method: "getWebChallenge", arguments: [])
+    public func login(authorizationController: AuthorizationController, authInfo: AuthInfo?) async throws {
+        let getWebChallengeResult = try await authInfoHelper(authInfo: authInfo)
         let challenge = try decodeDictionaryResult(getWebChallengeResult, expectedType: String.self, method: "getWebChallenge", key: "challenge")
+        let allowedPublicKeys = try decodeDictionaryResult(getWebChallengeResult, expectedType: [String]?.self, method: "getWebChallenge", key: "allowedPublicKeys") ?? []
         
-        let signIntoPasskeyAccountResult = try await passkeysManager.signIntoPasskeyAccount(authorizationController: authorizationController, challenge: challenge)
+        let signIntoPasskeyAccountResult = try await passkeysManager.signIntoPasskeyAccount(authorizationController: authorizationController, challenge: challenge, allowedPublicKeys: allowedPublicKeys)
         
         let id = signIntoPasskeyAccountResult.credentialID.base64URLEncodedString()
         let authenticatorData = signIntoPasskeyAccountResult.rawAuthenticatorData.base64URLEncodedString()
@@ -304,6 +331,7 @@ extension ParaManager {
 public enum ParaError: Error, CustomStringConvertible {
     case bridgeError(String)
     case bridgeTimeoutError
+    case error(String)
     
     public var description: String {
         switch self {
@@ -311,6 +339,8 @@ public enum ParaError: Error, CustomStringConvertible {
             return "The following error happened while the javascript bridge was executing: \(info)"
         case .bridgeTimeoutError:
             return "The javascript bridge did not respond in time and the continuation has been cancelled."
+        case .error(let info):
+            return "An error occurred: \(info)"
         }
     }
 }

@@ -47,9 +47,10 @@ final class PasskeysManager: NSObject, ASAuthorizationControllerDelegate {
     
     public func signIntoPasskeyAccount(authorizationController: AuthorizationController,
                                        challenge: String,
+                                       allowedPublicKeys: [String],
                                        options: ASAuthorizationController.RequestOptions = []) async throws -> ASAuthorizationPlatformPublicKeyCredentialAssertion {
         let authorizationResult = try await authorizationController.performRequests(
-                signInRequests(challenge: challenge),
+            signInRequests(challenge: challenge, allowedPublicKeys: allowedPublicKeys),
                 options: options
         )
         
@@ -80,9 +81,16 @@ final class PasskeysManager: NSObject, ASAuthorizationControllerDelegate {
         Data("passkey challenge".utf8)
     }
 
-    private func passkeyAssertionRequest(challenge: String) async -> ASAuthorizationRequest {
-        ASAuthorizationPlatformPublicKeyCredentialProvider(relyingPartyIdentifier: relyingPartyIdentifier)
+    private func passkeyAssertionRequest(challenge: String, allowedPublicKeys: [String]) async -> ASAuthorizationRequest {
+        let request = ASAuthorizationPlatformPublicKeyCredentialProvider(relyingPartyIdentifier: relyingPartyIdentifier)
             .createCredentialAssertionRequest(challenge: Data(base64URLEncoded: challenge)!)
+        
+        for allowedPublicKey in allowedPublicKeys {
+            let apkData = Data(base64URLEncoded: allowedPublicKey)!
+            request.allowedCredentials.append(ASAuthorizationPlatformPublicKeyCredentialDescriptor(credentialID: apkData))
+        }
+        
+        return request
     }
 
     private func passkeyRegistrationRequest(username: String, userHandle: Data) async -> ASAuthorizationRequest {
@@ -90,8 +98,8 @@ final class PasskeysManager: NSObject, ASAuthorizationControllerDelegate {
            .createCredentialRegistrationRequest(challenge: passkeyChallenge(), name: username, userID: userHandle)
     }
 
-    private func signInRequests(challenge: String) async -> [ASAuthorizationRequest] {
-        await [passkeyAssertionRequest(challenge: challenge), ASAuthorizationPasswordProvider().createRequest()]
+    private func signInRequests(challenge: String, allowedPublicKeys: [String]) async -> [ASAuthorizationRequest] {
+        await [passkeyAssertionRequest(challenge: challenge, allowedPublicKeys: allowedPublicKeys), ASAuthorizationPasswordProvider().createRequest()]
     }
     
     private func handleAuthorizationResult(_ authorizationResult: ASAuthorizationResult, username: String? = nil) async throws {
