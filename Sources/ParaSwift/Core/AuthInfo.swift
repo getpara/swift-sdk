@@ -24,3 +24,19 @@ public struct PhoneAuthInfo: AuthInfo {
         self.countryCode = countryCode
     }
 }
+
+public struct ExternalWalletAuthInfo: AuthInfo {
+    let externalWalletUserId: String
+    
+    public init(externalWalletUserId: String) {
+        self.externalWalletUserId = externalWalletUserId
+    }
+}
+
+public struct UserIdAuthInfo: AuthInfo {
+    let userId: String
+    
+    public init(userId: String) {
+        self.userId = userId
+    }
+}

@@ -28,6 +28,10 @@ public class MetaMaskConnector: ObservableObject {
     /// Current chain ID (e.g., "0x1" for Ethereum mainnet)
     @Published public private(set) var chainId: String?
     
+    public var authInfo: ExternalWalletAuthInfo {
+        return ExternalWalletAuthInfo(externalWalletUserId: "EVM-\(accounts.first!)")
+    }
+    
     private var currentMessageType: MetaMaskMessageType?
     private lazy var originatorInfo: OriginatorInfo = {
         OriginatorInfo(url: appUrl, apiVersion: config.apiVersion, platform: "ios", title: config.appName, dappId: config.appId)
@@ -177,9 +181,9 @@ public class MetaMaskConnector: ObservableObject {
                 }
                 
                 logger.debug("Attempting external wallet login: address=\(address)")
-                try await para.externalWalletLogin(externalAddress: address, type: "EVM")
+                let res = try await para.externalWalletLogin(externalAddress: address, type: "EVM", provider: "METAMASK", isFullAuth: true)
                 logger.debug("External wallet login completed")
-                complete(with: ())
+                complete(with: res)
             } catch {
                 logger.error("External wallet login failed: \(error.localizedDescription)")
                 complete(with: error)
@@ -190,9 +194,9 @@ public class MetaMaskConnector: ObservableObject {
     // MARK: - Public Methods
     
     /// Initiates a connection request to MetaMask.
-    public func connect() async throws {
+    public func connect() async throws -> [String: Any] {
         logger.debug("Initiating MetaMask connection")
-        try await withContinuation(type: .connect) { (continuation: CheckedContinuation<Void, Error>) in
+        return try await withContinuation(type: .connect) { (continuation: CheckedContinuation<[String: Any], Error>) in
             do {
                 let originatorData = try originatorInfo.encode()
                 let url = try makeMetaMaskURL(host: "connect", originatorInfo: originatorData)

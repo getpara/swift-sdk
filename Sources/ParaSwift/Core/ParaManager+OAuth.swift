@@ -12,6 +12,8 @@ public enum OAuthProvider: String {
     case google = "GOOGLE"
     case discord = "DISCORD"
     case apple = "APPLE"
+    case twitter = "TWITTER"
+    case facebook = "FACEBOOK"
 }
 
 @available(iOS 16.4,*)

@@ -128,6 +128,10 @@ extension ParaManager {
             return try await postMessage(method: "getWebChallenge", arguments: [authInfo])
         }
         
+        if let authInfo = authInfo as? ExternalWalletAuthInfo {
+            return try await postMessage(method: "getWebChallenge", arguments: [authInfo])
+        }
+        
         return try await postMessage(method: "getWebChallenge", arguments: [])
     }
     
@@ -171,6 +175,20 @@ extension ParaManager {
         try await ensureWebViewReady()
         let result = try await postMessage(method: "verifyPhone", arguments: [verificationCode])
         let resultString = try decodeResult(result, expectedType: String.self, method: "verifyPhone")
+        
+        let paths = resultString.split(separator: "/")
+        guard let lastPath = paths.last,
+              let biometricsId = lastPath.split(separator: "?").first else {
+            throw ParaError.bridgeError("Invalid path format in result")
+        }
+        
+        return String(biometricsId)
+    }
+    
+    public func verifyExternalWallet(signedMessage: String) async throws -> String {
+        try await ensureWebViewReady()
+        let result = try await postMessage(method: "verifyExternalWallet", arguments: [signedMessage])
+        let resultString = try decodeResult(result, expectedType: String.self, method: "verifyExternalWallet")
         
         let paths = resultString.split(separator: "/")
         guard let lastPath = paths.last,
@@ -318,14 +336,16 @@ extension ParaManager {
     /// - Parameters:
     ///   - externalAddress: The external wallet address
     ///   - type: The type of wallet (e.g. "EVM")
-    internal func externalWalletLogin(externalAddress: String, type: String) async throws {
+    internal func externalWalletLogin(externalAddress: String, type: String, provider: String, isFullAuth: Bool) async throws -> [String: Any] {
         try await ensureWebViewReady()
         
-        _ = try await postMessage(method: "externalWalletLogin", arguments: [externalAddress, type])
+        let res = try await postMessage(method: "externalWalletLogin", arguments: [externalAddress, type, provider, isFullAuth])
         self.sessionState = .activeLoggedIn
         
-        logger.debug("External wallet login completed for address: \(externalAddress)")
+        logger.debug("External wallet login started for address: \(externalAddress)")
+        return res as! [String: Any]
     }
+    
 }
 
 public enum ParaError: Error, CustomStringConvertible {
