@@ -20,7 +20,7 @@ public class ParaManager: NSObject, ObservableObject {
         return paraWebView.isReady
     }
     
-    public static let packageVersion = "1.0.0"
+    public static let packageVersion = "1.2.1"
     public var environment: ParaEnvironment {
         didSet {
             self.passkeysManager.relyingPartyIdentifier = environment.relyingPartyId

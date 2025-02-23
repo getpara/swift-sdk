@@ -12,11 +12,15 @@ let package = Package(
             name: "ParaSwift",
             targets: ["ParaSwift"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/attaswift/BigInt.git", .upToNextMinor(from: "5.4.0")),
+    ],
     targets: [
         // Targets are the basic building blocks of a package, defining a module or a test suite.
         // Targets can depend on other targets in this package and products from dependencies.
         .target(
-            name: "ParaSwift"),
+            name: "ParaSwift",
+            dependencies: ["BigInt"]),
         .testTarget(
             name: "ParaSwiftTests",
             dependencies: ["ParaSwift"]),
