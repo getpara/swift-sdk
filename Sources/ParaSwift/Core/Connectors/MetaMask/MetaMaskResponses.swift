@@ -43,6 +43,7 @@ public struct MetaMaskConnectorResponse {
         public let userId: String
         public let userExists: Bool
         public let isVerified: Bool
+        public let hasBiometrics: Bool
         public let signatureVerificationMessage: String
     }
 }
