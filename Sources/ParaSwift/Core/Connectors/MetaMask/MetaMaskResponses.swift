@@ -36,4 +36,13 @@ struct ConnectResponse: Codable {
         let accounts: [String]
     }
     let data: Data
-} 
+}
+
+public struct MetaMaskConnectorResponse {
+    public struct Connect: Codable {
+        public let userId: String
+        public let userExists: Bool
+        public let isVerified: Bool
+        public let signatureVerificationMessage: String
+    }
+}

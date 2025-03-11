@@ -185,9 +185,9 @@ extension ParaManager {
         return String(biometricsId)
     }
     
-    public func verifyExternalWallet(signedMessage: String) async throws -> String {
+    public func verifyExternalWallet(address: String, signedMessage: String) async throws -> String {
         try await ensureWebViewReady()
-        let result = try await postMessage(method: "verifyExternalWallet", arguments: [signedMessage])
+        let result = try await postMessage(method: "verifyExternalWallet", arguments: [address, signedMessage])
         let resultString = try decodeResult(result, expectedType: String.self, method: "verifyExternalWallet")
         
         let paths = resultString.split(separator: "/")
@@ -336,10 +336,10 @@ extension ParaManager {
     /// - Parameters:
     ///   - externalAddress: The external wallet address
     ///   - type: The type of wallet (e.g. "EVM")
-    internal func externalWalletLogin(externalAddress: String, type: String, provider: String, isFullAuth: Bool) async throws -> [String: Any] {
+    internal func externalWalletLogin(externalAddress: String, type: String, provider: String) async throws -> [String: Any] {
         try await ensureWebViewReady()
         
-        let res = try await postMessage(method: "externalWalletLogin", arguments: [externalAddress, type, provider, isFullAuth])
+        let res = try await postMessage(method: "externalWalletLogin", arguments: [externalAddress, type, provider, false])
         self.sessionState = .activeLoggedIn
         
         logger.debug("External wallet login started for address: \(externalAddress)")

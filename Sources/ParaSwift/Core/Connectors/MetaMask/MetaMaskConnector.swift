@@ -29,7 +29,7 @@ public class MetaMaskConnector: ObservableObject {
     @Published public private(set) var chainId: String?
     
     public var authInfo: ExternalWalletAuthInfo {
-        return ExternalWalletAuthInfo(externalWalletUserId: "EVM-\(accounts.first!)")
+        return ExternalWalletAuthInfo(externalWalletAddress: accounts.first!)
     }
     
     private var currentMessageType: MetaMaskMessageType?
@@ -181,7 +181,7 @@ public class MetaMaskConnector: ObservableObject {
                 }
                 
                 logger.debug("Attempting external wallet login: address=\(address)")
-                let res = try await para.externalWalletLogin(externalAddress: address, type: "EVM", provider: "METAMASK", isFullAuth: true)
+                let res = try await para.externalWalletLogin(externalAddress: address, type: "EVM", provider: "METAMASK")
                 logger.debug("External wallet login completed")
                 complete(with: res)
             } catch {
@@ -194,9 +194,9 @@ public class MetaMaskConnector: ObservableObject {
     // MARK: - Public Methods
     
     /// Initiates a connection request to MetaMask.
-    public func connect() async throws -> [String: Any] {
+    public func connect() async throws -> MetaMaskConnectorResponse.Connect {
         logger.debug("Initiating MetaMask connection")
-        return try await withContinuation(type: .connect) { (continuation: CheckedContinuation<[String: Any], Error>) in
+        let res = try await withContinuation(type: .connect) { (continuation: CheckedContinuation<[String: Any], Error>) in
             do {
                 let originatorData = try originatorInfo.encode()
                 let url = try makeMetaMaskURL(host: "connect", originatorInfo: originatorData)
@@ -207,6 +207,8 @@ public class MetaMaskConnector: ObservableObject {
                 throw error
             }
         }
+        
+        return try JSONDecoder().decode(MetaMaskConnectorResponse.Connect.self, from: try JSONSerialization.data(withJSONObject: res, options: []))
     }
     
     /// Initiates a personal sign request.

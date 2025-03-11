@@ -26,10 +26,10 @@ public struct PhoneAuthInfo: AuthInfo {
 }
 
 public struct ExternalWalletAuthInfo: AuthInfo {
-    let externalWalletUserId: String
+    let externalWalletAddress: String
     
-    public init(externalWalletUserId: String) {
-        self.externalWalletUserId = externalWalletUserId
+    public init(externalWalletAddress: String) {
+        self.externalWalletAddress = externalWalletAddress
     }
 }
 
