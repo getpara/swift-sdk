@@ -1,9 +1,9 @@
 name: Run E2E Tests for swift-sdk PR
 
 on:
-  push:
+  pull_request:
     branches:
-      - '**'
+      - main
   workflow_dispatch:
 
 jobs:
@@ -34,43 +34,22 @@ jobs:
           repository: getpara/examples-hub
           token: ${{ secrets.GITHUB_TOKEN }}
           path: examples-hub
-          ref: tyson/swift-testing
+          ref: main
 
-      - name: Update Package.swift to use SDK PR branch
+      - name: Update swift-sdk branch in project.pbxproj
         if: ${{ github.event_name == 'pull_request' }}
         working-directory: examples-hub/mobile/with-swift
         run: |
-          sed -i '' 's|\.package(url: "https://github.com/getpara/swift-sdk", \.branch(".*"))|.package(url: "https://github.com/getpara/swift-sdk", .branch("'${{ github.head_ref }}'"))|g' Package.swift
-          echo "Updated Package.swift:"
-          cat Package.swift
+          PR_BRANCH="${{ github.head_ref }}"
+          echo "Updating swift-sdk branch to $PR_BRANCH in project.pbxproj"
+          sed -i '' '/repositoryURL = "https:\/\/github.com\/getpara\/swift-sdk"/,/kind = branch;/ s/\(branch = \)[^;]*;/\1'"$PR_BRANCH"';/' example.xcodeproj/project.pbxproj
+          echo "Updated swift-sdk dependency:"
+          grep -A 5 'XCRemoteSwiftPackageReference "swift-sdk"' example.xcodeproj/project.pbxproj
 
       - name: Resolve Package Dependencies
         working-directory: examples-hub/mobile/with-swift
         run: |
           xcodebuild -resolvePackageDependencies
-
-      # --- Debug step to confirm secrets are set in the environment ---
-      - name: Debug environment
-        env:
-          PARA_API_KEY: ${{ secrets.PARA_API_KEY }}
-          PARA_ENVIRONMENT: ${{ secrets.PARA_ENVIRONMENT }}
-        run: |
-          echo "================= ENV DEBUG START ================="
-          if [ -z "$PARA_API_KEY" ]; then
-            echo "PARA_API_KEY is not set or is empty"
-          else
-            echo "PARA_API_KEY is set (GitHub Actions will mask it in logs)"
-          fi
-
-          if [ -z "$PARA_ENVIRONMENT" ]; then
-            echo "PARA_ENVIRONMENT is not set or is empty"
-          else
-            echo "PARA_ENVIRONMENT is set (GitHub Actions will mask it in logs)"
-          fi
-
-          echo "Listing all environment variables (some may be masked):"
-          env | sort
-          echo "================= ENV DEBUG END ==================="
 
       - name: Run UI Tests on Simulator
         id: run-tests
