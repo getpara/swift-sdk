@@ -29,7 +29,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           path: examples-hub
           # You can specify a branch or leave default:
-          # ref: main
+          ref: tyson/swift-testing
 
       - name: Update Package.swift to use SDK PR branch
         if: ${{ github.event_name == 'pull_request' }}
@@ -58,6 +58,6 @@ jobs:
         run: |
           # Replace "YourUITestScheme" with the actual scheme name for your UI tests.
           xcodebuild \
-            -scheme "example" \
+            -scheme "Example" \
             -destination 'platform=iOS Simulator,OS=latest,name=iPhone 16' \
             clean test
