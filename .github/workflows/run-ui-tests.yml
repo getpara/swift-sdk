@@ -1,4 +1,4 @@
-name: Run UI Tests for SDK PR
+name: Run E2E Tests for swift-sdk PR
 
 on:
   push:
@@ -50,6 +50,7 @@ jobs:
           xcodebuild -resolvePackageDependencies
 
       - name: Run UI Tests on Simulator
+        id: run-tests
         working-directory: examples-hub/mobile/with-swift
         env:
           PARA_API_KEY: ${{ secrets.PARA_API_KEY }}
@@ -63,21 +64,28 @@ jobs:
             clean test \
             2>&1 | tee xcodebuild.log
 
+      # By default, if the above fails, the steps below won't run
+      # so we force them to run with `if: ${{ always() }}`
+
       - name: List generated files (for debugging)
+        if: ${{ always() }}
         working-directory: examples-hub/mobile/with-swift
         run: ls -al
 
       - name: Upload Xcode build log
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: xcodebuild-log
           path: examples-hub/mobile/with-swift/xcodebuild.log
 
       - name: Rename test results
+        if: ${{ always() }}
         working-directory: examples-hub/mobile/with-swift
-        run: mv TestResults TestResults.xcresult
+        run: mv TestResults TestResults.xcresult || true
 
       - name: Upload Xcode test results
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: xcode-test-results
