@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - '**'
-  # Also allow manual triggering from the Actions tab
   workflow_dispatch:
 
 jobs:
@@ -24,7 +23,7 @@ jobs:
       - name: Set up Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: '16.2' # or whatever version you need
+          xcode-version: '16.2'
 
       - name: Verify Xcode version
         run: xcodebuild -version
@@ -41,9 +40,7 @@ jobs:
         if: ${{ github.event_name == 'pull_request' }}
         working-directory: examples-hub/mobile/with-swift
         run: |
-          # If your Package.swift references the swift-sdk on "main", swap it with the PR branch
           sed -i '' 's|\.package(url: "https://github.com/getpara/swift-sdk", \.branch(".*"))|.package(url: "https://github.com/getpara/swift-sdk", .branch("'${{ github.head_ref }}'"))|g' Package.swift
-
           echo "Updated Package.swift:"
           cat Package.swift
 
@@ -58,7 +55,6 @@ jobs:
           PARA_ENVIRONMENT: ${{ secrets.PARA_ENVIRONMENT }}
           PARA_API_KEY: ${{ secrets.PARA_API_KEY }}
         run: |
-          # Pipe output into xcodebuild.log and also generate an .xcresult bundle
           xcodebuild \
             -scheme "Example" \
             -destination 'platform=iOS Simulator,OS=latest,name=iPhone 16 Pro' \
@@ -66,14 +62,18 @@ jobs:
             clean test \
             2>&1 | tee xcodebuild.log
 
+      - name: List generated files (for debugging)
+        working-directory: examples-hub/mobile/with-swift
+        run: ls -al
+
       - name: Upload Xcode build log
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v3.1.2
         with:
           name: xcodebuild-log
           path: examples-hub/mobile/with-swift/xcodebuild.log
 
       - name: Upload Xcode test results
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v3.1.2
         with:
           name: xcode-test-results
           path: examples-hub/mobile/with-swift/TestResults
