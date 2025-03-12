@@ -51,6 +51,9 @@ jobs:
 
       - name: Run UI Tests on Simulator
         working-directory: examples-hub/mobile/with-swift
+        env:
+          PARA_API_KEY: ${{ secrets.PARA_API_KEY }}
+          PARA_ENVIRONMENT: ${{ secrets.PARA_ENVIRONMENT }}
         run: |
           set -o pipefail
           xcodebuild \
