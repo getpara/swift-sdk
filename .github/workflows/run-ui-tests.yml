@@ -51,10 +51,8 @@ jobs:
 
       - name: Run UI Tests on Simulator
         working-directory: examples-hub/mobile/with-swift
-        env:
-          PARA_ENVIRONMENT: ${{ secrets.PARA_ENVIRONMENT }}
-          PARA_API_KEY: ${{ secrets.PARA_API_KEY }}
         run: |
+          set -o pipefail
           xcodebuild \
             -scheme "Example" \
             -destination 'platform=iOS Simulator,OS=latest,name=iPhone 16 Pro' \
@@ -72,8 +70,12 @@ jobs:
           name: xcodebuild-log
           path: examples-hub/mobile/with-swift/xcodebuild.log
 
+      - name: Rename test results
+        working-directory: examples-hub/mobile/with-swift
+        run: mv TestResults TestResults.xcresult
+
       - name: Upload Xcode test results
         uses: actions/upload-artifact@v4
         with:
           name: xcode-test-results
-          path: examples-hub/mobile/with-swift/TestResults
+          path: examples-hub/mobile/with-swift/TestResults.xcresult
