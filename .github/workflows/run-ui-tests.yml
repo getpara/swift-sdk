@@ -83,7 +83,7 @@ jobs:
           xcodebuild \
             -scheme "Example" \
             -destination 'platform=iOS Simulator,OS=latest,name=iPhone 16 Pro' \
-            -testPlan "TestPlan" \
+            -testPlan "Example" \
             -resultBundlePath TestResults \
             clean test \
             2>&1 | tee xcodebuild.log
