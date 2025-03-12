@@ -67,13 +67,13 @@ jobs:
         run: ls -al
 
       - name: Upload Xcode build log
-        uses: actions/upload-artifact@v3.1.2
+        uses: actions/upload-artifact@v4
         with:
           name: xcodebuild-log
           path: examples-hub/mobile/with-swift/xcodebuild.log
 
       - name: Upload Xcode test results
-        uses: actions/upload-artifact@v3.1.2
+        uses: actions/upload-artifact@v4
         with:
           name: xcode-test-results
           path: examples-hub/mobile/with-swift/TestResults
