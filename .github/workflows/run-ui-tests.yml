@@ -1,10 +1,9 @@
 name: Run UI Tests for SDK PR
 
 on:
-  # Run when a PR is opened or updated against `main`
-  pull_request:
+  push:
     branches:
-      - main
+      - '**'
 
   # Also allow manual triggering from the Actions tab
   workflow_dispatch:
