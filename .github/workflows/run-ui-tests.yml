@@ -1,0 +1,64 @@
+name: Run UI Tests for SDK PR
+
+on:
+  # Run when a PR is opened or updated against `main`
+  pull_request:
+    branches:
+      - main
+
+  # Also allow manual triggering from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  ui-tests:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout swift-sdk (this repo)
+        uses: actions/checkout@v3
+
+      - name: Get PR information
+        run: |
+          echo "PR Branch: ${{ github.head_ref }}"
+          echo "PR Commit SHA: ${{ github.event.pull_request.head.sha }}"
+        if: ${{ github.event_name == 'pull_request' }}
+
+      - name: Checkout examples-hub sample app
+        uses: actions/checkout@v3
+        with:
+          repository: getpara/examples-hub
+          token: ${{ secrets.GITHUB_TOKEN }}
+          path: examples-hub
+          # You can specify a branch or leave default:
+          # ref: main
+
+      - name: Update Package.swift to use SDK PR branch
+        if: ${{ github.event_name == 'pull_request' }}
+        working-directory: examples-hub/mobile/with-swift
+        run: |
+          # Example: if your Package.swift references the swift-sdk like:
+          # .package(url: "https://github.com/getpara/swift-sdk", .branch("main"))
+          # We'll replace "main" with the PR branch name from ${{ github.head_ref }}.
+
+          sed -i '' 's|\.package(url: "https://github.com/getpara/swift-sdk", \.branch(".*"))|.package(url: "https://github.com/getpara/swift-sdk", .branch("'${{ github.head_ref }}'"))|g' Package.swift
+
+          echo "Updated Package.swift:"
+          cat Package.swift
+
+      - name: Resolve Package Dependencies
+        working-directory: examples-hub/mobile/with-swift
+        run: |
+          xcodebuild -resolvePackageDependencies
+
+      - name: Run UI Tests on Simulator
+        working-directory: examples-hub/mobile/with-swift
+        env:
+          # Pull these from GitHub Secrets
+          PARA_ENVIRONMENT: ${{ secrets.PARA_ENVIRONMENT }}
+          PARA_API_KEY: ${{ secrets.PARA_API_KEY }}
+        run: |
+          # Replace "YourUITestScheme" with the actual scheme name for your UI tests.
+          xcodebuild \
+            -scheme "YourUITestScheme" \
+            -destination 'platform=iOS Simulator,OS=latest,name=iPhone 14' \
+            clean test
