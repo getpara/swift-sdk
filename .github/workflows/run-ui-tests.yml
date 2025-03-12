@@ -67,5 +67,5 @@ jobs:
           # Replace "YourUITestScheme" with the actual scheme name for your UI tests.
           xcodebuild \
             -scheme "Example" \
-            -destination 'platform=iOS Simulator,OS=latest,name=iPhone 16' \
+            -destination 'platform=iOS Simulator,OS=latest,name=iPhone 16 Pro' \
             clean test
