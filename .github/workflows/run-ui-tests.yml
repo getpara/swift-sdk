@@ -1,0 +1,107 @@
+name: Run E2E Tests for swift-sdk PR
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  ui-tests:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout swift-sdk (this repo)
+        uses: actions/checkout@v3
+
+      - name: Get PR information
+        if: ${{ github.event_name == 'pull_request' }}
+        run: |
+          echo "PR Branch: ${{ github.head_ref }}"
+          echo "PR Commit SHA: ${{ github.event.pull_request.head.sha }}"
+
+      - name: Set up Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.2'
+
+      - name: Verify Xcode version
+        run: xcodebuild -version
+
+      - name: Checkout examples-hub sample app
+        uses: actions/checkout@v3
+        with:
+          repository: getpara/examples-hub
+          token: ${{ secrets.GITHUB_TOKEN }}
+          path: examples-hub
+          ref: main
+
+      - name: Update swift-sdk branch in project.pbxproj
+        if: ${{ github.event_name == 'pull_request' }}
+        working-directory: examples-hub/mobile/with-swift
+        run: |
+          PR_BRANCH="${{ github.head_ref }}"
+          echo "Updating swift-sdk branch to $PR_BRANCH in project.pbxproj"
+          sed -i '' '/repositoryURL = "https:\/\/github.com\/getpara\/swift-sdk"/,/kind = branch;/ s/\(branch = \)[^;]*;/\1'"$PR_BRANCH"';/' example.xcodeproj/project.pbxproj
+          echo "Updated swift-sdk dependency:"
+          grep -A 5 'XCRemoteSwiftPackageReference "swift-sdk"' example.xcodeproj/project.pbxproj
+
+      - name: Resolve Package Dependencies
+        working-directory: examples-hub/mobile/with-swift
+        run: |
+          xcodebuild -resolvePackageDependencies
+
+      - name: Run UI Tests on Simulator
+        id: run-tests
+        working-directory: examples-hub/mobile/with-swift
+        env:
+          PARA_API_KEY: ${{ secrets.PARA_API_KEY }}
+          PARA_ENVIRONMENT: ${{ secrets.PARA_ENVIRONMENT }}
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -scheme "Example" \
+            -destination 'platform=iOS Simulator,OS=latest,name=iPhone 16 Pro' \
+            -testPlan "Example" \
+            -resultBundlePath TestResults \
+            clean test \
+            2>&1 | tee xcodebuild.log
+
+      # This step always runs to list files, even if the tests fail.
+      - name: List generated files (for debugging)
+        if: ${{ always() }}
+        working-directory: examples-hub/mobile/with-swift
+        run: |
+          echo "Listing top-level files in with-swift directory:"
+          ls -al
+          echo "Listing contents of TestResults or TestResults.xcresult if they exist:"
+          ls -al TestResults || true
+          ls -al TestResults.xcresult || true
+
+      # Upload the raw xcodebuild.log
+      - name: Upload Xcode build log
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild-log
+          path: examples-hub/mobile/with-swift/xcodebuild.log
+
+      # Rename the test results directory only if needed
+      - name: Rename test results
+        if: ${{ always() }}
+        working-directory: examples-hub/mobile/with-swift
+        run: |
+          if [ -d "TestResults" ]; then
+            echo "Renaming TestResults -> TestResults.xcresult"
+            mv TestResults TestResults.xcresult
+          else
+            echo "No 'TestResults' directory found (likely named TestResults.xcresult already)."
+          fi
+
+      # Upload the .xcresult bundle
+      - name: Upload Xcode test results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcode-test-results
+          path: examples-hub/mobile/with-swift/TestResults.xcresult
