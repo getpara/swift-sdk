@@ -48,7 +48,7 @@ jobs:
           repository: getpara/examples-hub
           token: ${{ secrets.GITHUB_TOKEN }}
           path: examples-hub
-          ref: main
+          ref: tyson/appium-testing
 
       - name: Update swift-sdk branch in project.pbxproj
         if: ${{ github.event_name == 'pull_request' }}
