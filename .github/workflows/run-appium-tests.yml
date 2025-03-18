@@ -108,27 +108,8 @@ jobs:
       - name: Start Appium Server with Enhanced WDA Timeouts
         run: |
           export APPIUM_PORT=4723
-          cat > appium-config.json << 'EOF'
-          {
-            "server": {
-              "port": 4723,
-              "log": "appium.log",
-              "debug": true
-            },
-            "driver": {
-              "xcuitest": {
-                "wdaStartupRetries": 8,
-                "wdaStartupRetryInterval": 60000,
-                "wdaConnectionTimeout": 300000,
-                "wdaLocalPort": 8100,
-                "wdaUseNewWDA": true,
-                "wdaUseExistingWDA": false
-              }
-            }
-          }
-          EOF
           echo "Starting Appium server on port $APPIUM_PORT..."
-          appium --config appium-config.json &
+          appium --log appium.log --debug &
           APPIUM_PID=$!
           echo "Waiting for Appium server to initialize..."
           sleep 30
