@@ -49,7 +49,8 @@ jobs:
           
           # Get simulator UDID
           SIMULATOR_UDID=$(xcrun simctl list devices | grep "iPhone 16 Pro" | grep -E -o -i "([0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12})")
-          echo "SIMULATOR_UDID=$SIMULATOR_UDID" >> $GITHUB_ENV
+          echo "SIMULATOR_UDID=${SIMULATOR_UDID}" >> $GITHUB_ENV
+          echo "Created simulator with UDID: ${SIMULATOR_UDID}"
 
       - name: Update swift-sdk branch in project.pbxproj
         if: ${{ github.event_name == 'pull_request' }}
