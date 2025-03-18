@@ -59,7 +59,7 @@ jobs:
           echo "DEVICE_NAME=$DEVICE_NAME" >> $GITHUB_ENV
           echo "Booted simulator with UDID: $UDID"
           
-          # Wait for simulator to fully boot with verification
+          # Wait for simulator to fully boot
           echo "Waiting for simulator to boot completely..."
           for i in {1..10}; do
             BOOT_STATUS=$(xcrun simctl list | grep "$UDID" | grep -o "Booted" || echo "Not booted")
@@ -76,9 +76,9 @@ jobs:
             sleep 10
           done
           
-          # Additional wait to ensure simulator is fully initialized
+          # Additional delay for full initialization
           echo "Giving simulator additional time to initialize..."
-          sleep 15
+          sleep 60  # Increased from 15 to 60 seconds
 
       - name: Update swift-sdk branch in project.pbxproj
         if: ${{ github.event_name == 'pull_request' }}
