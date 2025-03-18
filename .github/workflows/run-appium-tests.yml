@@ -43,13 +43,12 @@ jobs:
       - name: Set up iOS Simulator
         run: |
           # Create and boot simulator
-          xcrun simctl create "iPhone 16 Pro" "iPhone 16 Pro"
-          xcrun simctl boot "iPhone 16 Pro"
-          
-          # Get simulator UDID
-          SIMULATOR_UDID=$(xcrun simctl list devices | grep "iPhone 16 Pro" | grep -E -o -i "([0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12})")
-          echo "SIMULATOR_UDID=${SIMULATOR_UDID}" >> $GITHUB_ENV
-          echo "Created simulator with UDID: ${SIMULATOR_UDID}"
+          DEVICE_NAME="iPhone 16 Pro"
+          UDID=$(xcrun simctl create "$DEVICE_NAME" "$DEVICE_NAME")
+          echo "Created simulator: $UDID"
+          xcrun simctl boot "$UDID"
+          echo "SIMULATOR_UDID=$UDID" >> $GITHUB_ENV
+          echo "Booted simulator with UDID: $UDID"
 
       - name: Update swift-sdk branch in project.pbxproj
         if: ${{ github.event_name == 'pull_request' }}
