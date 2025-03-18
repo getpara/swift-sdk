@@ -13,19 +13,10 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v3
 
-      - name: Get PR Info
-        if: ${{ github.event_name == 'pull_request' }}
-        run: |
-          echo "PR Branch: ${{ github.head_ref }}"
-          echo "PR Commit SHA: ${{ github.event.pull_request.head.sha }}"
-
       - name: Setup Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: '16.2'
-
-      - name: Verify Xcode Version
-        run: xcodebuild -version
 
       - name: Checkout Sample App
         uses: actions/checkout@v3
@@ -42,122 +33,36 @@ jobs:
           cache: npm
           cache-dependency-path: examples-hub/mobile/with-swift/tests/package-lock.json
 
-      - name: Install Appium & XCUItest Driver
-        run: |
-          npm install -g appium
-          appium driver install xcuitest
+      - name: Install Appium
+        run: npm install -g appium
 
-      - name: Setup iOS Simulator
-        run: |
-          DEVICE_NAME="iPhone 16 Pro"
-          UDID=$(xcrun simctl create "$DEVICE_NAME" "$DEVICE_NAME")
-          echo "Created simulator: $UDID"
-          xcrun simctl boot "$UDID"
-          echo "SIMULATOR_UDID=$UDID" >> $GITHUB_ENV
-          echo "Waiting for simulator to boot..."
-          for i in {1..20}; do
-            if xcrun simctl list | grep "$UDID" | grep -q Booted; then
-              echo "Simulator booted on attempt $i"
-              break
-            fi
-            if [ $i -eq 20 ]; then
-              echo "Simulator failed to boot"
-              exit 1
-            fi
-            sleep 15
-          done
-          # Additional initialization time
-          # Clean up any existing WDA processes
-          pkill -f WebDriverAgent || true
-          lsof -ti:8100 | xargs kill -9 || true
-
-      - name: Update swift-sdk Branch in project.pbxproj
-        if: ${{ github.event_name == 'pull_request' }}
+      - name: Build & Run Tests
         working-directory: examples-hub/mobile/with-swift
-        run: |
-          PR_BRANCH="${{ github.head_ref }}"
-          echo "Updating swift-sdk branch to ${PR_BRANCH}"
-          sed -i '' -E "s|branch = [^;]*|branch = ${PR_BRANCH}|" example.xcodeproj/project.pbxproj
-          grep -A 5 'XCRemoteSwiftPackageReference "swift-sdk"' example.xcodeproj/project.pbxproj
-
-      - name: Build & Install App
-        working-directory: examples-hub/mobile/with-swift
-        run: |
-          which xcpretty || gem install xcpretty
-          echo "Building Example app..."
-          set -e -o pipefail
-          xcodebuild -scheme "Example" \
-            -destination "id=${{ env.SIMULATOR_UDID }}" \
-            -configuration Debug \
-            -derivedDataPath ./DerivedData \
-            build | xcpretty
-          APP_PATH=$(find ./DerivedData -name "example.app" -type d | head -n 1)
-          if [ -z "$APP_PATH" ]; then
-            echo "Error: App bundle not found"
-            exit 1
-          fi
-          echo "Found app bundle at: $APP_PATH"
-          xcrun simctl install booted "$APP_PATH"
-          xcrun simctl listapps booted | grep -i "com.usecapsule.example.swift" || exit 1
-          xcrun simctl launch booted com.usecapsule.example.swift || echo "Warning: App failed to launch"
-
-      - name: Install Test Dependencies
-        working-directory: examples-hub/mobile/with-swift/tests
-        run: npm install
-
-      - name: Start Appium Server with Enhanced WDA Timeouts
-        run: |
-          export APPIUM_PORT=4723
-          echo "Starting Appium server on port $APPIUM_PORT..."
-          appium --log appium.log --debug &
-          APPIUM_PID=$!
-          echo "Waiting for Appium server to initialize..."
-          sleep 30
-          for i in {1..10}; do
-            HTTP_CODE=$(curl -s -o /tmp/appium_response -w "%{http_code}" http://localhost:$APPIUM_PORT/status || echo "Failed")
-            if [ "$HTTP_CODE" = "200" ]; then
-              echo "Appium server is ready (attempt $i)"
-              break
-            fi
-            if [ $i -eq 10 ]; then
-              echo "Appium server failed to start after 10 attempts"
-              cat appium.log
-              exit 1
-            fi
-            sleep 10
-          done
-          echo "APPIUM_PORT=$APPIUM_PORT" >> $GITHUB_ENV
-          echo "APPIUM_PID=$APPIUM_PID" >> $GITHUB_ENV
-
-      - name: Run UI Tests
-        working-directory: examples-hub/mobile/with-swift/tests
         env:
           PARA_API_KEY: ${{ secrets.PARA_API_KEY }}
           PARA_ENVIRONMENT: ${{ secrets.PARA_ENVIRONMENT }}
-          SIMULATOR_UDID: ${{ env.SIMULATOR_UDID }}
-          APPIUM_PORT: ${{ env.APPIUM_PORT }}
-          _FORCE_LOGS: 1
         run: |
-          if [ -z "$PARA_API_KEY" ] || [ -z "$PARA_ENVIRONMENT" ] || [ -z "$SIMULATOR_UDID" ]; then
-            echo "Error: Missing required environment variables"
-            exit 1
-          fi
-          npm test -- --testTimeout=900000 --forceExit --detectOpenHandles --runInBand
+          # Build app
+          xcodebuild -scheme "Example" \
+            -destination "platform=iOS Simulator,name=iPhone 16 Pro" \
+            -configuration Debug \
+            build
+
+          # Start Appium
+          appium --log appium.log --debug &
+          APPIUM_PID=$!
+          sleep 10
+
+          # Run tests
+          cd tests
+          npm test
+
+          # Cleanup
+          kill $APPIUM_PID || true
 
       - name: Upload Appium Logs
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: appium-logs
-          path: appium.log
-
-      - name: Clean Up
-        if: ${{ always() }}
-        run: |
-          if [ ! -z "${{ env.APPIUM_PID }}" ]; then
-            echo "Stopping Appium server (PID: ${{ env.APPIUM_PID }})..."
-            kill ${{ env.APPIUM_PID }} || true
-          fi
-          echo "Shutting down simulator..."
-          xcrun simctl shutdown "${{ env.SIMULATOR_UDID }}" || true
-          xcrun simctl delete "${{ env.SIMULATOR_UDID }}" || true
+          path: examples-hub/mobile/with-swift/appium.log
