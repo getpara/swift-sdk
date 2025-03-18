@@ -60,27 +60,59 @@ jobs:
           echo "DEVICE_NAME=$DEVICE_NAME" >> $GITHUB_ENV
           echo "Booted simulator with UDID: $UDID"
           
-          # Wait for simulator to fully boot
+          # Wait for simulator to fully boot with more robust checks
           echo "Waiting for simulator to boot completely..."
-          for i in {1..15}; do  # Increased from 10 to 15 attempts
+          MAX_BOOT_ATTEMPTS=20  # Increased from 15 to 20 attempts
+          BOOT_CHECK_INTERVAL=15  # 15 seconds between checks
+          
+          for i in $(seq 1 $MAX_BOOT_ATTEMPTS); do
+            echo "Boot check attempt $i of $MAX_BOOT_ATTEMPTS..."
+            
+            # Check if simulator is booted
             BOOT_STATUS=$(xcrun simctl list | grep "$UDID" | grep -o "Booted" || echo "Not booted")
+            
             if [ "$BOOT_STATUS" == "Booted" ]; then
-              echo "Simulator is booted after attempt $i"
-              break
+              # Additional check for simulator readiness
+              SIM_STATUS=$(xcrun simctl bootstatus "$UDID" 2>&1 || echo "Error")
+              
+              if [[ "$SIM_STATUS" == *"Booted"* ]]; then
+                echo "Simulator is fully booted and ready after attempt $i"
+                
+                # Verify simulator is responding to commands
+                if xcrun simctl list devices | grep "$UDID" | grep -q "Booted"; then
+                  echo "Simulator is responding to commands"
+                  break
+                fi
+              fi
             fi
-            if [ $i -eq 15 ]; then  # Increased from 10 to 15 attempts
-              echo "Failed to boot simulator after 15 attempts"
-              xcrun simctl list
+            
+            if [ $i -eq $MAX_BOOT_ATTEMPTS ]; then
+              echo "Failed to boot simulator after $MAX_BOOT_ATTEMPTS attempts"
+              echo "Current simulator status:"
+              xcrun simctl list devices
+              echo "Simulator boot status:"
+              xcrun simctl bootstatus "$UDID" || true
+              echo "System log:"
+              log show --predicate 'process == "com.apple.CoreSimulator.CoreSimulatorService"' --last 5m | tail -n 50
               exit 1
             fi
+            
             echo "Waiting for simulator to boot (attempt $i)..."
-            sleep 15  # Increased from 10 to 15 seconds
+            sleep $BOOT_CHECK_INTERVAL
           done
           
           # Additional delay for full initialization
           echo "Giving simulator additional time to initialize..."
-          sleep 120  # Increased from 60 to 120 seconds
-
+          sleep 180  # Increased from 120 to 180 seconds
+          
+          # Verify simulator is ready for testing
+          echo "Verifying simulator readiness..."
+          if ! xcrun simctl list devices | grep "$UDID" | grep -q "Booted"; then
+            echo "Simulator is not in expected state after initialization"
+            xcrun simctl list devices
+            exit 1
+          fi
+          
           # Clean up any existing WDA processes
           echo "Cleaning up existing WDA processes..."
           pkill -f "WebDriverAgent" || true
