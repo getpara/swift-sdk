@@ -191,6 +191,8 @@ jobs:
             echo "Error: Missing required environment variables"; exit 1
           fi
           echo "Simulator status:"
+          xcrun simctl erase $SIMULATOR_UDID
+          xcrun simctl bootstatus $SIMULATOR_UDID
           xcrun simctl list | grep "$SIMULATOR_UDID"
           echo "Appium status:"
           curl -s http://localhost:$APPIUM_PORT/status | cat
