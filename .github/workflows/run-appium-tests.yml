@@ -36,6 +36,10 @@ jobs:
       - name: Install Appium
         run: npm install -g appium
 
+      - name: Install Test Dependencies
+        working-directory: examples-hub/mobile/with-swift/tests
+        run: npm install
+
       - name: Build & Run Tests
         working-directory: examples-hub/mobile/with-swift
         env:
