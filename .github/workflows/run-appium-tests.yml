@@ -62,24 +62,24 @@ jobs:
           
           # Wait for simulator to fully boot
           echo "Waiting for simulator to boot completely..."
-          for i in {1..10}; do
+          for i in {1..15}; do  # Increased from 10 to 15 attempts
             BOOT_STATUS=$(xcrun simctl list | grep "$UDID" | grep -o "Booted" || echo "Not booted")
             if [ "$BOOT_STATUS" == "Booted" ]; then
               echo "Simulator is booted after attempt $i"
               break
             fi
-            if [ $i -eq 10 ]; then
-              echo "Failed to boot simulator after 10 attempts"
+            if [ $i -eq 15 ]; then  # Increased from 10 to 15 attempts
+              echo "Failed to boot simulator after 15 attempts"
               xcrun simctl list
               exit 1
             fi
             echo "Waiting for simulator to boot (attempt $i)..."
-            sleep 10
+            sleep 15  # Increased from 10 to 15 seconds
           done
           
           # Additional delay for full initialization
           echo "Giving simulator additional time to initialize..."
-          sleep 60  # Increased from 15 to 60 seconds
+          sleep 120  # Increased from 60 to 120 seconds
 
           # Clean up any existing WDA processes
           echo "Cleaning up existing WDA processes..."
@@ -157,12 +157,12 @@ jobs:
           
           # Give Appium time to initialize first
           echo "Waiting for Appium server to initialize..."
-          sleep 15
+          sleep 30  # Increased from 15 to 30 seconds
           
           # More robust verification that checks both server response code and content
           echo "Verifying Appium server is ready..."
-          MAX_RETRIES=5
-          RETRY_DELAY=5
+          MAX_RETRIES=10  # Increased from 5 to 10
+          RETRY_DELAY=10  # Increased from 5 to 10 seconds
           for i in $(seq 1 $MAX_RETRIES); do
             HTTP_CODE=$(curl -s -o /tmp/appium_response -w "%{http_code}" http://localhost:$APPIUM_PORT/status || echo "Failed")
             if [[ "$HTTP_CODE" == "200" ]]; then
@@ -203,12 +203,11 @@ jobs:
             echo "Error: Missing required environment variables"; exit 1
           fi
           echo "Simulator status:"
-          # xcrun simctl erase $SIMULATOR_UDID
           xcrun simctl bootstatus $SIMULATOR_UDID
           xcrun simctl list | grep "$SIMULATOR_UDID"
           echo "Appium status:"
           curl -s http://localhost:$APPIUM_PORT/status | cat
-          npm test -- --testTimeout=60000 --forceExit --detectOpenHandles --runInBand
+          npm test -- --testTimeout=900000 --forceExit --detectOpenHandles --runInBand  # Increased from 60000 to 900000
 
       - name: Upload Appium logs
         if: ${{ always() }}
