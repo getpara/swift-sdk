@@ -71,9 +71,26 @@ jobs:
       - name: Build and install app
         working-directory: examples-hub/mobile/with-swift
         run: |
-          xcodebuild -scheme "Example" -destination "id=${{ env.SIMULATOR_UDID }}" build
+          # Build with explicit configuration and build directory
+          xcodebuild -scheme "Example" \
+            -destination "id=${{ env.SIMULATOR_UDID }}" \
+            -configuration Debug \
+            -derivedDataPath build \
+            -buildDir build \
+            build | xcpretty
+          
+          # List contents of build directory for debugging
+          echo "Contents of build directory:"
+          ls -la build/Debug-iphonesimulator/
+          
           # Install the app to simulator
-          xcrun simctl install booted build/Debug-iphonesimulator/Example.app
+          if [ -d "build/Debug-iphonesimulator/Example.app" ]; then
+            echo "Found Example.app, attempting to install..."
+            xcrun simctl install booted build/Debug-iphonesimulator/Example.app
+          else
+            echo "Error: Example.app not found in build directory"
+            exit 1
+          fi
 
       - name: Install test dependencies
         working-directory: examples-hub/mobile/with-swift/tests
