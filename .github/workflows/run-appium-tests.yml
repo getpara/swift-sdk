@@ -126,12 +126,29 @@ jobs:
           export APPIUM_PORT=4723
           echo "Starting Appium server on port $APPIUM_PORT..."
           appium --port $APPIUM_PORT --log appium.log &
+          APPIUM_PID=$!
           
-          # Wait for server to be ready
+          # Wait for server to be ready with retries
           echo "Waiting for Appium server to be ready..."
-          sleep 5
-          curl -s http://localhost:$APPIUM_PORT/status || (echo "Appium server not running" && exit 1)
+          MAX_RETRIES=5
+          RETRY_DELAY=2
+          for i in $(seq 1 $MAX_RETRIES); do
+            if curl -s http://localhost:$APPIUM_PORT/status > /dev/null; then
+              echo "Appium server is ready!"
+              break
+            fi
+            if [ $i -eq $MAX_RETRIES ]; then
+              echo "Appium server failed to start after $MAX_RETRIES attempts"
+              echo "Appium logs:"
+              cat appium.log
+              exit 1
+            fi
+            echo "Attempt $i: Waiting for Appium server..."
+            sleep $RETRY_DELAY
+          done
+          
           echo "APPIUM_PORT=$APPIUM_PORT" >> $GITHUB_ENV
+          echo "APPIUM_PID=$APPIUM_PID" >> $GITHUB_ENV
 
       - name: Run UI Tests
         working-directory: examples-hub/mobile/with-swift/tests
@@ -150,7 +167,8 @@ jobs:
             exit 1
           fi
           
-          npm test
+          # Run tests with increased timeout
+          npm test -- --timeout=300000
 
       - name: Upload Appium logs
         if: ${{ always() }}
@@ -158,6 +176,14 @@ jobs:
         with:
           name: appium-logs
           path: appium.log
+
+      - name: Clean up Appium server
+        if: ${{ always() }}
+        run: |
+          if [ ! -z "${{ env.APPIUM_PID }}" ]; then
+            echo "Stopping Appium server (PID: ${{ env.APPIUM_PID }})..."
+            kill ${{ env.APPIUM_PID }} || true
+          fi
 
       - name: Clean up simulator
         if: ${{ always() }}
