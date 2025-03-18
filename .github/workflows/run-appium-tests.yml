@@ -56,7 +56,7 @@ jobs:
         run: |
           PR_BRANCH="${{ github.head_ref }}"
           echo "Updating swift-sdk branch to $PR_BRANCH in project.pbxproj"
-          sed -i '' '/repositoryURL = "https:\/\/github.com\/getpara\/swift-sdk"/,/kind = branch;/ s/\(branch = \)[^;]*;/\1'"$PR_BRANCH"';/' example.xcodeproj/project.pbxproj
+          sed -i '' -E 's|branch = [^;]*|branch = '"$PR_BRANCH"'|' example.xcodeproj/project.pbxproj
           echo "Updated swift-sdk dependency:"
           grep -A 5 'XCRemoteSwiftPackageReference "swift-sdk"' example.xcodeproj/project.pbxproj
 
