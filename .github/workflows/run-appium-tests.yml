@@ -98,6 +98,7 @@ jobs:
           
           # Build with explicit configuration and build directory
           echo "Building Example app..."
+          set -e -o pipefail
           xcodebuild -scheme "Example" \
             -destination "id=${{ env.SIMULATOR_UDID }}" \
             -configuration Debug \
@@ -124,14 +125,11 @@ jobs:
           fi
           
           echo "Found app bundle at: $APP_PATH"
-          
-          # Install the app to simulator
-          echo "Installing app to simulator..."
+          ls -l "$APP_PATH"  # Check contents of the app bundle
           xcrun simctl install booted "$APP_PATH"
-          
-          # Verify installation
-          echo "Verifying app installation..."
-          xcrun simctl listapps booted | grep -i "example" || echo "Warning: App may not be properly installed"
+          echo "Installed app. Listing installed apps:"
+          xcrun simctl listapps booted | grep -i "com.usecapsule.example.swift" || { echo "Error: App not found in simulator"; exit 1; }
+          xcrun simctl launch booted com.usecapsule.example.swift || echo "Warning: App failed to launch manually"
 
       - name: Install test dependencies
         working-directory: examples-hub/mobile/with-swift/tests
@@ -180,32 +178,23 @@ jobs:
           echo "APPIUM_PORT=$APPIUM_PORT" >> $GITHUB_ENV
           echo "APPIUM_PID=$APPIUM_PID" >> $GITHUB_ENV
 
-      - name: Run UI Tests
-        working-directory: examples-hub/mobile/with-swift/tests
-        env:
-          PARA_API_KEY: ${{ secrets.PARA_API_KEY }}
-          PARA_ENVIRONMENT: ${{ secrets.PARA_ENVIRONMENT }}
-          SIMULATOR_UDID: ${{ env.SIMULATOR_UDID }}
-          APPIUM_PORT: ${{ env.APPIUM_PORT }}
-        run: |
-          # Validate required environment variables
-          if [ -z "$PARA_API_KEY" ] || [ -z "$PARA_ENVIRONMENT" ] || [ -z "$SIMULATOR_UDID" ]; then
-            echo "Error: Missing required environment variables"
-            [ -z "$PARA_API_KEY" ] && echo "PARA_API_KEY is not set"
-            [ -z "$PARA_ENVIRONMENT" ] && echo "PARA_ENVIRONMENT is not set"
-            [ -z "$SIMULATOR_UDID" ] && echo "SIMULATOR_UDID is not set"
-            exit 1
-          fi
-          
-          # Pre-test verification
-          echo "Verifying Appium server status before running tests..."
-          curl -s http://localhost:$APPIUM_PORT/status | cat
-          
-          echo "Verifying simulator status before running tests..."
-          xcrun simctl list | grep "$SIMULATOR_UDID"
-          
-          # Run tests with increased timeout
-          npm test -- --testTimeout=300000 --forceExit --detectOpenHandles --runInBand
+        - name: Run UI Tests
+          working-directory: examples-hub/mobile/with-swift/tests
+          env:
+            PARA_API_KEY: ${{ secrets.PARA_API_KEY }}
+            PARA_ENVIRONMENT: ${{ secrets.PARA_ENVIRONMENT }}
+            SIMULATOR_UDID: ${{ env.SIMULATOR_UDID }}
+            APPIUM_PORT: ${{ env.APPIUM_PORT }}
+            _FORCE_LOGS: 1
+          run: |
+            if [ -z "$PARA_API_KEY" ] || [ -z "$PARA_ENVIRONMENT" ] || [ -z "$SIMULATOR_UDID" ]; then
+              echo "Error: Missing required environment variables"; exit 1
+            fi
+            echo "Simulator status:"
+            xcrun simctl list | grep "$SIMULATOR_UDID"
+            echo "Appium status:"
+            curl -s http://localhost:$APPIUM_PORT/status | cat
+            npm test -- --testTimeout=60000 --forceExit --detectOpenHandles --runInBand
 
       - name: Upload Appium logs
         if: ${{ always() }}
