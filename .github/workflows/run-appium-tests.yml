@@ -20,6 +20,14 @@ jobs:
           echo "PR Branch: ${{ github.head_ref }}"
           echo "PR Commit SHA: ${{ github.event.pull_request.head.sha }}"
 
+      - name: Set up Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.2'
+
+      - name: Verify Xcode version
+        run: xcodebuild -version
+
       - name: Checkout examples-hub sample app
         uses: actions/checkout@v3
         with:
