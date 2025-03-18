@@ -52,7 +52,7 @@ jobs:
         run: |
           # Create and boot simulator
           DEVICE_NAME="iPhone 16 Pro"
-          RUNTIME="iOS 18.3.1"
+          RUNTIME="iOS 18.2"
           UDID=$(xcrun simctl create "$DEVICE_NAME" "$DEVICE_NAME" --runtime "$RUNTIME")
           echo "Created simulator: $UDID with runtime: $RUNTIME"
           xcrun simctl boot "$UDID"
