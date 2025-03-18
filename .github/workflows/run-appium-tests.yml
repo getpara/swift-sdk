@@ -52,8 +52,9 @@ jobs:
         run: |
           # Create and boot simulator
           DEVICE_NAME="iPhone 16 Pro"
-          UDID=$(xcrun simctl create "$DEVICE_NAME" "$DEVICE_NAME")
-          echo "Created simulator: $UDID"
+          RUNTIME="iOS 18.3.1"
+          UDID=$(xcrun simctl create "$DEVICE_NAME" "$DEVICE_NAME" --runtime "$RUNTIME")
+          echo "Created simulator: $UDID with runtime: $RUNTIME"
           xcrun simctl boot "$UDID"
           echo "SIMULATOR_UDID=$UDID" >> $GITHUB_ENV
           echo "DEVICE_NAME=$DEVICE_NAME" >> $GITHUB_ENV
