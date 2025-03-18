@@ -59,9 +59,26 @@ jobs:
           echo "DEVICE_NAME=$DEVICE_NAME" >> $GITHUB_ENV
           echo "Booted simulator with UDID: $UDID"
           
-          # Wait for simulator to fully boot
+          # Wait for simulator to fully boot with verification
           echo "Waiting for simulator to boot completely..."
-          sleep 5
+          for i in {1..10}; do
+            BOOT_STATUS=$(xcrun simctl list | grep "$UDID" | grep -o "Booted" || echo "Not booted")
+            if [ "$BOOT_STATUS" == "Booted" ]; then
+              echo "Simulator is booted after attempt $i"
+              break
+            fi
+            if [ $i -eq 10 ]; then
+              echo "Failed to boot simulator after 10 attempts"
+              xcrun simctl list
+              exit 1
+            fi
+            echo "Waiting for simulator to boot (attempt $i)..."
+            sleep 10
+          done
+          
+          # Additional wait to ensure simulator is fully initialized
+          echo "Giving simulator additional time to initialize..."
+          sleep 15
 
       - name: Update swift-sdk branch in project.pbxproj
         if: ${{ github.event_name == 'pull_request' }}
@@ -125,27 +142,38 @@ jobs:
           # Start Appium on a specific port
           export APPIUM_PORT=4723
           echo "Starting Appium server on port $APPIUM_PORT..."
-          appium --port $APPIUM_PORT --log appium.log &
+          appium --port $APPIUM_PORT --log appium.log --debug &
           APPIUM_PID=$!
           
-          # Wait for server to be ready with retries
+          # Wait for server to be ready with improved verification
           echo "Waiting for Appium server to be ready..."
-          MAX_RETRIES=5
-          RETRY_DELAY=2
+          MAX_RETRIES=10
+          RETRY_DELAY=5
           for i in $(seq 1 $MAX_RETRIES); do
-            if curl -s http://localhost:$APPIUM_PORT/status > /dev/null; then
-              echo "Appium server is ready!"
+            SERVER_STATUS=$(curl -s http://localhost:$APPIUM_PORT/status 2>/dev/null || echo "Failed")
+            if [[ "$SERVER_STATUS" == *"status"* ]]; then
+              echo "Appium server is ready on attempt $i!"
+              echo "Appium server status:"
+              echo "$SERVER_STATUS" | grep -o '"status":[0-9]*' || echo "Status not found in response"
               break
             fi
             if [ $i -eq $MAX_RETRIES ]; then
               echo "Appium server failed to start after $MAX_RETRIES attempts"
               echo "Appium logs:"
               cat appium.log
+              echo "Process status:"
+              ps aux | grep appium
+              echo "Port status:"
+              lsof -i :$APPIUM_PORT || echo "No process using port $APPIUM_PORT"
               exit 1
             fi
-            echo "Attempt $i: Waiting for Appium server..."
+            echo "Attempt $i: Waiting for Appium server... (will retry in $RETRY_DELAY seconds)"
             sleep $RETRY_DELAY
           done
+          
+          # Additional wait to ensure Appium is fully initialized
+          echo "Giving Appium server additional time to initialize..."
+          sleep 10
           
           echo "APPIUM_PORT=$APPIUM_PORT" >> $GITHUB_ENV
           echo "APPIUM_PID=$APPIUM_PID" >> $GITHUB_ENV
@@ -167,8 +195,15 @@ jobs:
             exit 1
           fi
           
+          # Pre-test verification
+          echo "Verifying Appium server status before running tests..."
+          curl -s http://localhost:$APPIUM_PORT/status | cat
+          
+          echo "Verifying simulator status before running tests..."
+          xcrun simctl list | grep "$SIMULATOR_UDID"
+          
           # Run tests with increased timeout
-          npm test -- --timeout=300000
+          npm test -- --testTimeout=300000 --forceExit
 
       - name: Upload Appium logs
         if: ${{ always() }}
