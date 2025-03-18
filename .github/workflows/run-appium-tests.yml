@@ -81,6 +81,17 @@ jobs:
           echo "Giving simulator additional time to initialize..."
           sleep 60  # Increased from 15 to 60 seconds
 
+          # Clean up any existing WDA processes
+          echo "Cleaning up existing WDA processes..."
+          pkill -f "WebDriverAgent" || true
+          rm -rf ~/Library/Developer/Xcode/DerivedData/WebDriverAgent-* || true
+          
+          # Kill any existing WDA processes on port 8100
+          lsof -ti:8100 | xargs kill -9 || true
+          
+          # Clear derived data for WDA
+          rm -rf ~/Library/Developer/Xcode/DerivedData/WebDriverAgent-* || true
+
       - name: Update swift-sdk branch in project.pbxproj
         if: ${{ github.event_name == 'pull_request' }}
         working-directory: examples-hub/mobile/with-swift
