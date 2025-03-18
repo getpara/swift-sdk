@@ -86,7 +86,7 @@ jobs:
           which xcpretty || gem install xcpretty
           echo "Building Example app..."
           set -e -o pipefail
-          xcodebuild -scheme "example" \
+          xcodebuild -scheme "Example" \
             -destination "id=${{ env.SIMULATOR_UDID }}" \
             -configuration Debug \
             -derivedDataPath ./DerivedData \
