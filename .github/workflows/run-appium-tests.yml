@@ -67,7 +67,6 @@ jobs:
             sleep 15
           done
           # Additional initialization time
-          sleep 180
           # Clean up any existing WDA processes
           pkill -f WebDriverAgent || true
           lsof -ti:8100 | xargs kill -9 || true
@@ -87,12 +86,12 @@ jobs:
           which xcpretty || gem install xcpretty
           echo "Building Example app..."
           set -e -o pipefail
-          xcodebuild -scheme "Example" \
+          xcodebuild -scheme "example" \
             -destination "id=${{ env.SIMULATOR_UDID }}" \
             -configuration Debug \
             -derivedDataPath ./DerivedData \
             build | xcpretty
-          APP_PATH=$(find ./DerivedData -name "Example.app" -type d | head -n 1)
+          APP_PATH=$(find ./DerivedData -name "example.app" -type d | head -n 1)
           if [ -z "$APP_PATH" ]; then
             echo "Error: App bundle not found"
             exit 1
@@ -114,9 +113,9 @@ jobs:
             "port": 4723,
             "log": "appium.log",
             "debug": true,
-            "wdaStartupRetries": 6,
-            "wdaStartupRetryInterval": 30000,
-            "wdaConnectionTimeout": 180000,
+            "wdaStartupRetries": 8,
+            "wdaStartupRetryInterval": 60000,
+            "wdaConnectionTimeout": 300000,
             "wdaLocalPort": 8100,
             "wdaUseNewWDA": true,
             "wdaUseExistingWDA": false
