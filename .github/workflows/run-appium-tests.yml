@@ -56,7 +56,12 @@ jobs:
           echo "Created simulator: $UDID"
           xcrun simctl boot "$UDID"
           echo "SIMULATOR_UDID=$UDID" >> $GITHUB_ENV
+          echo "DEVICE_NAME=$DEVICE_NAME" >> $GITHUB_ENV
           echo "Booted simulator with UDID: $UDID"
+          
+          # Wait for simulator to fully boot
+          echo "Waiting for simulator to boot completely..."
+          sleep 5
 
       - name: Update swift-sdk branch in project.pbxproj
         if: ${{ github.event_name == 'pull_request' }}
@@ -71,33 +76,62 @@ jobs:
       - name: Build and install app
         working-directory: examples-hub/mobile/with-swift
         run: |
+          # Install xcpretty if needed
+          which xcpretty || gem install xcpretty
+          
           # Build with explicit configuration and build directory
+          echo "Building Example app..."
           xcodebuild -scheme "Example" \
             -destination "id=${{ env.SIMULATOR_UDID }}" \
             -configuration Debug \
-            -derivedDataPath build \
-            -buildDir build \
+            -derivedDataPath ./DerivedData \
             build | xcpretty
           
-          # List contents of build directory for debugging
-          echo "Contents of build directory:"
-          ls -la build/Debug-iphonesimulator/
+          # Find the app bundle (check both potential locations)
+          echo "Searching for app bundle..."
+          APP_PATH=""
+          
+          if [ -d "./DerivedData/Build/Products/Debug-iphonesimulator/Example.app" ]; then
+            APP_PATH="./DerivedData/Build/Products/Debug-iphonesimulator/Example.app"
+          elif [ -d "./build/Debug-iphonesimulator/Example.app" ]; then
+            APP_PATH="./build/Debug-iphonesimulator/Example.app"
+          else
+            # Search for any .app bundle
+            APP_PATH=$(find ./DerivedData -name "*.app" -type d | head -n 1)
+            if [ -z "$APP_PATH" ]; then
+              echo "Contents of DerivedData directory:"
+              find ./DerivedData -type d -maxdepth 5
+              echo "Error: Could not find any .app bundle in build directories"
+              exit 1
+            fi
+          fi
+          
+          echo "Found app bundle at: $APP_PATH"
           
           # Install the app to simulator
-          if [ -d "build/Debug-iphonesimulator/Example.app" ]; then
-            echo "Found Example.app, attempting to install..."
-            xcrun simctl install booted build/Debug-iphonesimulator/Example.app
-          else
-            echo "Error: Example.app not found in build directory"
-            exit 1
-          fi
+          echo "Installing app to simulator..."
+          xcrun simctl install booted "$APP_PATH"
+          
+          # Verify installation
+          echo "Verifying app installation..."
+          xcrun simctl listapps booted | grep -i "example" || echo "Warning: App may not be properly installed"
 
       - name: Install test dependencies
         working-directory: examples-hub/mobile/with-swift/tests
         run: npm install
 
       - name: Start Appium server
-        run: appium --log appium.log &
+        run: |
+          # Start Appium on a specific port
+          export APPIUM_PORT=4723
+          echo "Starting Appium server on port $APPIUM_PORT..."
+          appium --port $APPIUM_PORT --log appium.log &
+          
+          # Wait for server to be ready
+          echo "Waiting for Appium server to be ready..."
+          sleep 5
+          curl -s http://localhost:$APPIUM_PORT/status || (echo "Appium server not running" && exit 1)
+          echo "APPIUM_PORT=$APPIUM_PORT" >> $GITHUB_ENV
 
       - name: Run UI Tests
         working-directory: examples-hub/mobile/with-swift/tests
@@ -105,7 +139,18 @@ jobs:
           PARA_API_KEY: ${{ secrets.PARA_API_KEY }}
           PARA_ENVIRONMENT: ${{ secrets.PARA_ENVIRONMENT }}
           SIMULATOR_UDID: ${{ env.SIMULATOR_UDID }}
-        run: npm test
+          APPIUM_PORT: ${{ env.APPIUM_PORT }}
+        run: |
+          # Validate required environment variables
+          if [ -z "$PARA_API_KEY" ] || [ -z "$PARA_ENVIRONMENT" ] || [ -z "$SIMULATOR_UDID" ]; then
+            echo "Error: Missing required environment variables"
+            [ -z "$PARA_API_KEY" ] && echo "PARA_API_KEY is not set"
+            [ -z "$PARA_ENVIRONMENT" ] && echo "PARA_ENVIRONMENT is not set"
+            [ -z "$SIMULATOR_UDID" ] && echo "SIMULATOR_UDID is not set"
+            exit 1
+          fi
+          
+          npm test
 
       - name: Upload Appium logs
         if: ${{ always() }}
@@ -117,5 +162,6 @@ jobs:
       - name: Clean up simulator
         if: ${{ always() }}
         run: |
-          xcrun simctl shutdown "iPhone 16 Pro" || true
-          xcrun simctl delete "iPhone 16 Pro" || true
+          echo "Cleaning up simulator with UDID: ${{ env.SIMULATOR_UDID }}"
+          xcrun simctl shutdown "${{ env.SIMULATOR_UDID }}" || true
+          xcrun simctl delete "${{ env.SIMULATOR_UDID }}" || true
