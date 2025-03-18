@@ -71,7 +71,7 @@ jobs:
       - name: Build and install app
         working-directory: examples-hub/mobile/with-swift
         run: |
-          xcodebuild -scheme "Example" -destination 'platform=iOS Simulator,OS=latest,name=iPhone 16 Pro' build
+          xcodebuild -scheme "Example" -destination "id=${{ env.SIMULATOR_UDID }}" build
           # Install the app to simulator
           xcrun simctl install booted build/Debug-iphonesimulator/Example.app
 
