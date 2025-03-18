@@ -145,20 +145,25 @@ jobs:
           appium --port $APPIUM_PORT --log appium.log --debug &
           APPIUM_PID=$!
           
-          # Wait for server to be ready with improved verification
-          echo "Waiting for Appium server to be ready..."
-          MAX_RETRIES=10
+          # Give Appium time to initialize first
+          echo "Waiting for Appium server to initialize..."
+          sleep 15
+          
+          # More robust verification that checks both server response code and content
+          echo "Verifying Appium server is ready..."
+          MAX_RETRIES=5
           RETRY_DELAY=5
           for i in $(seq 1 $MAX_RETRIES); do
-            SERVER_STATUS=$(curl -s http://localhost:$APPIUM_PORT/status 2>/dev/null || echo "Failed")
-            if [[ "$SERVER_STATUS" == *"status"* ]]; then
-              echo "Appium server is ready on attempt $i!"
-              echo "Appium server status:"
-              echo "$SERVER_STATUS" | grep -o '"status":[0-9]*' || echo "Status not found in response"
+            HTTP_CODE=$(curl -s -o /tmp/appium_response -w "%{http_code}" http://localhost:$APPIUM_PORT/status || echo "Failed")
+            if [[ "$HTTP_CODE" == "200" ]]; then
+              echo "Appium server responded with HTTP 200 on attempt $i!"
+              cat /tmp/appium_response
+              echo "Appium server is ready!"
               break
             fi
+            
             if [ $i -eq $MAX_RETRIES ]; then
-              echo "Appium server failed to start after $MAX_RETRIES attempts"
+              echo "Appium server failed to start properly after $MAX_RETRIES attempts"
               echo "Appium logs:"
               cat appium.log
               echo "Process status:"
@@ -167,13 +172,10 @@ jobs:
               lsof -i :$APPIUM_PORT || echo "No process using port $APPIUM_PORT"
               exit 1
             fi
+            
             echo "Attempt $i: Waiting for Appium server... (will retry in $RETRY_DELAY seconds)"
             sleep $RETRY_DELAY
           done
-          
-          # Additional wait to ensure Appium is fully initialized
-          echo "Giving Appium server additional time to initialize..."
-          sleep 10
           
           echo "APPIUM_PORT=$APPIUM_PORT" >> $GITHUB_ENV
           echo "APPIUM_PID=$APPIUM_PID" >> $GITHUB_ENV
@@ -203,7 +205,7 @@ jobs:
           xcrun simctl list | grep "$SIMULATOR_UDID"
           
           # Run tests with increased timeout
-          npm test -- --testTimeout=300000 --forceExit
+          npm test -- --testTimeout=300000 --forceExit --detectOpenHandles --runInBand
 
       - name: Upload Appium logs
         if: ${{ always() }}
