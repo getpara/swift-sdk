@@ -79,36 +79,18 @@ jobs:
           
           # Additional delay for full initialization
           echo "Giving simulator additional time to initialize..."
-          sleep 60
+          sleep 60  # Increased from 15 to 60 seconds
 
-          # Clean up any existing WDA processes and derived data
-          echo "Cleaning up existing WDA processes and derived data..."
+          # Clean up any existing WDA processes
+          echo "Cleaning up existing WDA processes..."
           pkill -f "WebDriverAgent" || true
           rm -rf ~/Library/Developer/Xcode/DerivedData/WebDriverAgent-* || true
-          rm -rf ~/wda-derived-data || true
           
           # Kill any existing WDA processes on port 8100
           lsof -ti:8100 | xargs kill -9 || true
           
-          # Create fresh WDA derived data directory
-          mkdir -p ~/wda-derived-data
-          
-          # Set WDA derived data path
-          echo "WDA_DERIVED_DATA=~/wda-derived-data" >> $GITHUB_ENV
-          
-          # Clean and rebuild WDA
-          echo "Cleaning and rebuilding WDA..."
-          cd ~/.appium/node_modules/appium-xcuitest-driver/node_modules/appium-webdriveragent
-          xcodebuild clean -project WebDriverAgent.xcodeproj -scheme WebDriverAgentRunner -destination "platform=iOS Simulator,id=$UDID" || true
-          xcodebuild clean -project WebDriverAgent.xcodeproj -scheme WebDriverAgentLib -destination "platform=iOS Simulator,id=$UDID" || true
-          
-          # Build WDA with explicit derived data path
-          echo "Building WDA..."
-          xcodebuild -project WebDriverAgent.xcodeproj -scheme WebDriverAgentRunner -destination "platform=iOS Simulator,id=$UDID" -derivedDataPath ~/wda-derived-data build || true
-          xcodebuild -project WebDriverAgent.xcodeproj -scheme WebDriverAgentLib -destination "platform=iOS Simulator,id=$UDID" -derivedDataPath ~/wda-derived-data build || true
-          
-          # Return to original directory
-          cd -
+          # Clear derived data for WDA
+          rm -rf ~/Library/Developer/Xcode/DerivedData/WebDriverAgent-* || true
 
       - name: Update swift-sdk branch in project.pbxproj
         if: ${{ github.event_name == 'pull_request' }}
@@ -170,45 +152,24 @@ jobs:
           # Start Appium on a specific port
           export APPIUM_PORT=4723
           echo "Starting Appium server on port $APPIUM_PORT..."
-          
-          # Ensure WDA is not running
-          pkill -f "WebDriverAgent" || true
-          lsof -ti:8100 | xargs kill -9 || true
-          
-          # Start Appium with explicit WDA derived data path
-          WDA_DERIVED_DATA=~/wda-derived-data appium --port $APPIUM_PORT --log appium.log --debug &
+          appium --port $APPIUM_PORT --log appium.log --debug &
           APPIUM_PID=$!
           
           # Give Appium time to initialize first
           echo "Waiting for Appium server to initialize..."
-          sleep 30
+          sleep 15
           
           # More robust verification that checks both server response code and content
           echo "Verifying Appium server is ready..."
           MAX_RETRIES=5
-          RETRY_DELAY=10
+          RETRY_DELAY=5
           for i in $(seq 1 $MAX_RETRIES); do
             HTTP_CODE=$(curl -s -o /tmp/appium_response -w "%{http_code}" http://localhost:$APPIUM_PORT/status || echo "Failed")
             if [[ "$HTTP_CODE" == "200" ]]; then
               echo "Appium server responded with HTTP 200 on attempt $i!"
               cat /tmp/appium_response
-              
-              # Verify WDA is running
-              WDA_RUNNING=$(lsof -i :8100 | grep LISTEN || echo "")
-              if [ -n "$WDA_RUNNING" ]; then
-                echo "WDA is running on port 8100"
-                break
-              else
-                echo "WDA is not running yet, will retry..."
-                if [ $i -eq $MAX_RETRIES ]; then
-                  echo "WDA failed to start after $MAX_RETRIES attempts"
-                  echo "Appium logs:"
-                  cat appium.log
-                  exit 1
-                fi
-                sleep $RETRY_DELAY
-                continue
-              fi
+              echo "Appium server is ready!"
+              break
             fi
             
             if [ $i -eq $MAX_RETRIES ]; then
