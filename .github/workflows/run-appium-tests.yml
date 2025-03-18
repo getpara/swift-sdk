@@ -178,23 +178,23 @@ jobs:
           echo "APPIUM_PORT=$APPIUM_PORT" >> $GITHUB_ENV
           echo "APPIUM_PID=$APPIUM_PID" >> $GITHUB_ENV
 
-        - name: Run UI Tests
-          working-directory: examples-hub/mobile/with-swift/tests
-          env:
-            PARA_API_KEY: ${{ secrets.PARA_API_KEY }}
-            PARA_ENVIRONMENT: ${{ secrets.PARA_ENVIRONMENT }}
-            SIMULATOR_UDID: ${{ env.SIMULATOR_UDID }}
-            APPIUM_PORT: ${{ env.APPIUM_PORT }}
-            _FORCE_LOGS: 1
-          run: |
-            if [ -z "$PARA_API_KEY" ] || [ -z "$PARA_ENVIRONMENT" ] || [ -z "$SIMULATOR_UDID" ]; then
-              echo "Error: Missing required environment variables"; exit 1
-            fi
-            echo "Simulator status:"
-            xcrun simctl list | grep "$SIMULATOR_UDID"
-            echo "Appium status:"
-            curl -s http://localhost:$APPIUM_PORT/status | cat
-            npm test -- --testTimeout=60000 --forceExit --detectOpenHandles --runInBand
+      - name: Run UI Tests
+        working-directory: examples-hub/mobile/with-swift/tests
+        env:
+          PARA_API_KEY: ${{ secrets.PARA_API_KEY }}
+          PARA_ENVIRONMENT: ${{ secrets.PARA_ENVIRONMENT }}
+          SIMULATOR_UDID: ${{ env.SIMULATOR_UDID }}
+          APPIUM_PORT: ${{ env.APPIUM_PORT }}
+          _FORCE_LOGS: 1
+        run: |
+          if [ -z "$PARA_API_KEY" ] || [ -z "$PARA_ENVIRONMENT" ] || [ -z "$SIMULATOR_UDID" ]; then
+            echo "Error: Missing required environment variables"; exit 1
+          fi
+          echo "Simulator status:"
+          xcrun simctl list | grep "$SIMULATOR_UDID"
+          echo "Appium status:"
+          curl -s http://localhost:$APPIUM_PORT/status | cat
+          npm test -- --testTimeout=60000 --forceExit --detectOpenHandles --runInBand
 
       - name: Upload Appium logs
         if: ${{ always() }}
