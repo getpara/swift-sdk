@@ -1,0 +1,96 @@
+name: Run E2E Tests for swift-sdk PR
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  ui-tests:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout swift-sdk (this repo)
+        uses: actions/checkout@v3
+
+      - name: Get PR information
+        if: ${{ github.event_name == 'pull_request' }}
+        run: |
+          echo "PR Branch: ${{ github.head_ref }}"
+          echo "PR Commit SHA: ${{ github.event.pull_request.head.sha }}"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Appium
+        run: |
+          npm install -g appium
+          appium driver install xcuitest
+          appium driver install uiautomator2
+
+      - name: Set up iOS Simulator
+        run: |
+          # Create and boot simulator
+          xcrun simctl create "iPhone 16 Pro" "iPhone 16 Pro"
+          xcrun simctl boot "iPhone 16 Pro"
+          
+          # Get simulator UDID
+          SIMULATOR_UDID=$(xcrun simctl list devices | grep "iPhone 16 Pro" | grep -E -o -i "([0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12})")
+          echo "SIMULATOR_UDID=$SIMULATOR_UDID" >> $GITHUB_ENV
+
+      - name: Checkout examples-hub sample app
+        uses: actions/checkout@v3
+        with:
+          repository: getpara/examples-hub
+          token: ${{ secrets.GITHUB_TOKEN }}
+          path: examples-hub
+          ref: tyson/appium-testing
+
+      - name: Update swift-sdk branch in project.pbxproj
+        if: ${{ github.event_name == 'pull_request' }}
+        working-directory: examples-hub/mobile/with-swift
+        run: |
+          PR_BRANCH="${{ github.head_ref }}"
+          echo "Updating swift-sdk branch to $PR_BRANCH in project.pbxproj"
+          sed -i '' '/repositoryURL = "https:\/\/github.com\/getpara\/swift-sdk"/,/kind = branch;/ s/\(branch = \)[^;]*;/\1'"$PR_BRANCH"';/' example.xcodeproj/project.pbxproj
+          echo "Updated swift-sdk dependency:"
+          grep -A 5 'XCRemoteSwiftPackageReference "swift-sdk"' example.xcodeproj/project.pbxproj
+
+      - name: Build and install app
+        working-directory: examples-hub/mobile/with-swift
+        run: |
+          xcodebuild -scheme "Example" -destination 'platform=iOS Simulator,OS=latest,name=iPhone 16 Pro' build
+          # Install the app to simulator
+          xcrun simctl install booted build/Debug-iphonesimulator/Example.app
+
+      - name: Install test dependencies
+        working-directory: examples-hub/mobile/with-swift/tests
+        run: npm install
+
+      - name: Start Appium server
+        run: appium --log appium.log &
+
+      - name: Run UI Tests
+        working-directory: examples-hub/mobile/with-swift/tests
+        env:
+          PARA_API_KEY: ${{ secrets.PARA_API_KEY }}
+          PARA_ENVIRONMENT: ${{ secrets.PARA_ENVIRONMENT }}
+          SIMULATOR_UDID: ${{ env.SIMULATOR_UDID }}
+        run: npm test
+
+      - name: Upload Appium logs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: appium-logs
+          path: appium.log
+
+      - name: Clean up simulator
+        if: ${{ always() }}
+        run: |
+          xcrun simctl shutdown "iPhone 16 Pro" || true
+          xcrun simctl delete "iPhone 16 Pro" || true

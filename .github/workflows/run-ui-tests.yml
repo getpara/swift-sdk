@@ -20,27 +20,13 @@ jobs:
           echo "PR Branch: ${{ github.head_ref }}"
           echo "PR Commit SHA: ${{ github.event.pull_request.head.sha }}"
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - name: Set up Xcode
+        uses: maxim-lobanov/setup-xcode@v1
         with:
-          node-version: '20'
-          cache: 'npm'
+          xcode-version: '16.2'
 
-      - name: Install Appium
-        run: |
-          npm install -g appium
-          appium driver install xcuitest
-          appium driver install uiautomator2
-
-      - name: Set up iOS Simulator
-        run: |
-          # Create and boot simulator
-          xcrun simctl create "iPhone 16 Pro" "iPhone 16 Pro"
-          xcrun simctl boot "iPhone 16 Pro"
-          
-          # Get simulator UDID
-          SIMULATOR_UDID=$(xcrun simctl list devices | grep "iPhone 16 Pro" | grep -E -o -i "([0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12})")
-          echo "SIMULATOR_UDID=$SIMULATOR_UDID" >> $GITHUB_ENV
+      - name: Verify Xcode version
+        run: xcodebuild -version
 
       - name: Checkout examples-hub sample app
         uses: actions/checkout@v3
@@ -48,7 +34,7 @@ jobs:
           repository: getpara/examples-hub
           token: ${{ secrets.GITHUB_TOKEN }}
           path: examples-hub
-          ref: tyson/appium-testing
+          ref: main
 
       - name: Update swift-sdk branch in project.pbxproj
         if: ${{ github.event_name == 'pull_request' }}
@@ -60,37 +46,62 @@ jobs:
           echo "Updated swift-sdk dependency:"
           grep -A 5 'XCRemoteSwiftPackageReference "swift-sdk"' example.xcodeproj/project.pbxproj
 
-      - name: Build and install app
+      - name: Resolve Package Dependencies
         working-directory: examples-hub/mobile/with-swift
         run: |
-          xcodebuild -scheme "Example" -destination 'platform=iOS Simulator,OS=latest,name=iPhone 16 Pro' build
-          # Install the app to simulator
-          xcrun simctl install booted build/Debug-iphonesimulator/Example.app
+          xcodebuild -resolvePackageDependencies
 
-      - name: Install test dependencies
-        working-directory: examples-hub/mobile/with-swift/tests
-        run: npm install
-
-      - name: Start Appium server
-        run: appium --log appium.log &
-
-      - name: Run UI Tests
-        working-directory: examples-hub/mobile/with-swift/tests
+      - name: Run UI Tests on Simulator
+        id: run-tests
+        working-directory: examples-hub/mobile/with-swift
         env:
           PARA_API_KEY: ${{ secrets.PARA_API_KEY }}
           PARA_ENVIRONMENT: ${{ secrets.PARA_ENVIRONMENT }}
-          SIMULATOR_UDID: ${{ env.SIMULATOR_UDID }}
-        run: npm test
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -scheme "Example" \
+            -destination 'platform=iOS Simulator,OS=latest,name=iPhone 16 Pro' \
+            -testPlan "Example" \
+            -resultBundlePath TestResults \
+            clean test \
+            2>&1 | tee xcodebuild.log
 
-      - name: Upload Appium logs
+      # This step always runs to list files, even if the tests fail.
+      - name: List generated files (for debugging)
+        if: ${{ always() }}
+        working-directory: examples-hub/mobile/with-swift
+        run: |
+          echo "Listing top-level files in with-swift directory:"
+          ls -al
+          echo "Listing contents of TestResults or TestResults.xcresult if they exist:"
+          ls -al TestResults || true
+          ls -al TestResults.xcresult || true
+
+      # Upload the raw xcodebuild.log
+      - name: Upload Xcode build log
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: appium-logs
-          path: appium.log
+          name: xcodebuild-log
+          path: examples-hub/mobile/with-swift/xcodebuild.log
 
-      - name: Clean up simulator
+      # Rename the test results directory only if needed
+      - name: Rename test results
         if: ${{ always() }}
+        working-directory: examples-hub/mobile/with-swift
         run: |
-          xcrun simctl shutdown "iPhone 16 Pro" || true
-          xcrun simctl delete "iPhone 16 Pro" || true
+          if [ -d "TestResults" ]; then
+            echo "Renaming TestResults -> TestResults.xcresult"
+            mv TestResults TestResults.xcresult
+          else
+            echo "No 'TestResults' directory found (likely named TestResults.xcresult already)."
+          fi
+
+      # Upload the .xcresult bundle
+      - name: Upload Xcode test results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcode-test-results
+          path: examples-hub/mobile/with-swift/TestResults.xcresult
