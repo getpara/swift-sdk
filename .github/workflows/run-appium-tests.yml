@@ -36,6 +36,9 @@ jobs:
       - name: Install Appium
         run: npm install -g appium
 
+      - name: Install XCUITest Driver
+        run: appium driver install xcuitest
+
       - name: Install Test Dependencies
         working-directory: examples-hub/mobile/with-swift/tests
         run: npm install
