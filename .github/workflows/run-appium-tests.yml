@@ -134,7 +134,7 @@ jobs:
       - name: Install test dependencies
         working-directory: examples-hub/mobile/with-swift/tests
         run: npm install
-
+        
       - name: Start Appium server
         run: |
           # Start Appium on a specific port
