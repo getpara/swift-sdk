@@ -20,11 +20,21 @@ jobs:
           echo "PR Branch: ${{ github.head_ref }}"
           echo "PR Commit SHA: ${{ github.event.pull_request.head.sha }}"
 
+      - name: Checkout examples-hub sample app
+        uses: actions/checkout@v3
+        with:
+          repository: getpara/examples-hub
+          token: ${{ secrets.GITHUB_TOKEN }}
+          path: examples-hub
+          ref: tyson/appium-testing
+
       - name: Set up Node.js
+        working-directory: examples-hub/mobile/with-swift/tests
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
+          cache-dependency-path: examples-hub/mobile/with-swift/tests/package-lock.json
 
       - name: Install Appium
         run: |
@@ -41,14 +51,6 @@ jobs:
           # Get simulator UDID
           SIMULATOR_UDID=$(xcrun simctl list devices | grep "iPhone 16 Pro" | grep -E -o -i "([0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12})")
           echo "SIMULATOR_UDID=$SIMULATOR_UDID" >> $GITHUB_ENV
-
-      - name: Checkout examples-hub sample app
-        uses: actions/checkout@v3
-        with:
-          repository: getpara/examples-hub
-          token: ${{ secrets.GITHUB_TOKEN }}
-          path: examples-hub
-          ref: tyson/appium-testing
 
       - name: Update swift-sdk branch in project.pbxproj
         if: ${{ github.event_name == 'pull_request' }}
