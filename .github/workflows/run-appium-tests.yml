@@ -9,26 +9,25 @@ on:
 jobs:
   ui-tests:
     runs-on: macos-latest
-
     steps:
-      - name: Checkout swift-sdk (this repo)
+      - name: Checkout Repository
         uses: actions/checkout@v3
 
-      - name: Get PR information
+      - name: Get PR Info
         if: ${{ github.event_name == 'pull_request' }}
         run: |
           echo "PR Branch: ${{ github.head_ref }}"
           echo "PR Commit SHA: ${{ github.event.pull_request.head.sha }}"
 
-      - name: Set up Xcode
+      - name: Setup Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: '16.2'
 
-      - name: Verify Xcode version
+      - name: Verify Xcode Version
         run: xcodebuild -version
 
-      - name: Checkout examples-hub sample app
+      - name: Checkout Sample App
         uses: actions/checkout@v3
         with:
           repository: getpara/examples-hub
@@ -36,111 +35,56 @@ jobs:
           path: examples-hub
           ref: tyson/appium-testing
 
-      - name: Set up Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
+          cache: npm
           cache-dependency-path: examples-hub/mobile/with-swift/tests/package-lock.json
 
-      - name: Install Appium
+      - name: Install Appium & XCUItest Driver
         run: |
           npm install -g appium
           appium driver install xcuitest
 
-      - name: Set up iOS Simulator
+      - name: Setup iOS Simulator
         run: |
-          # Create and boot simulator
           DEVICE_NAME="iPhone 16 Pro"
-          RUNTIME="com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro"
           UDID=$(xcrun simctl create "$DEVICE_NAME" "$DEVICE_NAME")
           echo "Created simulator: $UDID"
           xcrun simctl boot "$UDID"
           echo "SIMULATOR_UDID=$UDID" >> $GITHUB_ENV
-          echo "DEVICE_NAME=$DEVICE_NAME" >> $GITHUB_ENV
-          echo "Booted simulator with UDID: $UDID"
-          
-          # Wait for simulator to fully boot with more robust checks
-          echo "Waiting for simulator to boot completely..."
-          MAX_BOOT_ATTEMPTS=20  # Increased from 15 to 20 attempts
-          BOOT_CHECK_INTERVAL=15  # 15 seconds between checks
-          
-          for i in $(seq 1 $MAX_BOOT_ATTEMPTS); do
-            echo "Boot check attempt $i of $MAX_BOOT_ATTEMPTS..."
-            
-            # Check if simulator is booted
-            BOOT_STATUS=$(xcrun simctl list | grep "$UDID" | grep -o "Booted" || echo "Not booted")
-            
-            if [ "$BOOT_STATUS" == "Booted" ]; then
-              # Additional check for simulator readiness
-              SIM_STATUS=$(xcrun simctl bootstatus "$UDID" 2>&1 || echo "Error")
-              
-              if [[ "$SIM_STATUS" == *"Booted"* ]]; then
-                echo "Simulator is fully booted and ready after attempt $i"
-                
-                # Verify simulator is responding to commands
-                if xcrun simctl list devices | grep "$UDID" | grep -q "Booted"; then
-                  echo "Simulator is responding to commands"
-                  break
-                fi
-              fi
+          echo "Waiting for simulator to boot..."
+          for i in {1..20}; do
+            if xcrun simctl list | grep "$UDID" | grep -q Booted; then
+              echo "Simulator booted on attempt $i"
+              break
             fi
-            
-            if [ $i -eq $MAX_BOOT_ATTEMPTS ]; then
-              echo "Failed to boot simulator after $MAX_BOOT_ATTEMPTS attempts"
-              echo "Current simulator status:"
-              xcrun simctl list devices
-              echo "Simulator boot status:"
-              xcrun simctl bootstatus "$UDID" || true
-              echo "System log:"
-              log show --predicate 'process == "com.apple.CoreSimulator.CoreSimulatorService"' --last 5m | tail -n 50
+            if [ $i -eq 20 ]; then
+              echo "Simulator failed to boot"
               exit 1
             fi
-            
-            echo "Waiting for simulator to boot (attempt $i)..."
-            sleep $BOOT_CHECK_INTERVAL
+            sleep 15
           done
-          
-          # Additional delay for full initialization
-          echo "Giving simulator additional time to initialize..."
-          sleep 180  # Increased from 120 to 180 seconds
-          
-          # Verify simulator is ready for testing
-          echo "Verifying simulator readiness..."
-          if ! xcrun simctl list devices | grep "$UDID" | grep -q "Booted"; then
-            echo "Simulator is not in expected state after initialization"
-            xcrun simctl list devices
-            exit 1
-          fi
-          
+          # Additional initialization time
+          sleep 180
           # Clean up any existing WDA processes
-          echo "Cleaning up existing WDA processes..."
-          pkill -f "WebDriverAgent" || true
-          rm -rf ~/Library/Developer/Xcode/DerivedData/WebDriverAgent-* || true
-          
-          # Kill any existing WDA processes on port 8100
+          pkill -f WebDriverAgent || true
           lsof -ti:8100 | xargs kill -9 || true
-          
-          # Clear derived data for WDA
-          rm -rf ~/Library/Developer/Xcode/DerivedData/WebDriverAgent-* || true
 
-      - name: Update swift-sdk branch in project.pbxproj
+      - name: Update swift-sdk Branch in project.pbxproj
         if: ${{ github.event_name == 'pull_request' }}
         working-directory: examples-hub/mobile/with-swift
         run: |
           PR_BRANCH="${{ github.head_ref }}"
-          echo "Updating swift-sdk branch to $PR_BRANCH in project.pbxproj"
-          sed -i '' -E 's|branch = [^;]*|branch = '"$PR_BRANCH"'|' example.xcodeproj/project.pbxproj
-          echo "Updated swift-sdk dependency:"
+          echo "Updating swift-sdk branch to ${PR_BRANCH}"
+          sed -i '' -E "s|branch = [^;]*|branch = ${PR_BRANCH}|" example.xcodeproj/project.pbxproj
           grep -A 5 'XCRemoteSwiftPackageReference "swift-sdk"' example.xcodeproj/project.pbxproj
 
-      - name: Build and install app
+      - name: Build & Install App
         working-directory: examples-hub/mobile/with-swift
         run: |
-          # Install xcpretty if needed
           which xcpretty || gem install xcpretty
-          
-          # Build with explicit configuration and build directory
           echo "Building Example app..."
           set -e -o pipefail
           xcodebuild -scheme "Example" \
@@ -148,77 +92,54 @@ jobs:
             -configuration Debug \
             -derivedDataPath ./DerivedData \
             build | xcpretty
-          
-          # Find the app bundle (check both potential locations)
-          echo "Searching for app bundle..."
-          APP_PATH=""
-          
-          if [ -d "./DerivedData/Build/Products/Debug-iphonesimulator/Example.app" ]; then
-            APP_PATH="./DerivedData/Build/Products/Debug-iphonesimulator/Example.app"
-          elif [ -d "./build/Debug-iphonesimulator/Example.app" ]; then
-            APP_PATH="./build/Debug-iphonesimulator/Example.app"
-          else
-            # Search for any .app bundle
-            APP_PATH=$(find ./DerivedData -name "*.app" -type d | head -n 1)
-            if [ -z "$APP_PATH" ]; then
-              echo "Contents of DerivedData directory:"
-              find ./DerivedData -type d -maxdepth 5
-              echo "Error: Could not find any .app bundle in build directories"
-              exit 1
-            fi
+          APP_PATH=$(find ./DerivedData -name "Example.app" -type d | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            echo "Error: App bundle not found"
+            exit 1
           fi
-          
           echo "Found app bundle at: $APP_PATH"
-          ls -l "$APP_PATH"  # Check contents of the app bundle
           xcrun simctl install booted "$APP_PATH"
-          echo "Installed app. Listing installed apps:"
-          xcrun simctl listapps booted | grep -i "com.usecapsule.example.swift" || { echo "Error: App not found in simulator"; exit 1; }
-          xcrun simctl launch booted com.usecapsule.example.swift || echo "Warning: App failed to launch manually"
+          xcrun simctl listapps booted | grep -i "com.usecapsule.example.swift" || exit 1
+          xcrun simctl launch booted com.usecapsule.example.swift || echo "Warning: App failed to launch"
 
-      - name: Install test dependencies
+      - name: Install Test Dependencies
         working-directory: examples-hub/mobile/with-swift/tests
         run: npm install
-        
-      - name: Start Appium server
+
+      - name: Start Appium Server with Enhanced WDA Timeouts
         run: |
-          # Start Appium on a specific port
           export APPIUM_PORT=4723
+          cat > appium-config.json << 'EOF'
+          {
+            "port": 4723,
+            "log": "appium.log",
+            "debug": true,
+            "wdaStartupRetries": 6,
+            "wdaStartupRetryInterval": 30000,
+            "wdaConnectionTimeout": 180000,
+            "wdaLocalPort": 8100,
+            "wdaUseNewWDA": true,
+            "wdaUseExistingWDA": false
+          }
+          EOF
           echo "Starting Appium server on port $APPIUM_PORT..."
-          appium --port $APPIUM_PORT --log appium.log --debug &
+          appium --config appium-config.json &
           APPIUM_PID=$!
-          
-          # Give Appium time to initialize first
           echo "Waiting for Appium server to initialize..."
-          sleep 30  # Increased from 15 to 30 seconds
-          
-          # More robust verification that checks both server response code and content
-          echo "Verifying Appium server is ready..."
-          MAX_RETRIES=10  # Increased from 5 to 10
-          RETRY_DELAY=10  # Increased from 5 to 10 seconds
-          for i in $(seq 1 $MAX_RETRIES); do
+          sleep 30
+          for i in {1..10}; do
             HTTP_CODE=$(curl -s -o /tmp/appium_response -w "%{http_code}" http://localhost:$APPIUM_PORT/status || echo "Failed")
-            if [[ "$HTTP_CODE" == "200" ]]; then
-              echo "Appium server responded with HTTP 200 on attempt $i!"
-              cat /tmp/appium_response
-              echo "Appium server is ready!"
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "Appium server is ready (attempt $i)"
               break
             fi
-            
-            if [ $i -eq $MAX_RETRIES ]; then
-              echo "Appium server failed to start properly after $MAX_RETRIES attempts"
-              echo "Appium logs:"
+            if [ $i -eq 10 ]; then
+              echo "Appium server failed to start after 10 attempts"
               cat appium.log
-              echo "Process status:"
-              ps aux | grep appium
-              echo "Port status:"
-              lsof -i :$APPIUM_PORT || echo "No process using port $APPIUM_PORT"
               exit 1
             fi
-            
-            echo "Attempt $i: Waiting for Appium server... (will retry in $RETRY_DELAY seconds)"
-            sleep $RETRY_DELAY
+            sleep 10
           done
-          
           echo "APPIUM_PORT=$APPIUM_PORT" >> $GITHUB_ENV
           echo "APPIUM_PID=$APPIUM_PID" >> $GITHUB_ENV
 
@@ -232,33 +153,25 @@ jobs:
           _FORCE_LOGS: 1
         run: |
           if [ -z "$PARA_API_KEY" ] || [ -z "$PARA_ENVIRONMENT" ] || [ -z "$SIMULATOR_UDID" ]; then
-            echo "Error: Missing required environment variables"; exit 1
+            echo "Error: Missing required environment variables"
+            exit 1
           fi
-          echo "Simulator status:"
-          xcrun simctl bootstatus $SIMULATOR_UDID
-          xcrun simctl list | grep "$SIMULATOR_UDID"
-          echo "Appium status:"
-          curl -s http://localhost:$APPIUM_PORT/status | cat
-          npm test -- --testTimeout=900000 --forceExit --detectOpenHandles --runInBand  # Increased from 60000 to 900000
+          npm test -- --testTimeout=900000 --forceExit --detectOpenHandles --runInBand
 
-      - name: Upload Appium logs
+      - name: Upload Appium Logs
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: appium-logs
           path: appium.log
 
-      - name: Clean up Appium server
+      - name: Clean Up
         if: ${{ always() }}
         run: |
           if [ ! -z "${{ env.APPIUM_PID }}" ]; then
             echo "Stopping Appium server (PID: ${{ env.APPIUM_PID }})..."
             kill ${{ env.APPIUM_PID }} || true
           fi
-
-      - name: Clean up simulator
-        if: ${{ always() }}
-        run: |
-          echo "Cleaning up simulator with UDID: ${{ env.SIMULATOR_UDID }}"
+          echo "Shutting down simulator..."
           xcrun simctl shutdown "${{ env.SIMULATOR_UDID }}" || true
           xcrun simctl delete "${{ env.SIMULATOR_UDID }}" || true
