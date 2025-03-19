@@ -26,6 +26,13 @@ jobs:
           xcrun simctl boot "iPhone 16 Pro" || true
           # Wait for simulator to be ready
           sleep 10
+          # Verify simulator is available
+          SIMULATOR_UDID=$(xcrun simctl list devices | grep "iPhone 16 Pro" | grep "iOS18.2" | grep -E -o -i "([0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12})")
+          if [ -z "$SIMULATOR_UDID" ]; then
+            echo "Failed to find iPhone 16 Pro simulator with iOS 18.2"
+            exit 1
+          fi
+          echo "Using simulator with UDID: $SIMULATOR_UDID"
 
       - name: Checkout Sample App
         uses: actions/checkout@v3
