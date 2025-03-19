@@ -53,7 +53,8 @@ jobs:
           xcodebuild -scheme "Example" \
             -destination "platform=iOS Simulator,name=iPhone 16 Pro" \
             -configuration Debug \
-            build
+            -derivedDataPath /Users/runner/wda-derived-data \
+            build install
 
           # Start Appium
           appium --log appium.log --debug &
