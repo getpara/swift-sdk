@@ -1,27 +1,3 @@
-name: Stale PR Reminder Log Test
-
-on:
-  # schedule:
-  #   - cron: '0 9 * * 1-5'
-  #   - cron: '0 15 * * 1-5'
-  # workflow_dispatch:
-
-  push: # Trigger for testing on your branch
-    branches:
-      - 'tyson/pr-reminders' # Make sure this matches your branch name
-
-jobs:
-  check_stale_prs:
-    runs-on: ubuntu-latest
-    # env:
-    #  TARGET_REPO: "your-owner/your-repo-name" # Uncomment if needed
-
-    steps:
-      - name: Checkout code (for user map file)
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 0 # ensure map file is accessible
-
       - name: Find PRs, Calculate Age, and Notify Stale Ones
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -36,7 +12,6 @@ jobs:
           echo "🗺️ Using map file: $MAP_FILE"
 
           # --- Fetch ALL open, non-draft PRs requiring review ---
-          # We fetch updatedAt here, but don't filter by it in the query yet
           echo "🔍 Fetching open PRs requiring review..."
           gh pr list \
             --repo "$REPO_NAME" \
@@ -55,7 +30,7 @@ jobs:
           fi
           USER_MAP=$(cat $MAP_FILE)
 
-          # Function to send Slack DM (No changes needed here)
+          # Function to send Slack DM
           send_slack_dm() {
             local user_id=$1
             local message=$2
@@ -66,7 +41,7 @@ jobs:
               return 1 # Indicate failure/skip
             fi
             if [[ -z "$user_id" || "$user_id" == "null" ]]; then
-              echo "::warning:: Cannot send DM, Slack User ID is missing or null."
+              echo "::warning:: Cannot send DM, Slack User ID is missing or null for message: $message"
               return 1 # Indicate failure/skip
             fi
 
@@ -93,7 +68,7 @@ jobs:
             PR_TITLE=$(echo $pr | jq -r .title)
             PR_URL=$(echo $pr | jq -r .url)
             PR_AUTHOR_GH=$(echo $pr | jq -r .author.login)
-            PR_UPDATED_AT=$(echo $pr | jq -r .updatedAt) # ISO 8601 format (e.g., 2023-10-27T14:55:00Z)
+            PR_UPDATED_AT=$(echo $pr | jq -r .updatedAt) # ISO 8601 format
 
             echo "" # Add a blank line for readability
             echo "---"
@@ -105,9 +80,7 @@ jobs:
             # Calculate age in seconds and hours
             PR_UPDATED_SECONDS=$(date -u -d "$PR_UPDATED_AT" +%s)
             AGE_SECONDS=$(( NOW_SECONDS - PR_UPDATED_SECONDS ))
-            # Use integer division for hours
             AGE_HOURS=$(( AGE_SECONDS / 3600 ))
-            # Optional: Calculate days for older PRs
             AGE_DAYS=$(( AGE_HOURS / 24 ))
 
             echo "   Age: $AGE_HOURS hours (approx. $AGE_DAYS days)"
@@ -143,28 +116,40 @@ jobs:
               # Trim leading space from reviewer logins string
               REVIEWER_GH_LOGINS=$(echo "$REVIEWER_GH_LOGINS" | sed 's/^ //')
 
+              # *** ADDED CHECK FOR NO REVIEWERS ***
               if [[ "$HAS_REVIEWERS" = false ]]; then
-                echo "   ::warning:: PR requires review, but no specific reviewers found in 'reviewRequests'. Cannot notify reviewers."
-                # Decide if you still want to notify the author in this case
+                echo "   ⚠️ Status Update: PR #$PR_NUM is stale and requires review, but NO reviewers are currently requested via the 'Reviewers' field."
+                # You might decide later to *not* send notifications if this is true
               fi
               echo "   Reviewers: $REVIEWER_GH_LOGINS"
+
 
               # --- Send Notifications ---
               echo "   🔔 Sending notifications..."
 
               # Send DM to Author (Only if Slack ID found)
+              # Consider if the message should change if HAS_REVIEWERS is false
               if [[ -n "$PR_AUTHOR_SLACK" ]]; then
-                  AUTHOR_MSG="⏳ Reminder: Your PR <$PR_URL|$PR_TITLE> has had no activity for $AGE_HOURS hours and is awaiting review from: $REVIEWER_GH_LOGINS."
+                  # Adjust message slightly if no reviewers are assigned
+                  if [[ "$HAS_REVIEWERS" = false ]]; then
+                    AUTHOR_MSG="⏳ Reminder: Your PR <$PR_URL|$PR_TITLE> has had no activity for $AGE_HOURS hours and needs a reviewer assigned."
+                  else
+                    AUTHOR_MSG="⏳ Reminder: Your PR <$PR_URL|$PR_TITLE> has had no activity for $AGE_HOURS hours and is awaiting review from: $REVIEWER_GH_LOGINS."
+                  fi
                   send_slack_dm "$PR_AUTHOR_SLACK" "$AUTHOR_MSG"
               else
                   echo "   Skipped DM to author @$PR_AUTHOR_GH (Slack ID missing)."
               fi
 
-              # Send DM to each Reviewer (Only if Slack ID found)
-              for SLACK_ID in "${REVIEWER_SLACK_IDS[@]}"; do
-                REVIEWER_MSG="⏳ Reminder: Please review PR <$PR_URL|$PR_TITLE> by @$PR_AUTHOR_GH. It has had no activity for $AGE_HOURS hours."
-                send_slack_dm "$SLACK_ID" "$REVIEWER_MSG"
-              done
+              # Send DM to each Reviewer (Only if Slack ID found AND if there are reviewers)
+              if [[ "$HAS_REVIEWERS" = true ]]; then
+                for SLACK_ID in "${REVIEWER_SLACK_IDS[@]}"; do
+                  REVIEWER_MSG="⏳ Reminder: Please review PR <$PR_URL|$PR_TITLE> by @$PR_AUTHOR_GH. It has had no activity for $AGE_HOURS hours."
+                  send_slack_dm "$SLACK_ID" "$REVIEWER_MSG"
+                done
+              else
+                echo "   Skipped DM to reviewers (none assigned)."
+              fi
 
             else
               # PR is NOT stale
