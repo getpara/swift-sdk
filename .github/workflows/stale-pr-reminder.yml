@@ -1,15 +1,14 @@
 name: Stale PR Reminder
 
 on:
-  schedule:
-    # Run twice daily on weekdays (e.g., 9 AM and 3 PM UTC)
-    # Adjust times based on your team's primary timezone!
-    # Cron syntax: minute hour day(month) month day(week)
-    - cron: '0 9 * * 1-5'  # ~9 AM UTC Mon-Fri
-    - cron: '0 15 * * 1-5' # ~3 PM UTC Mon-Fri
-  # Allow manual triggering for testing
-  workflow_dispatch:
+  # schedule:
+  #   - cron: '0 9 * * 1-5'
+  #   - cron: '0 15 * * 1-5'
+  # workflow_dispatch:
 
+  push: # <--- ADD THIS TEMPORARILY
+    branches:
+      - 'tyson/pr-reminders'
 jobs:
   check_stale_prs:
     runs-on: ubuntu-latest
