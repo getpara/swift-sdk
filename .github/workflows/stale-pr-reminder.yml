@@ -1,7 +1,9 @@
 name: PR Notification Workflow
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - tyson/pr-reminders
 
 jobs:
   stale_prs:
