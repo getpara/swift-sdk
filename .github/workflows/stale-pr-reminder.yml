@@ -1,5 +1,4 @@
----
-- name: Find PRs, Calculate Age, and Notify Stale Ones
+  name: Find PRs, Calculate Age, and Notify Stale Ones
   env:
     GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
