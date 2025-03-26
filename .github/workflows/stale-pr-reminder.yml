@@ -1,0 +1,123 @@
+name: Stale PR Reminder
+
+on:
+  schedule:
+    # Run twice daily on weekdays (e.g., 9 AM and 3 PM UTC)
+    # Adjust times based on your team's primary timezone!
+    # Cron syntax: minute hour day(month) month day(week)
+    - cron: '0 9 * * 1-5'  # ~9 AM UTC Mon-Fri
+    - cron: '0 15 * * 1-5' # ~3 PM UTC Mon-Fri
+  # Allow manual triggering for testing
+  workflow_dispatch:
+
+jobs:
+  check_stale_prs:
+    runs-on: ubuntu-latest
+    # IMPORTANT: Specify your repository here if this workflow is in a central repo
+    # or just rely on the context if it's in the target repo itself.
+    # env:
+    #  TARGET_REPO: "your-owner/your-repo-name" # Uncomment and set if needed
+
+    steps:
+      - name: Checkout code (for user map file)
+        uses: actions/checkout@v3
+        with:
+            fetch-depth: 0 # ensure map file is accessible
+
+      - name: Find Stale PRs and Notify
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          # Use github.repository if workflow is IN the target repo.
+          # Otherwise, use TARGET_REPO from the job env above.
+          REPO_NAME: ${{ github.repository }} 
+          INACTIVITY_HOURS: 48
+          MAP_FILE: ".github/user-map.json" # Path to your mapping file
+        run: |
+          echo "Repo: $REPO_NAME"
+          echo "Inactivity threshold: $INACTIVITY_HOURS hours"
+
+          # Calculate cutoff time (ISO 8601 format UTC)
+          CUTOFF_DATE=$(date -u -d "$INACTIVITY_HOURS hours ago" '+%Y-%m-%dT%H:%M:%SZ')
+          echo "Checking for PRs in '$REPO_NAME' with no activity since $CUTOFF_DATE"
+
+          # Query using GitHub CLI
+          # Finds open, non-draft PRs in the repo, requiring review, updated before the cutoff
+          gh pr list \
+            --repo "$REPO_NAME" \
+            --state open \
+            --search "-is:draft review:required updated:<$CUTOFF_DATE" \
+            --json number,title,url,author,reviewRequests \
+            --limit 100 > stale_prs.json
+
+          echo "Found $(jq length stale_prs.json) potentially stale PRs requiring review."
+
+          # Load mapping file content
+          if [[ ! -f "$MAP_FILE" ]]; then
+            echo "::error:: Mapping file '$MAP_FILE' not found!"
+            exit 1
+          fi
+          USER_MAP=$(cat $MAP_FILE)
+
+          # Function to send Slack DM
+          send_slack_dm() {
+            local user_id=$1
+            local message=$2
+            if [[ -z "$user_id" || "$user_id" == "null" ]]; then
+              echo "::warning:: Cannot send DM, Slack User ID is missing or null."
+              return
+            fi
+            echo "Sending DM to Slack ID: $user_id"
+            curl -s -X POST -H "Authorization: Bearer $SLACK_BOT_TOKEN" -H 'Content-type: application/json' \
+              --data "{\"channel\":\"$user_id\",\"text\":\"$message\"}" \
+              https://slack.com/api/chat.postMessage > /dev/null
+          }
+
+          # --- Process each stale PR ---
+          jq -c '.[]' stale_prs.json | while read pr; do
+            PR_NUM=$(echo $pr | jq -r .number)
+            PR_TITLE=$(echo $pr | jq -r .title)
+            PR_URL=$(echo $pr | jq -r .url)
+            PR_AUTHOR_GH=$(echo $pr | jq -r .author.login)
+
+            echo "--- Processing Stale PR #$PR_NUM: '$PR_TITLE' ---"
+
+            # Get Author Slack ID
+            PR_AUTHOR_SLACK=$(echo $USER_MAP | jq -r --arg GH_USER "$PR_AUTHOR_GH" '.[$GH_USER] // empty')
+            if [[ -z "$PR_AUTHOR_SLACK" ]]; then
+               echo "::warning:: Slack ID not found for author '$PR_AUTHOR_GH'"
+            fi
+
+            # Get Reviewer Slack IDs and GH logins (handles users and teams if map includes team IDs)
+            REVIEWER_SLACK_IDS=()
+            REVIEWER_GH_LOGINS=""
+            echo $pr | jq -c '.reviewRequests[] | .requestedReviewer | select(.__typename == "User" or .__typename == "Team")' | while read reviewer; do
+              REVIEWER_LOGIN=$(echo $reviewer | jq -r '.login // .name') # .name for teams, .login for users
+              SLACK_ID=$(echo $USER_MAP | jq -r --arg GH_USER "$REVIEWER_LOGIN" '.[$GH_USER] // empty')
+
+              if [[ -n "$SLACK_ID" ]]; then
+                REVIEWER_SLACK_IDS+=("$SLACK_ID")
+                REVIEWER_GH_LOGINS="$REVIEWER_GH_LOGINS @$REVIEWER_LOGIN"
+              else
+                echo "::warning:: Slack ID not found for reviewer '$REVIEWER_LOGIN'"
+                REVIEWER_GH_LOGINS="$REVIEWER_GH_LOGINS @$REVIEWER_LOGIN (Slack ID missing)"
+              fi
+            done
+
+            echo "Author: @$PR_AUTHOR_GH ($PR_AUTHOR_SLACK)"
+            echo "Reviewers: $REVIEWER_GH_LOGINS"
+            
+            # Send DM to Author
+            AUTHOR_MSG="⏳ Reminder: Your PR <$PR_URL|$PR_TITLE> has had no activity for over $INACTIVITY_HOURS hours and is awaiting review from:$REVIEWER_GH_LOGINS."
+            send_slack_dm "$PR_AUTHOR_SLACK" "$AUTHOR_MSG"
+
+            # Send DM to each Reviewer
+            REVIEWER_MSG="⏳ Reminder: Please review PR <$PR_URL|$PR_TITLE> by @$PR_AUTHOR_GH. It has had no activity for over $INACTIVITY_HOURS hours."
+            for SLACK_ID in "${REVIEWER_SLACK_IDS[@]}"; do
+              send_slack_dm "$SLACK_ID" "$REVIEWER_MSG"
+            done
+
+            echo "--- Finished processing PR #$PR_NUM ---"
+          done # End PR loop
+
+          echo "Stale PR check complete."
