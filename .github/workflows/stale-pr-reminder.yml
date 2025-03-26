@@ -30,7 +30,7 @@ jobs:
           # Use github.repository if workflow is IN the target repo.
           # Otherwise, use TARGET_REPO from the job env above.
           REPO_NAME: ${{ github.repository }} 
-          INACTIVITY_HOURS: 48
+          INACTIVITY_HOURS: 0
           MAP_FILE: ".github/user-map.json" # Path to your mapping file
         run: |
           echo "Repo: $REPO_NAME"
