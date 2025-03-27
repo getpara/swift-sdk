@@ -1,9 +1,8 @@
-name: PR Notification Workflow
+name: Stale PR Notification Workflow
 
 on:
-  push:
-    branches:
-      - tyson/pr-reminders
+  schedule:
+    - cron: '15 10 * * 1-5' # Weekdays, 10:15am
 
 jobs:
   stale_prs:
