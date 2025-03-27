@@ -24,7 +24,7 @@ jobs:
           GH_TOKEN: ${{ secrets.CROSS_ORG_TOKEN }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           REPO_NAME: ${{ matrix.repository }}
-          INACTIVITY_HOURS: 0
+          INACTIVITY_HOURS: 48
           MAP_FILE: .github/user-map.json
         run: |
           echo "🔄 Checking Repository: $REPO_NAME"
