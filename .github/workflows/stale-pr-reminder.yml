@@ -8,19 +8,26 @@ on:
 jobs:
   stale_prs:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        repository:
+          - capsule-org/user-management
+          - capsule-org/web-sdk
+          - getpara/swift-sdk
     steps:
-      - name: Checkout Repository
+      - name: Checkout Workflow Repository
         uses: actions/checkout@v3
-
+        # This checks out the workflow repository, which should include your .github/user-map.json file.
+      
       - name: Find PRs, Calculate Age, and Notify Stale Ones
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
-          REPO_NAME: ${{ github.repository }}
+          REPO_NAME: ${{ matrix.repository }}
           INACTIVITY_HOURS: 0
           MAP_FILE: .github/user-map.json
         run: |
-          echo "🔄 Repo: $REPO_NAME"
+          echo "🔄 Checking Repository: $REPO_NAME"
           echo "⏳ Inactivity threshold: $INACTIVITY_HOURS hours"
           echo "🗺️ Using map file: $MAP_FILE"
 
