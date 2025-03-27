@@ -21,7 +21,7 @@ jobs:
       
       - name: Find PRs, Calculate Age, and Notify Stale Ones
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.CROSS_ORG_TOKEN }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           REPO_NAME: ${{ matrix.repository }}
           INACTIVITY_HOURS: 0
