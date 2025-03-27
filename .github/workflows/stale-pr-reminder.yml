@@ -13,6 +13,7 @@ jobs:
           - capsule-org/user-management
           - capsule-org/web-sdk
           - getpara/swift-sdk
+          - getpara/examples-hub
     steps:
       - name: Checkout Workflow Repository
         uses: actions/checkout@v3
