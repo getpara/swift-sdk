@@ -7,12 +7,6 @@ on:
     - cron: '15 17 * * 1-5'
   # Allow manual triggering for testing
   workflow_dispatch:
-  # Trigger on pushes that modify this workflow file itself (for testing changes)
-  push:
-    paths:
-      # IMPORTANT: Make sure this path matches the location of THIS workflow file
-      #           within your repository (e.g., .github/workflows/stale-pr-reminder.yaml)
-      - '.github/workflows/stale-pr-reminder.yml' # <--- ADJUST FILENAME IF NEEDED
 
 jobs:
   stale_prs:
