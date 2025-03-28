@@ -12,7 +12,7 @@ on:
     paths:
       # IMPORTANT: Make sure this path matches the location of THIS workflow file
       #           within your repository (e.g., .github/workflows/your-file-name.yaml)
-      - '.github/workflows/stale-pr-reminder.yaml' #<-- ADJUST FILENAME IF NEEDED
+      - '.github/workflows/stale-pr-reminder.yml' #<-- ADJUST FILENAME IF NEEDED
 
 jobs:
   stale_prs:
