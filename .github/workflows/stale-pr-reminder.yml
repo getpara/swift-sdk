@@ -17,7 +17,7 @@ jobs:
            - capsule-org/user-management
            - capsule-org/web-sdk
            - getpara/swift-sdk
-          - getpara/examples-hub
+           - getpara/examples-hub
            - capsule-org/docs-mintlify
            - capsule-org/flutter-sdk
            - capsule-org/go-sdk
