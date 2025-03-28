@@ -125,13 +125,14 @@ jobs:
 
             AGE_SECONDS=$(( NOW_SECONDS - PR_UPDATED_SECONDS ))
             AGE_HOURS=$(( AGE_SECONDS / 3600 ))
-            AGE_DAYS=$(( AGE_HOURS / 24 ))
+            DAYS=$(( AGE_HOURS / 24 ))
+            REMAINDER_HOURS=$(( AGE_HOURS % 24 ))
 
-            echo "   Age: $AGE_HOURS hours (approx. $AGE_DAYS days)"
+            echo "   Age: ${DAYS} days and ${REMAINDER_HOURS} hours"
 
             # Check if PR is stale
             if [[ "$AGE_HOURS" -ge "$INACTIVITY_HOURS" ]]; then
-              echo "   🚦 Status: STALE (Updated $AGE_HOURS hours ago, threshold is $INACTIVITY_HOURS hours)"
+              echo "   🚦 Status: STALE (Updated ${DAYS} days and ${REMAINDER_HOURS} hours ago, threshold is $INACTIVITY_HOURS hours)"
               PR_AUTHOR_SLACK=$(echo "$USER_MAP" | jq -r --arg GH_USER "$PR_AUTHOR_GH" '.[$GH_USER] // empty')
               if [[ -z "$PR_AUTHOR_SLACK" ]]; then
                 echo "   ::warning:: Slack ID not found for author '$PR_AUTHOR_GH'"
@@ -175,9 +176,9 @@ jobs:
               # Notify Author
               if [[ -n "$PR_AUTHOR_SLACK" ]]; then
                 if [[ "$HAS_REVIEWERS" = false ]]; then
-                  AUTHOR_MSG="⏳ Reminder: Your PR <$PR_URL|$PR_TITLE> has had no activity for $AGE_HOURS hours and needs a reviewer assigned."
+                  AUTHOR_MSG="⏳ Reminder: Your PR <$PR_URL|$PR_TITLE> has had no activity for ${DAYS} days and ${REMAINDER_HOURS} hours and needs a reviewer assigned."
                 else
-                  AUTHOR_MSG="⏳ Reminder: Your PR <$PR_URL|$PR_TITLE> has had no activity for $AGE_HOURS hours and is awaiting review from: $REVIEWER_GH_LOGINS."
+                  AUTHOR_MSG="⏳ Reminder: Your PR <$PR_URL|$PR_TITLE> has had no activity for ${DAYS} days and ${REMAINDER_HOURS} hours and is awaiting review from: $REVIEWER_GH_LOGINS."
                 fi
                 send_slack_dm "$PR_AUTHOR_SLACK" "$AUTHOR_MSG"
               else
@@ -186,7 +187,7 @@ jobs:
 
               # Notify Reviewers
               if [[ "$HAS_REVIEWERS" = true && ${#REVIEWER_SLACK_IDS[@]} -gt 0 ]]; then
-                REVIEWER_MSG="⏳ Reminder: Please review PR <$PR_URL|$PR_TITLE> by @$PR_AUTHOR_GH. It has had no activity for $AGE_HOURS hours."
+                REVIEWER_MSG="⏳ Reminder: Please review PR <$PR_URL|$PR_TITLE> by @$PR_AUTHOR_GH. It has had no activity for ${DAYS} days and ${REMAINDER_HOURS} hours."
                 for SLACK_ID in "${REVIEWER_SLACK_IDS[@]}"; do
                   send_slack_dm "$SLACK_ID" "$REVIEWER_MSG"
                 done
@@ -197,7 +198,7 @@ jobs:
               fi
 
             else
-              echo "   ✅ Status: RECENT (Updated $AGE_HOURS hours ago, threshold is $INACTIVITY_HOURS hours). Skipping notification."
+              echo "   ✅ Status: RECENT (Updated ${DAYS} days and ${REMAINDER_HOURS} hours ago, threshold is $INACTIVITY_HOURS hours). Skipping notification."
             fi
 
             echo "--- Finished processing PR #$PR_NUM ---"
