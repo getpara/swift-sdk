@@ -413,6 +413,55 @@ extension ParaManager {
         
         return authState
     }
+    
+    /// Verifies a new account with the provided verification code
+    /// - Parameter verificationCode: The verification code sent to the user
+    /// - Returns: AuthState object containing information about the next steps
+    public func verifyNewAccount(verificationCode: String) async throws -> AuthState {
+        try await ensureWebViewReady()
+        
+        let result = try await postMessage(method: "verifyNewAccount", arguments: [verificationCode])
+        
+        guard let resultDict = result as? [String: Any] else {
+            throw ParaError.bridgeError("Invalid result format from verifyNewAccount")
+        }
+        
+        guard let stageString = resultDict["stage"] as? String,
+              let stage = AuthStage(rawValue: stageString),
+              let userId = resultDict["userId"] as? String else {
+            throw ParaError.bridgeError("Missing required fields in verifyNewAccount response")
+        }
+        
+        let passkeyUrl = resultDict["passkeyUrl"] as? String
+        let passkeyId = resultDict["passkeyId"] as? String
+        let passwordUrl = resultDict["passwordUrl"] as? String
+        
+        var biometricHints: [AuthState.BiometricHint]?
+        if let hintsArray = resultDict["biometricHints"] as? [[String: Any]] {
+            biometricHints = hintsArray.compactMap { hint in
+                guard let aaguid = hint["aaguid"] as? String,
+                      let userAgent = hint["userAgent"] as? String else {
+                    return nil
+                }
+                return AuthState.BiometricHint(aaguid: aaguid, userAgent: userAgent)
+            }
+        }
+        
+        let authState = AuthState(
+            stage: stage,
+            userId: userId,
+            passkeyUrl: passkeyUrl,
+            passkeyId: passkeyId,
+            passwordUrl: passwordUrl,
+            biometricHints: biometricHints
+        )
+        
+        if stage == .signup {
+            self.sessionState = .active
+        }
+        
+        return authState
+    }
 }
 
 public enum ParaError: Error, CustomStringConvertible {
