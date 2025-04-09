@@ -485,9 +485,12 @@ public enum ParaError: Error, CustomStringConvertible {
 extension ParaManager {
     /// Formats a phone number into the international format required by Para
     /// - Parameters:
-    ///   - phoneNumber: The national phone number
+    ///   - phoneNumber: The national phone number (without country code)
     ///   - countryCode: The country code (without the plus sign)
     /// - Returns: Formatted phone number in international format (+${countryCode}${phoneNumber})
+    /// - Note: This method is provided as a convenience for formatting phone numbers correctly.
+    ///         All Para authentication methods expect phone numbers in international format.
+    ///         Example: formatPhoneNumber(phoneNumber: "5551234", countryCode: "1") returns "+15551234"
     public func formatPhoneNumber(phoneNumber: String, countryCode: String) -> String {
         return "+\(countryCode)\(phoneNumber)"
     }
