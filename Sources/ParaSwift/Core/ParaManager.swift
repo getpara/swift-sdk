@@ -80,7 +80,16 @@ public class ParaManager: NSObject, ObservableObject {
     }
     
     internal func postMessage(method: String, arguments: [Encodable]) async throws -> Any? {
-        return try await paraWebView.postMessage(method: method, arguments: arguments)
+        logger.debug("Posting message to bridge - Method: \(method), Arguments: \(arguments)")
+        
+        do {
+            let result = try await paraWebView.postMessage(method: method, arguments: arguments)
+            logger.debug("Bridge response for method \(method): \(String(describing: result))")
+            return result
+        } catch {
+            logger.error("Bridge error for method \(method): \(error.localizedDescription)")
+            throw error
+        }
     }
     
     internal func decodeResult<T>(_ result: Any?, expectedType: T.Type, method: String) throws -> T {
@@ -328,6 +337,84 @@ extension ParaManager {
     }
 }
 
+@available(iOS 16.4,*)
+extension ParaManager {
+    // Private struct for the signUpOrLogIn payload
+    private struct SignUpOrLogInPayload: Encodable {
+        let auth: AuthPayload
+        
+        struct AuthPayload: Encodable {
+            let email: String?
+            let phone: String?
+            
+            init(email: String? = nil, phone: String? = nil) {
+                self.email = email
+                self.phone = phone
+            }
+        }
+    }
+    
+    /// Signs up a new user or logs in an existing user
+    /// - Parameter auth: Authentication information (email or phone)
+    /// - Returns: AuthState object containing information about the next steps
+    public func signUpOrLogIn(auth: Auth) async throws -> AuthState {
+        try await ensureWebViewReady()
+        
+        // Create a properly structured Encodable payload
+        let payload: SignUpOrLogInPayload
+        switch auth {
+        case .email(let emailAddress):
+            payload = SignUpOrLogInPayload(auth: SignUpOrLogInPayload.AuthPayload(email: emailAddress))
+        case .phone(let phoneNumber):
+            payload = SignUpOrLogInPayload(auth: SignUpOrLogInPayload.AuthPayload(phone: phoneNumber))
+        }
+        
+        let result = try await postMessage(method: "signUpOrLogIn", arguments: [payload])
+        
+        guard let resultDict = result as? [String: Any] else {
+            throw ParaError.bridgeError("Invalid result format from signUpOrLogIn")
+        }
+        
+        guard let stageString = resultDict["stage"] as? String,
+              let stage = AuthStage(rawValue: stageString),
+              let userId = resultDict["userId"] as? String else {
+            throw ParaError.bridgeError("Missing required fields in signUpOrLogIn response")
+        }
+        
+        let passkeyUrl = resultDict["passkeyUrl"] as? String
+        let passkeyId = resultDict["passkeyId"] as? String
+        let passwordUrl = resultDict["passwordUrl"] as? String
+        
+        var biometricHints: [AuthState.BiometricHint]?
+        if let hintsArray = resultDict["biometricHints"] as? [[String: Any]] {
+            biometricHints = hintsArray.compactMap { hint in
+                guard let aaguid = hint["aaguid"] as? String,
+                      let userAgent = hint["userAgent"] as? String else {
+                    return nil
+                }
+                return AuthState.BiometricHint(aaguid: aaguid, userAgent: userAgent)
+            }
+        }
+        
+        let authState = AuthState(
+            stage: stage,
+            userId: userId,
+            passkeyUrl: passkeyUrl,
+            passkeyId: passkeyId,
+            passwordUrl: passwordUrl,
+            biometricHints: biometricHints
+        )
+        
+        if stage == .verify {
+            self.sessionState = .active
+        } else if stage == .login {
+            self.sessionState = .active
+        }
+        
+        return authState
+    }
+}
+
 public enum ParaError: Error, CustomStringConvertible {
     case bridgeError(String)
     case bridgeTimeoutError
@@ -342,6 +429,18 @@ public enum ParaError: Error, CustomStringConvertible {
         case .error(let info):
             return "An error occurred: \(info)"
         }
+    }
+}
+
+@available(iOS 16.4,*)
+extension ParaManager {
+    /// Formats a phone number into the international format required by Para
+    /// - Parameters:
+    ///   - phoneNumber: The national phone number
+    ///   - countryCode: The country code (without the plus sign)
+    /// - Returns: Formatted phone number in international format (+${countryCode}${phoneNumber})
+    public func formatPhoneNumber(phoneNumber: String, countryCode: String) -> String {
+        return "+\(countryCode)\(phoneNumber)"
     }
 }
 #endif

@@ -17,7 +17,7 @@ public enum ParaEnvironment: Hashable {
         case .sandbox:
             return (
                 "app.sandbox.usecapsule.com",
-                URL(string: "https://js-bridge.sandbox.usecapsule.com/")!,
+                URL(string: "https://alpha-js-bridge.sandbox.getpara.com/")!,
                 "SANDBOX"
             )
         case .beta:
