@@ -110,20 +110,30 @@ public class ParaManager: NSObject, ObservableObject {
 
 @available(iOS 16.4,*)
 extension ParaManager {
+    // MARK: - Authentication Methods
+    
+    /// Deprecated: Use `signUpOrLogIn` instead
+    @available(*, deprecated, message: "Use signUpOrLogIn instead to align with V2 authentication flow")
     public func checkIfUserExists(email: String) async throws -> Bool {
         let result = try await postMessage(method: "checkIfUserExists", arguments: [email])
         return try decodeResult(result, expectedType: Bool.self, method: "checkIfUserExists")
     }
     
+    /// Deprecated: Use `signUpOrLogIn` instead
+    @available(*, deprecated, message: "Use signUpOrLogIn instead to align with V2 authentication flow")
     public func checkIfUserExistsByPhone(phoneNumber: String, countryCode: String) async throws -> Bool {
         let result = try await postMessage(method: "checkIfUserExistsByPhone", arguments: [phoneNumber, countryCode])
         return try decodeResult(result, expectedType: Bool.self, method: "checkIfUserExistsByPhone")
     }
     
+    /// Deprecated: Use `signUpOrLogIn` instead
+    @available(*, deprecated, message: "Use signUpOrLogIn instead to align with V2 authentication flow")
     public func createUser(email: String) async throws {
         _ = try await postMessage(method: "createUser", arguments: [email])
     }
     
+    /// Deprecated: Use `signUpOrLogIn` instead
+    @available(*, deprecated, message: "Use signUpOrLogIn instead to align with V2 authentication flow")
     public func createUserByPhone(phoneNumber: String, countryCode: String) async throws {
         _ = try await postMessage(method: "createUserByPhone", arguments: [phoneNumber, countryCode])
     }
@@ -162,6 +172,8 @@ extension ParaManager {
         sessionState = .activeLoggedIn
     }
     
+    /// Deprecated: Use `verifyNewAccount` instead
+    @available(*, deprecated, message: "Use verifyNewAccount instead to align with V2 authentication flow")
     public func verify(verificationCode: String) async throws -> String {
         try await ensureWebViewReady()
         let result = try await postMessage(method: "verifyEmail", arguments: [verificationCode])
@@ -176,6 +188,8 @@ extension ParaManager {
         return String(biometricsId)
     }
     
+    /// Deprecated: Use `verifyNewAccount` instead
+    @available(*, deprecated, message: "Use verifyNewAccount instead to align with V2 authentication flow")
     public func verifyByPhone(verificationCode: String) async throws -> String {
         try await ensureWebViewReady()
         let result = try await postMessage(method: "verifyPhone", arguments: [verificationCode])
@@ -313,7 +327,7 @@ extension ParaManager {
 
 @available(iOS 16.4,*)
 extension ParaManager {
-    private func ensureWebViewReady() async throws {
+    func ensureWebViewReady() async throws {
         if !paraWebView.isReady {
             logger.debug("Waiting for WebView initialization...")
             await waitForParaReady()
