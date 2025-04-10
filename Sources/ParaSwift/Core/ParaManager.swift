@@ -402,19 +402,31 @@ extension ParaManager {
         var biometricHints: [AuthState.BiometricHint]?
         if let hintsArray = resultDict["biometricHints"] as? [[String: Any]] {
             biometricHints = hintsArray.compactMap { hint in
-                guard let aaguid = hint["aaguid"] as? String,
-                      let userAgent = hint["userAgent"] as? String else {
+                let aaguid = hint["aaguid"] as? String
+                let userAgent = hint["userAgent"] as? String ?? hint["useragent"] as? String
+                
+                guard aaguid != nil || userAgent != nil else {
                     return nil
                 }
                 return AuthState.BiometricHint(aaguid: aaguid, userAgent: userAgent)
             }
         }
         
+        // Extract email if available
+        var email: String? = nil
+        if let auth = resultDict["auth"] as? [String: Any] {
+            email = auth["email"] as? String
+        }
+        
+        let passkeyKnownDeviceUrl = resultDict["passkeyKnownDeviceUrl"] as? String
+        
         let authState = AuthState(
             stage: stage,
             userId: userId,
+            email: email,
             passkeyUrl: passkeyUrl,
             passkeyId: passkeyId,
+            passkeyKnownDeviceUrl: passkeyKnownDeviceUrl,
             passwordUrl: passwordUrl,
             biometricHints: biometricHints
         )
@@ -453,19 +465,31 @@ extension ParaManager {
         var biometricHints: [AuthState.BiometricHint]?
         if let hintsArray = resultDict["biometricHints"] as? [[String: Any]] {
             biometricHints = hintsArray.compactMap { hint in
-                guard let aaguid = hint["aaguid"] as? String,
-                      let userAgent = hint["userAgent"] as? String else {
+                let aaguid = hint["aaguid"] as? String
+                let userAgent = hint["userAgent"] as? String ?? hint["useragent"] as? String
+                
+                guard aaguid != nil || userAgent != nil else {
                     return nil
                 }
                 return AuthState.BiometricHint(aaguid: aaguid, userAgent: userAgent)
             }
         }
         
+        // Extract email if available
+        var email: String? = nil
+        if let auth = resultDict["auth"] as? [String: Any] {
+            email = auth["email"] as? String
+        }
+        
+        let passkeyKnownDeviceUrl = resultDict["passkeyKnownDeviceUrl"] as? String
+        
         let authState = AuthState(
             stage: stage,
             userId: userId,
+            email: email,
             passkeyUrl: passkeyUrl,
             passkeyId: passkeyId,
+            passkeyKnownDeviceUrl: passkeyKnownDeviceUrl,
             passwordUrl: passwordUrl,
             biometricHints: biometricHints
         )

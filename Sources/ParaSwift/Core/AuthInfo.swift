@@ -58,17 +58,21 @@ public struct AuthState: Codable {
     public let stage: AuthStage
     /// The Para userId for the currently authenticating user
     public let userId: String
+    /// The user's email, if available
+    public let email: String?
     /// URL for passkey authentication
     public let passkeyUrl: String?
     /// ID for the passkey
     public let passkeyId: String?
+    /// URL for passkey authentication on a known device
+    public let passkeyKnownDeviceUrl: String?
     /// URL for password authentication
     public let passwordUrl: String?
     /// Biometric hints for the user's devices
     public let biometricHints: [BiometricHint]?
     
     public struct BiometricHint: Codable {
-        public let aaguid: String
-        public let userAgent: String
+        public let aaguid: String?
+        public let userAgent: String?
     }
 }

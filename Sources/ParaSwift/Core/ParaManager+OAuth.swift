@@ -87,25 +87,38 @@ extension ParaManager {
         let passkeyUrl = resultDict["passkeyUrl"] as? String
         let passkeyId = resultDict["passkeyId"] as? String
         let passwordUrl = resultDict["passwordUrl"] as? String
+        let passkeyKnownDeviceUrl = resultDict["passkeyKnownDeviceUrl"] as? String
+        
+        // Extract email if available
+        var email: String? = nil
+        if let auth = resultDict["auth"] as? [String: Any] {
+            email = auth["email"] as? String
+        }
         
         // Extract biometric hints if available
         var biometricHints: [AuthState.BiometricHint]?
         if let hintsArray = resultDict["biometricHints"] as? [[String: Any]] {
             biometricHints = hintsArray.compactMap { hint in
-                guard let aaguid = hint["aaguid"] as? String,
-                      let userAgent = hint["userAgent"] as? String else {
+                // Check for both camelCase and lowercase versions of the field
+                let aaguid = hint["aaguid"] as? String
+                let userAgent = hint["userAgent"] as? String ?? hint["useragent"] as? String
+                
+                guard aaguid != nil || userAgent != nil else {
                     return nil
                 }
+                
                 return AuthState.BiometricHint(aaguid: aaguid, userAgent: userAgent)
             }
         }
         
-        // Create AuthState object
+        // Create AuthState object with additional fields
         let authState = AuthState(
             stage: stage,
             userId: userId,
+            email: email,
             passkeyUrl: passkeyUrl,
             passkeyId: passkeyId,
+            passkeyKnownDeviceUrl: passkeyKnownDeviceUrl,
             passwordUrl: passwordUrl,
             biometricHints: biometricHints
         )
@@ -121,6 +134,70 @@ extension ParaManager {
         
         logger.debug("OAuth verification completed with stage: \(stage.rawValue)")
         return authState
+    }
+    
+    /// Handles the complete OAuth authentication flow, including processing the authentication state
+    /// and performing the appropriate login or signup actions based on the result.
+    /// - Parameters:
+    ///   - provider: The OAuth provider to authenticate with
+    ///   - webAuthenticationSession: The WebAuthenticationSession to use for the OAuth flow
+    ///   - authorizationController: The AuthorizationController to use for passkey operations
+    /// - Returns: A tuple containing the result status and any error message
+    public func handleOAuth(
+        provider: OAuthProvider,
+        webAuthenticationSession: WebAuthenticationSession,
+        authorizationController: AuthorizationController
+    ) async -> (success: Bool, errorMessage: String?) {
+        let logger = Logger(subsystem: "com.paraSwift", category: "OAuth")
+        
+        do {
+            // Step 1: Get OAuth verification
+            logger.debug("Starting OAuth flow for provider: \(provider.rawValue)")
+            let authState = try await verifyOAuth(provider: provider, webAuthenticationSession: webAuthenticationSession)
+            
+            // Step 2: Handle the auth state based on its stage
+            switch authState.stage {
+            case .login:
+                logger.debug("Processing login stage for user ID: \(authState.userId)")
+                if let email = authState.email {
+                    logger.debug("User email from OAuth: \(email)")
+                }
+                
+                // Use the email from OAuth response for authentication
+                let emailAuthInfo = authState.email.map { EmailAuthInfo(email: $0) }
+                try await login(authorizationController: authorizationController, authInfo: emailAuthInfo)
+                logger.debug("Login successful")
+                return (success: true, errorMessage: nil)
+                
+            case .signup:
+                logger.debug("Processing signup stage for user ID: \(authState.userId)")
+                
+                // Handle signup with passkey if available
+                if let passkeyId = authState.passkeyId {
+                    logger.debug("Generating passkey with ID: \(passkeyId)")
+                    try await generatePasskey(
+                        identifier: authState.userId,
+                        biometricsId: passkeyId,
+                        authorizationController: authorizationController
+                    )
+                    
+                    logger.debug("Creating wallet")
+                    try await createWallet(type: .evm, skipDistributable: false)
+                    return (success: true, errorMessage: nil)
+                } else {
+                    logger.error("No passkey ID available for signup")
+                    return (success: false, errorMessage: "No passkey ID available")
+                }
+                
+            case .verify:
+                // This shouldn't happen with OAuth
+                logger.error("Unexpected verify stage in OAuth flow")
+                return (success: false, errorMessage: "Unexpected authentication stage")
+            }
+        } catch {
+            logger.error("OAuth error: \(error.localizedDescription)")
+            return (success: false, errorMessage: String(describing: error))
+        }
     }
     
     /// Deprecated: Use verifyOAuth instead to align with V2 authentication flow
