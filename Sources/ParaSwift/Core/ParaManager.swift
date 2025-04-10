@@ -533,4 +533,92 @@ extension ParaManager {
         return "+\(countryCode)\(phoneNumber)"
     }
 }
+
+@available(iOS 16.4,*)
+extension ParaManager {
+    /// Handles the complete email authentication flow, including signup/login decision and verification if needed.
+    /// - Parameters:
+    ///   - email: The user's email address
+    ///   - verificationCode: Optional verification code, to be provided if the first call results in a verify stage
+    ///   - authorizationController: The AuthorizationController to use for passkey operations
+    /// - Returns: A tuple containing the authentication status, next required action, and any error message
+    public func handleEmailAuth(
+        email: String,
+        verificationCode: String? = nil,
+        authorizationController: AuthorizationController
+    ) async -> (status: EmailAuthStatus, errorMessage: String?) {
+        do {
+            // If verification code is provided, handle verification flow
+            if let code = verificationCode {
+                return try await handleVerification(code: code, email: email, authorizationController: authorizationController)
+            }
+            
+            // Otherwise start the initial auth flow
+            let authState = try await signUpOrLogIn(auth: .email(email))
+            
+            switch authState.stage {
+            case .verify:
+                // New user that needs to verify email
+                return (.needsVerification, nil)
+                
+            case .login:
+                // Existing user, handle passkey login
+                if authState.passkeyUrl != nil || authState.passkeyKnownDeviceUrl != nil {
+                    try await login(authorizationController: authorizationController, authInfo: EmailAuthInfo(email: email))
+                    return (.success, nil)
+                } else {
+                    return (.error, "Unable to get passkey authentication URL")
+                }
+                
+            case .signup:
+                // This shouldn't happen directly from signUpOrLogIn with email
+                return (.error, "Unexpected authentication state")
+            }
+        } catch {
+            return (.error, String(describing: error))
+        }
+    }
+    
+    private func handleVerification(
+        code: String,
+        email: String,
+        authorizationController: AuthorizationController
+    ) async throws -> (status: EmailAuthStatus, errorMessage: String?) {
+        let authState = try await verifyNewAccount(verificationCode: code)
+        
+        // Check if we're in the signup stage
+        guard authState.stage == .signup else {
+            return (.error, "Unexpected auth stage: \(authState.stage)")
+        }
+        
+        // If we have a passkeyId, use it to generate a passkey
+        if let passkeyId = authState.passkeyId {
+            try await generatePasskey(
+                identifier: authState.email ?? email,
+                biometricsId: passkeyId,
+                authorizationController: authorizationController
+            )
+            
+            try await createWallet(type: .evm, skipDistributable: false)
+            return (.success, nil)
+        } else if authState.passwordUrl != nil {
+            // In a real app, you would open this URL in a new window
+            // For this example, we'll just create a wallet directly
+            try await createWallet(type: .evm, skipDistributable: false)
+            return (.success, nil)
+        } else {
+            return (.error, "No authentication method available")
+        }
+    }
+    
+    /// Status of the email authentication process
+    public enum EmailAuthStatus {
+        /// Authentication successful
+        case success
+        /// User needs to verify their email
+        case needsVerification
+        /// Error occurred during authentication
+        case error
+    }
+}
 #endif
