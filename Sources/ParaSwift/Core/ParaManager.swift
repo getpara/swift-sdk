@@ -620,5 +620,105 @@ extension ParaManager {
         /// Error occurred during authentication
         case error
     }
+    
+    /// Handles the complete phone authentication flow, including signup/login decision and verification if needed.
+    /// - Parameters:
+    ///   - phoneNumber: The user's phone number (without country code)
+    ///   - countryCode: The country code (without the + prefix)
+    ///   - verificationCode: Optional verification code, to be provided if the first call results in a verify stage
+    ///   - authorizationController: The AuthorizationController to use for passkey operations
+    /// - Returns: A tuple containing the authentication status, next required action, and any error message
+    public func handlePhoneAuth(
+        phoneNumber: String,
+        countryCode: String,
+        verificationCode: String? = nil,
+        authorizationController: AuthorizationController
+    ) async -> (status: PhoneAuthStatus, errorMessage: String?) {
+        do {
+            // Format the phone number in international format
+            let formattedPhoneNumber = formatPhoneNumber(phoneNumber: phoneNumber, countryCode: countryCode)
+            
+            // If verification code is provided, handle verification flow
+            if let code = verificationCode {
+                return try await handlePhoneVerification(
+                    code: code,
+                    phoneNumber: phoneNumber,
+                    countryCode: countryCode,
+                    authorizationController: authorizationController
+                )
+            }
+            
+            // Otherwise start the initial auth flow
+            let authState = try await signUpOrLogIn(auth: .phone(formattedPhoneNumber))
+            
+            switch authState.stage {
+            case .verify:
+                // New user that needs to verify phone
+                return (.needsVerification, nil)
+                
+            case .login:
+                // Existing user, handle passkey login
+                if authState.passkeyUrl != nil || authState.passkeyKnownDeviceUrl != nil {
+                    try await login(
+                        authorizationController: authorizationController,
+                        authInfo: PhoneAuthInfo(phone: phoneNumber, countryCode: countryCode)
+                    )
+                    return (.success, nil)
+                } else {
+                    return (.error, "Unable to get passkey authentication URL")
+                }
+                
+            case .signup:
+                // This shouldn't happen directly from signUpOrLogIn with phone
+                return (.error, "Unexpected authentication state")
+            }
+        } catch {
+            return (.error, String(describing: error))
+        }
+    }
+    
+    private func handlePhoneVerification(
+        code: String,
+        phoneNumber: String,
+        countryCode: String,
+        authorizationController: AuthorizationController
+    ) async throws -> (status: PhoneAuthStatus, errorMessage: String?) {
+        let authState = try await verifyNewAccount(verificationCode: code)
+        
+        // Check if we're in the signup stage
+        guard authState.stage == .signup else {
+            return (.error, "Unexpected auth stage: \(authState.stage)")
+        }
+        
+        // If we have a passkeyId, use it to generate a passkey
+        if let passkeyId = authState.passkeyId {
+            let identifier = formatPhoneNumber(phoneNumber: phoneNumber, countryCode: countryCode)
+            try await generatePasskey(
+                identifier: identifier,
+                biometricsId: passkeyId,
+                authorizationController: authorizationController
+            )
+            
+            try await createWallet(type: .evm, skipDistributable: false)
+            return (.success, nil)
+        } else if authState.passwordUrl != nil {
+            // In a real app, you would open this URL in a new window
+            // For this example, we'll just create a wallet directly
+            try await createWallet(type: .evm, skipDistributable: false)
+            return (.success, nil)
+        } else {
+            return (.error, "No authentication method available")
+        }
+    }
+    
+    /// Status of the phone authentication process
+    public enum PhoneAuthStatus {
+        /// Authentication successful
+        case success
+        /// User needs to verify their phone number
+        case needsVerification
+        /// Error occurred during authentication
+        case error
+    }
 }
 #endif
