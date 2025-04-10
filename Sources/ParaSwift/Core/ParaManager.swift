@@ -360,7 +360,24 @@ extension ParaManager {
     internal func externalWalletLogin(externalAddress: String, type: String) async throws {
         try await ensureWebViewReady()
         
-        _ = try await postMessage(method: "externalWalletLogin", arguments: [externalAddress, type])
+        // Create proper Encodable structs for the parameters
+        struct ExternalWallet: Encodable {
+            let address: String
+            let type: String
+        }
+        
+        struct LoginExternalWalletParams: Encodable {
+            let externalWallet: ExternalWallet
+        }
+        
+        let params = LoginExternalWalletParams(
+            externalWallet: ExternalWallet(
+                address: externalAddress,
+                type: type
+            )
+        )
+        
+        _ = try await postMessage(method: "loginExternalWallet", arguments: [params])
         self.sessionState = .activeLoggedIn
         
         logger.debug("External wallet login completed for address: \(externalAddress)")
@@ -492,10 +509,26 @@ extension ParaManager {
     /// - Parameters:
     ///   - walletId: The ID of the wallet to use for signing
     ///   - message: The message to sign
+    ///   - timeoutMs: Optional timeout in milliseconds for the signing operation
     /// - Returns: The signature as a string
-    public func signMessage(walletId: String, message: String) async throws -> String {
+    public func signMessage(walletId: String, message: String, timeoutMs: Int? = nil) async throws -> String {
         try await ensureWebViewReady()
-        let result = try await postMessage(method: "signMessage", arguments: [walletId, message.toBase64()])
+        
+        // Create proper Encodable struct for parameters
+        struct SignMessageParams: Encodable {
+            let walletId: String
+            let messageBase64: String
+            let timeoutMs: Int?
+        }
+        
+        let messageBase64 = message.toBase64()
+        let params = SignMessageParams(
+            walletId: walletId,
+            messageBase64: messageBase64,
+            timeoutMs: timeoutMs
+        )
+        
+        let result = try await postMessage(method: "signMessage", arguments: [params])
         return try decodeDictionaryResult(result, expectedType: String.self, method: "signMessage", key: "signature")
     }
     
@@ -504,10 +537,27 @@ extension ParaManager {
     ///   - walletId: The ID of the wallet to use for signing
     ///   - rlpEncodedTx: The RLP-encoded transaction
     ///   - chainId: The chain ID
+    ///   - timeoutMs: Optional timeout in milliseconds for the signing operation
     /// - Returns: The signature as a string
-    public func signTransaction(walletId: String, rlpEncodedTx: String, chainId: String) async throws -> String {
+    public func signTransaction(walletId: String, rlpEncodedTx: String, chainId: String, timeoutMs: Int? = nil) async throws -> String {
         try await ensureWebViewReady()
-        let result = try await postMessage(method: "signTransaction", arguments: [walletId, rlpEncodedTx, chainId])
+        
+        // Create proper Encodable struct for parameters
+        struct SignTransactionParams: Encodable {
+            let walletId: String
+            let rlpEncodedTxBase64: String
+            let chainId: String
+            let timeoutMs: Int?
+        }
+        
+        let params = SignTransactionParams(
+            walletId: walletId,
+            rlpEncodedTxBase64: rlpEncodedTx.toBase64(),
+            chainId: chainId,
+            timeoutMs: timeoutMs
+        )
+        
+        let result = try await postMessage(method: "signTransaction", arguments: [params])
         return try decodeDictionaryResult(result, expectedType: String.self, method: "signTransaction", key: "signature")
     }
 }
