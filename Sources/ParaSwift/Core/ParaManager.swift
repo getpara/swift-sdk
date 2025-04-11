@@ -6,55 +6,56 @@ import os
 #if os(iOS)
 @available(iOS 16.4,*)
 @MainActor
-/// Para Manager class for interacting with Para services
+/// Manages Para wallet services including authentication, wallet management, and transaction signing.
 ///
-/// This class provides a comprehensive interface for applications to interact with
-/// Para wallet services, including authentication, wallet management, and transaction signing.
+/// This class provides a comprehensive interface for applications to interact with Para wallet services.
+/// It handles authentication flows, wallet creation and management, and transaction signing operations.
 public class ParaManager: NSObject, ObservableObject {
     // MARK: - Properties
     
     private let logger = Logger(subsystem: "com.paraSwift", category: "ParaManager")
     
-    /// Available Para wallets connected to this instance
+    /// Available Para wallets connected to this instance.
     @Published public var wallets: [Wallet] = []
     
-    /// Current state of the Para Manager session
+    /// Current state of the Para Manager session.
     @Published public var sessionState: ParaSessionState = .unknown
     
-    /// Indicates if the ParaManager is ready to receive requests
+    /// Indicates if the ParaManager is ready to receive requests.
     public var isReady: Bool {
         return paraWebView.isReady
     }
     
-    /// Current package version
+    /// Current package version.
     public static let packageVersion = "1.2.1"
     
-    /// Para environment configuration
+    /// Para environment configuration.
     public var environment: ParaEnvironment {
         didSet {
             self.passkeysManager.relyingPartyIdentifier = environment.relyingPartyId
         }
     }
     
-    /// API key for Para services
+    /// API key for Para services.
     public var apiKey: String
     
-    /// Internal passkeys manager for handling authentication
+    /// Internal passkeys manager for handling authentication.
     private let passkeysManager: PasskeysManager
     
-    /// Web view interface for communicating with Para services
+    /// Web view interface for communicating with Para services.
     private let paraWebView: ParaWebView
     
-    /// Deep link for app authentication flows
+    /// Deep link for app authentication flows.
     internal let deepLink: String
     
     // MARK: - Initialization
     
-    /// Initialize a new Para manager
+    /// Creates a new Para manager instance.
+    ///
     /// - Parameters:
-    ///   - environment: The Para Environment enum
-    ///   - apiKey: Your Para API key
-    ///   - deepLink: An optional deepLink for your application. Defaults to the app's Bundle Identifier.
+    ///   - environment: The Para environment configuration.
+    ///   - apiKey: Your Para API key.
+    ///   - deepLink: Optional deep link for your application. Defaults to the app's bundle identifier.
     public init(environment: ParaEnvironment, apiKey: String, deepLink: String? = nil) {
         self.environment = environment
         self.apiKey = apiKey
@@ -160,7 +161,10 @@ public class ParaManager: NSObject, ObservableObject {
 
 @available(iOS 16.4,*)
 extension ParaManager {
-    /// Helper function for extracting authentication information
+    /// Extracts authentication information and gets a web challenge.
+    ///
+    /// - Parameter authInfo: Optional authentication information (email or phone).
+    /// - Returns: The web challenge result.
     private func authInfoHelper(authInfo: AuthInfo?) async throws -> Any? {
         if let authInfo = authInfo as? EmailAuthInfo {
             return try await postMessage(method: "getWebChallenge", arguments: [authInfo])
@@ -173,16 +177,27 @@ extension ParaManager {
         return try await postMessage(method: "getWebChallenge", arguments: [])
     }
     
-    /// Login with passkey authentication
+    /// Logs in with passkey authentication.
+    ///
     /// - Parameters:
-    ///   - authorizationController: The controller to handle authorization UI
-    ///   - authInfo: Optional authentication information (email or phone)
+    ///   - authorizationController: The controller to handle authorization UI.
+    ///   - authInfo: Optional authentication information (email or phone).
     @available(macOS 13.3, iOS 16.4, *)
     @MainActor
     public func loginWithPasskey(authorizationController: AuthorizationController, authInfo: AuthInfo?) async throws {
         let getWebChallengeResult = try await authInfoHelper(authInfo: authInfo)
-        let challenge = try decodeDictionaryResult(getWebChallengeResult, expectedType: String.self, method: "getWebChallenge", key: "challenge")
-        let allowedPublicKeys = try decodeDictionaryResult(getWebChallengeResult, expectedType: [String]?.self, method: "getWebChallenge", key: "allowedPublicKeys") ?? []
+        let challenge = try decodeDictionaryResult(
+            getWebChallengeResult,
+            expectedType: String.self,
+            method: "getWebChallenge",
+            key: "challenge"
+        )
+        let allowedPublicKeys = try decodeDictionaryResult(
+            getWebChallengeResult,
+            expectedType: [String]?.self,
+            method: "getWebChallenge",
+            key: "allowedPublicKeys"
+        ) ?? []
         
         let signIntoPasskeyAccountResult = try await passkeysManager.signIntoPasskeyAccount(
             authorizationController: authorizationController,
@@ -196,13 +211,13 @@ extension ParaManager {
         let signature = signIntoPasskeyAccountResult.signature.base64URLEncodedString()
         
         let verifyWebChallengeResult = try await postMessage(
-            method: "verifyWebChallenge", 
+            method: "verifyWebChallenge",
             arguments: [id, authenticatorData, clientDataJSON, signature]
         )
         let userId = try decodeResult(verifyWebChallengeResult, expectedType: String.self, method: "verifyWebChallenge")
         
         _ = try await postMessage(
-            method: "loginV2", 
+            method: "loginV2",
             arguments: [userId, id, signIntoPasskeyAccountResult.userID.base64URLEncodedString()]
         )
         self.wallets = try await fetchWallets()
@@ -462,10 +477,11 @@ extension ParaManager {
 
 @available(iOS 16.4,*)
 extension ParaManager {
-    /// Create a new wallet of the specified type
+    /// Creates a new wallet of the specified type.
+    ///
     /// - Parameters:
-    ///   - type: The type of wallet to create
-    ///   - skipDistributable: Whether to skip distributable shares
+    ///   - type: The type of wallet to create.
+    ///   - skipDistributable: Whether to skip distributable shares.
     @MainActor
     public func createWallet(type: WalletType, skipDistributable: Bool) async throws {
         try await ensureWebViewReady()
@@ -474,8 +490,9 @@ extension ParaManager {
         self.sessionState = .activeLoggedIn
     }
     
-    /// Fetch all wallets associated with the current user
-    /// - Returns: Array of wallet objects
+    /// Fetches all wallets associated with the current user.
+    ///
+    /// - Returns: Array of wallet objects.
     public func fetchWallets() async throws -> [Wallet] {
         try await ensureWebViewReady()
         let result = try await postMessage(method: "fetchWallets", arguments: [])
@@ -483,17 +500,19 @@ extension ParaManager {
         return walletsData.map { Wallet(result: $0) }
     }
     
-    /// Distribute a new wallet share to another user
+    /// Distributes a new wallet share to another user.
+    ///
     /// - Parameters:
-    ///   - walletId: The ID of the wallet to share
-    ///   - userShare: The user share
+    ///   - walletId: The ID of the wallet to share.
+    ///   - userShare: The user share.
     public func distributeNewWalletShare(walletId: String, userShare: String) async throws {
         try await ensureWebViewReady()
         _ = try await postMessage(method: "distributeNewWalletShare", arguments: [walletId, userShare])
     }
     
-    /// Get the current user's email address
-    /// - Returns: Email address as a string
+    /// Gets the current user's email address.
+    ///
+    /// - Returns: Email address as a string.
     public func getEmail() async throws -> String {
         try await ensureWebViewReady()
         let result = try await postMessage(method: "getEmail", arguments: [])
@@ -505,16 +524,16 @@ extension ParaManager {
 
 @available(iOS 16.4,*)
 extension ParaManager {
-    /// Sign a message with a wallet
+    /// Signs a message with a wallet.
+    ///
     /// - Parameters:
-    ///   - walletId: The ID of the wallet to use for signing
-    ///   - message: The message to sign
-    ///   - timeoutMs: Optional timeout in milliseconds for the signing operation
-    /// - Returns: The signature as a string
+    ///   - walletId: The ID of the wallet to use for signing.
+    ///   - message: The message to sign.
+    ///   - timeoutMs: Optional timeout in milliseconds for the signing operation.
+    /// - Returns: The signature as a string.
     public func signMessage(walletId: String, message: String, timeoutMs: Int? = nil) async throws -> String {
         try await ensureWebViewReady()
         
-        // Create proper Encodable struct for parameters
         struct SignMessageParams: Encodable {
             let walletId: String
             let messageBase64: String
@@ -529,20 +548,30 @@ extension ParaManager {
         )
         
         let result = try await postMessage(method: "signMessage", arguments: [params])
-        return try decodeDictionaryResult(result, expectedType: String.self, method: "signMessage", key: "signature")
+        return try decodeDictionaryResult(
+            result,
+            expectedType: String.self,
+            method: "signMessage",
+            key: "signature"
+        )
     }
     
-    /// Sign a transaction with a wallet
+    /// Signs a transaction with a wallet.
+    ///
     /// - Parameters:
-    ///   - walletId: The ID of the wallet to use for signing
-    ///   - rlpEncodedTx: The RLP-encoded transaction
-    ///   - chainId: The chain ID
-    ///   - timeoutMs: Optional timeout in milliseconds for the signing operation
-    /// - Returns: The signature as a string
-    public func signTransaction(walletId: String, rlpEncodedTx: String, chainId: String, timeoutMs: Int? = nil) async throws -> String {
+    ///   - walletId: The ID of the wallet to use for signing.
+    ///   - rlpEncodedTx: The RLP-encoded transaction.
+    ///   - chainId: The chain ID.
+    ///   - timeoutMs: Optional timeout in milliseconds for the signing operation.
+    /// - Returns: The signature as a string.
+    public func signTransaction(
+        walletId: String,
+        rlpEncodedTx: String,
+        chainId: String,
+        timeoutMs: Int? = nil
+    ) async throws -> String {
         try await ensureWebViewReady()
         
-        // Create proper Encodable struct for parameters
         struct SignTransactionParams: Encodable {
             let walletId: String
             let rlpEncodedTxBase64: String
@@ -558,7 +587,12 @@ extension ParaManager {
         )
         
         let result = try await postMessage(method: "signTransaction", arguments: [params])
-        return try decodeDictionaryResult(result, expectedType: String.self, method: "signTransaction", key: "signature")
+        return try decodeDictionaryResult(
+            result,
+            expectedType: String.self,
+            method: "signTransaction",
+            key: "signature"
+        )
     }
 }
 
@@ -566,14 +600,16 @@ extension ParaManager {
 
 @available(iOS 16.4,*)
 extension ParaManager {
-    /// Formats a phone number into the international format required by Para
+    /// Formats a phone number into the international format required by Para.
+    ///
     /// - Parameters:
-    ///   - phoneNumber: The national phone number (without country code)
-    ///   - countryCode: The country code (without the plus sign)
-    /// - Returns: Formatted phone number in international format (+${countryCode}${phoneNumber})
+    ///   - phoneNumber: The national phone number (without country code).
+    ///   - countryCode: The country code (without the plus sign).
+    /// - Returns: Formatted phone number in international format (+${countryCode}${phoneNumber}).
+    ///
     /// - Note: This method is provided as a convenience for formatting phone numbers correctly.
     ///         All Para authentication methods expect phone numbers in international format.
-    ///         Example: formatPhoneNumber(phoneNumber: "5551234", countryCode: "1") returns "+15551234"
+    ///         Example: formatPhoneNumber(phoneNumber: "5551234", countryCode: "1") returns "+15551234".
     public func formatPhoneNumber(phoneNumber: String, countryCode: String) -> String {
         return "+\(countryCode)\(phoneNumber)"
     }
@@ -583,42 +619,48 @@ extension ParaManager {
 
 @available(iOS 16.4,*)
 extension ParaManager {
-    /// Handles the complete email authentication flow, including signup/login decision and verification if needed.
+    /// Handles the complete email authentication flow.
+    ///
+    /// This method manages the entire email authentication process, including signup/login decision
+    /// and verification if needed.
+    ///
     /// - Parameters:
-    ///   - email: The user's email address
-    ///   - verificationCode: Optional verification code, to be provided if the first call results in a verify stage
-    ///   - authorizationController: The AuthorizationController to use for passkey operations
-    /// - Returns: A tuple containing the authentication status, next required action, and any error message
+    ///   - email: The user's email address.
+    ///   - verificationCode: Optional verification code, to be provided if the first call results in a verify stage.
+    ///   - authorizationController: The AuthorizationController to use for passkey operations.
+    /// - Returns: A tuple containing the authentication status, next required action, and any error message.
     public func handleEmailAuth(
         email: String,
         verificationCode: String? = nil,
         authorizationController: AuthorizationController
     ) async -> (status: EmailAuthStatus, errorMessage: String?) {
         do {
-            // If verification code is provided, handle verification flow
             if let code = verificationCode {
-                return try await handleEmailVerification(code: code, email: email, authorizationController: authorizationController)
+                return try await handleEmailVerification(
+                    code: code,
+                    email: email,
+                    authorizationController: authorizationController
+                )
             }
             
-            // Otherwise start the initial auth flow
             let authState = try await signUpOrLogIn(auth: .email(email))
             
             switch authState.stage {
             case .verify:
-                // New user that needs to verify email
                 return (.needsVerification, nil)
                 
             case .login:
-                // Existing user, handle passkey login
                 if authState.passkeyUrl != nil || authState.passkeyKnownDeviceUrl != nil {
-                    try await loginWithPasskey(authorizationController: authorizationController, authInfo: EmailAuthInfo(email: email))
+                    try await loginWithPasskey(
+                        authorizationController: authorizationController,
+                        authInfo: EmailAuthInfo(email: email)
+                    )
                     return (.success, nil)
                 } else {
                     return (.error, "Unable to get passkey authentication URL")
                 }
                 
             case .signup:
-                // This shouldn't happen directly from signUpOrLogIn with email
                 return (.error, "Unexpected authentication state")
             }
         } catch {
@@ -626,6 +668,13 @@ extension ParaManager {
         }
     }
     
+    /// Handles email verification for a new account.
+    ///
+    /// - Parameters:
+    ///   - code: The verification code.
+    ///   - email: The user's email address.
+    ///   - authorizationController: The AuthorizationController to use for passkey operations.
+    /// - Returns: A tuple containing the authentication status and any error message.
     private func handleEmailVerification(
         code: String,
         email: String,
@@ -633,12 +682,10 @@ extension ParaManager {
     ) async throws -> (status: EmailAuthStatus, errorMessage: String?) {
         let authState = try await verifyNewAccount(verificationCode: code)
         
-        // Check if we're in the signup stage
         guard authState.stage == .signup else {
             return (.error, "Unexpected auth stage: \(authState.stage)")
         }
         
-        // If we have a passkeyId, use it to generate a passkey
         if let passkeyId = authState.passkeyId {
             try await generatePasskey(
                 identifier: authState.email ?? email,
@@ -649,8 +696,6 @@ extension ParaManager {
             try await createWallet(type: .evm, skipDistributable: false)
             return (.success, nil)
         } else if authState.passwordUrl != nil {
-            // In a real app, you would open this URL in a new window
-            // For this example, we'll just create a wallet directly
             try await createWallet(type: .evm, skipDistributable: false)
             return (.success, nil)
         } else {
@@ -658,23 +703,27 @@ extension ParaManager {
         }
     }
     
-    /// Status of the email authentication process
+    /// Status of the email authentication process.
     public enum EmailAuthStatus {
-        /// Authentication successful
+        /// Authentication successful.
         case success
-        /// User needs to verify their email
+        /// User needs to verify their email.
         case needsVerification
-        /// Error occurred during authentication
+        /// Error occurred during authentication.
         case error
     }
     
-    /// Handles the complete phone authentication flow, including signup/login decision and verification if needed.
+    /// Handles the complete phone authentication flow.
+    ///
+    /// This method manages the entire phone authentication process, including signup/login decision
+    /// and verification if needed.
+    ///
     /// - Parameters:
-    ///   - phoneNumber: The user's phone number (without country code)
-    ///   - countryCode: The country code (without the + prefix)
-    ///   - verificationCode: Optional verification code, to be provided if the first call results in a verify stage
-    ///   - authorizationController: The AuthorizationController to use for passkey operations
-    /// - Returns: A tuple containing the authentication status, next required action, and any error message
+    ///   - phoneNumber: The user's phone number (without country code).
+    ///   - countryCode: The country code (without the + prefix).
+    ///   - verificationCode: Optional verification code, to be provided if the first call results in a verify stage.
+    ///   - authorizationController: The AuthorizationController to use for passkey operations.
+    /// - Returns: A tuple containing the authentication status, next required action, and any error message.
     public func handlePhoneAuth(
         phoneNumber: String,
         countryCode: String,
@@ -682,10 +731,8 @@ extension ParaManager {
         authorizationController: AuthorizationController
     ) async -> (status: PhoneAuthStatus, errorMessage: String?) {
         do {
-            // Format the phone number in international format
             let formattedPhoneNumber = formatPhoneNumber(phoneNumber: phoneNumber, countryCode: countryCode)
             
-            // If verification code is provided, handle verification flow
             if let code = verificationCode {
                 return try await handlePhoneVerification(
                     code: code,
@@ -695,16 +742,13 @@ extension ParaManager {
                 )
             }
             
-            // Otherwise start the initial auth flow
             let authState = try await signUpOrLogIn(auth: .phone(formattedPhoneNumber))
             
             switch authState.stage {
             case .verify:
-                // New user that needs to verify phone
                 return (.needsVerification, nil)
                 
             case .login:
-                // Existing user, handle passkey login
                 if authState.passkeyUrl != nil || authState.passkeyKnownDeviceUrl != nil {
                     try await loginWithPasskey(
                         authorizationController: authorizationController,
@@ -716,7 +760,6 @@ extension ParaManager {
                 }
                 
             case .signup:
-                // This shouldn't happen directly from signUpOrLogIn with phone
                 return (.error, "Unexpected authentication state")
             }
         } catch {
@@ -724,6 +767,14 @@ extension ParaManager {
         }
     }
     
+    /// Handles phone verification for a new account.
+    ///
+    /// - Parameters:
+    ///   - code: The verification code.
+    ///   - phoneNumber: The user's phone number.
+    ///   - countryCode: The country code.
+    ///   - authorizationController: The AuthorizationController to use for passkey operations.
+    /// - Returns: A tuple containing the authentication status and any error message.
     private func handlePhoneVerification(
         code: String,
         phoneNumber: String,
@@ -732,12 +783,10 @@ extension ParaManager {
     ) async throws -> (status: PhoneAuthStatus, errorMessage: String?) {
         let authState = try await verifyNewAccount(verificationCode: code)
         
-        // Check if we're in the signup stage
         guard authState.stage == .signup else {
             return (.error, "Unexpected auth stage: \(authState.stage)")
         }
         
-        // If we have a passkeyId, use it to generate a passkey
         if let passkeyId = authState.passkeyId {
             let identifier = formatPhoneNumber(phoneNumber: phoneNumber, countryCode: countryCode)
             try await generatePasskey(
@@ -749,8 +798,6 @@ extension ParaManager {
             try await createWallet(type: .evm, skipDistributable: false)
             return (.success, nil)
         } else if authState.passwordUrl != nil {
-            // In a real app, you would open this URL in a new window
-            // For this example, we'll just create a wallet directly
             try await createWallet(type: .evm, skipDistributable: false)
             return (.success, nil)
         } else {
@@ -758,22 +805,26 @@ extension ParaManager {
         }
     }
     
-    /// Status of the phone authentication process
+    /// Status of the phone authentication process.
     public enum PhoneAuthStatus {
-        /// Authentication successful
+        /// Authentication successful.
         case success
-        /// User needs to verify their phone number
+        /// User needs to verify their phone number.
         case needsVerification
-        /// Error occurred during authentication
+        /// Error occurred during authentication.
         case error
     }
 }
 
 // MARK: - Error Handling
 
+/// Errors that can occur during Para operations.
 public enum ParaError: Error, CustomStringConvertible {
+    /// An error occurred while executing JavaScript bridge code.
     case bridgeError(String)
+    /// The JavaScript bridge did not respond in time.
     case bridgeTimeoutError
+    /// A general error occurred.
     case error(String)
     
     public var description: String {
