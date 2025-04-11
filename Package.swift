@@ -21,8 +21,5 @@ let package = Package(
         .target(
             name: "ParaSwift",
             dependencies: ["BigInt"]),
-        .testTarget(
-            name: "ParaSwiftTests",
-            dependencies: ["ParaSwift"]),
     ]
 )
