@@ -10,4 +10,3 @@ Configs/EnvDebug.xcconfig
 Configs/EnvRelease.xcconfig
 example/*.xcconfig
 CLAUDE.md
-Package.resolved
