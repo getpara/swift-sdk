@@ -5,31 +5,48 @@
 //  Created by Brian Corbin on 2/11/25.
 //
 
+/// Protocol defining authentication information that can be encoded
 public protocol AuthInfo: Codable {}
 
+/// Authentication information for email-based authentication
 public struct EmailAuthInfo: AuthInfo {
+    /// The user's email address
     let email: String
     
+    /// Creates a new EmailAuthInfo instance
+    /// - Parameter email: The user's email address
     public init(email: String) {
         self.email = email
     }
 }
 
+/// Authentication information for phone-based authentication
 public struct PhoneAuthInfo: AuthInfo {
+    /// The user's phone number
     let phone: String
+    /// The country code for the phone number
     let countryCode: String
     
+    /// Creates a new PhoneAuthInfo instance
+    /// - Parameters:
+    ///   - phone: The user's phone number
+    ///   - countryCode: The country code for the phone number
     public init(phone: String, countryCode: String) {
         self.phone = phone
         self.countryCode = countryCode
     }
 }
 
-/// New authentication type for signUpOrLogIn method
+/// Authentication type for signUpOrLogIn method
 public enum Auth: Encodable {
+    /// Email-based authentication
     case email(String)
+    /// Phone-based authentication
     case phone(String)
     
+    /// Encodes the authentication type
+    /// - Parameter encoder: The encoder to use
+    /// - Throws: An error if encoding fails
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
@@ -40,6 +57,7 @@ public enum Auth: Encodable {
         }
     }
     
+    /// Coding keys for the Auth enum
     private enum CodingKeys: String, CodingKey {
         case email, phone
     }
@@ -47,8 +65,11 @@ public enum Auth: Encodable {
 
 /// Authentication state representing different stages of the auth flow
 public enum AuthStage: String, Codable {
+    /// Verification stage
     case verify
+    /// Signup stage
     case signup
+    /// Login stage
     case login
 }
 
@@ -71,8 +92,11 @@ public struct AuthState: Codable {
     /// Biometric hints for the user's devices
     public let biometricHints: [BiometricHint]?
     
+    /// Information about a biometric authentication device
     public struct BiometricHint: Codable {
+        /// The AAGUID (Authenticator Attestation GUID) of the device
         public let aaguid: String?
+        /// The user agent string of the device
         public let userAgent: String?
     }
 }
