@@ -129,30 +129,44 @@ public struct EVMTransaction: Codable {
     }
 }
 
-// MARK: - MetaMask Conversion
-
-extension EVMTransaction {
-    /// Converts the transaction to MetaMask format
-    /// - Parameter from: The sender address
-    /// - Returns: Transaction in MetaMask format
-    func toMetaMaskFormat(from: String) -> [String: String] {
-        var tx: [String: String] = ["from": from]
+@available(iOS 16.4, *)
+@MainActor
+public class ParaEvmSigner: ObservableObject {
+    private let paraManager: ParaManager
+    private let rpcUrl: String
+    
+    public init(paraManager: ParaManager, rpcUrl: String, walletId: String?) throws {
+        self.paraManager = paraManager
+        self.rpcUrl = rpcUrl
         
-        // Helper function to convert BigUInt to hex string
-        func toHexString(_ value: BigUInt?) -> String? {
-            value.map { "0x" + String($0, radix: 16) }
+        if let walletId {
+            Task {
+                try await selectWallet(walletId: walletId)
+            }
         }
-        
-        if let to = to { tx["to"] = to }
-        if let value = toHexString(value) { tx["value"] = value }
-        if let gasLimit = toHexString(gasLimit) { tx["gasLimit"] = gasLimit }
-        if let gasPrice = toHexString(gasPrice) { tx["gasPrice"] = gasPrice }
-        if let maxPriorityFeePerGas = toHexString(maxPriorityFeePerGas) { tx["maxPriorityFeePerGas"] = maxPriorityFeePerGas }
-        if let maxFeePerGas = toHexString(maxFeePerGas) { tx["maxFeePerGas"] = maxFeePerGas }
-        if let nonce = toHexString(nonce) { tx["nonce"] = nonce }
-        if let type = type { tx["type"] = "0x" + String(type, radix: 16) }
-        
-        return tx
+    }
+    
+    private func initEthersSigner(rpcUrl: String, walletId: String) async throws {
+        let _ = try await paraManager.postMessage(method: "initEthersSigner", arguments: [walletId, rpcUrl])
+    }
+    
+    public func selectWallet(walletId: String) async throws {
+        try await initEthersSigner(rpcUrl: self.rpcUrl, walletId: walletId)
+    }
+    
+    public func signMessage(message: String) async throws -> String {
+        let result = try await paraManager.postMessage(method: "ethersSignMessage", arguments: [message])
+        return try paraManager.decodeResult(result, expectedType: String.self, method: "ethersSignMessage")
+    }
+    
+    public func signTransaction(transactionB64: String) async throws -> String {
+        let result = try await paraManager.postMessage(method: "ethersSignTransaction", arguments: [transactionB64])
+        return try paraManager.decodeResult(result, expectedType: String.self, method: "ethersSignTransaction")
+    }
+    
+    public func sendTransaction(transactionB64: String) async throws -> Any {
+        let result = try await paraManager.postMessage(method: "ethersSendTransaction", arguments: [transactionB64])
+        return result!
     }
 }
 
@@ -212,46 +226,5 @@ extension EVMTransaction {
         try container.encodeIfPresent(smartContractFunctionArgs, forKey: .smartContractFunctionArgs)
         try container.encodeIfPresent(smartContractByteCode, forKey: .smartContractByteCode)
         try container.encodeIfPresent(type, forKey: .type)
-    }
-}
-
-@available(iOS 16.4, *)
-@MainActor
-public class ParaEvmSigner: ObservableObject {
-    private let paraManager: ParaManager
-    private let rpcUrl: String
-    
-    public init(paraManager: ParaManager, rpcUrl: String, walletId: String?) throws {
-        self.paraManager = paraManager
-        self.rpcUrl = rpcUrl
-        
-        if let walletId {
-            Task {
-                try await selectWallet(walletId: walletId)
-            }
-        }
-    }
-    
-    private func initEthersSigner(rpcUrl: String, walletId: String) async throws {
-        let _ = try await paraManager.postMessage(method: "initEthersSigner", arguments: [walletId, rpcUrl])
-    }
-    
-    public func selectWallet(walletId: String) async throws {
-        try await initEthersSigner(rpcUrl: self.rpcUrl, walletId: walletId)
-    }
-    
-    public func signMessage(message: String) async throws -> String {
-        let result = try await paraManager.postMessage(method: "ethersSignMessage", arguments: [message])
-        return try paraManager.decodeResult(result, expectedType: String.self, method: "ethersSignMessage")
-    }
-    
-    public func signTransaction(transactionB64: String) async throws -> String {
-        let result = try await paraManager.postMessage(method: "ethersSignTransaction", arguments: [transactionB64])
-        return try paraManager.decodeResult(result, expectedType: String.self, method: "ethersSignTransaction")
-    }
-    
-    public func sendTransaction(transactionB64: String) async throws -> Any {
-        let result = try await paraManager.postMessage(method: "ethersSendTransaction", arguments: [transactionB64])
-        return result!
     }
 }

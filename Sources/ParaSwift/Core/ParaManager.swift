@@ -179,7 +179,7 @@ extension ParaManager {
     ///   - authInfo: Optional authentication information (email or phone)
     @available(macOS 13.3, iOS 16.4, *)
     @MainActor
-    public func login(authorizationController: AuthorizationController, authInfo: AuthInfo?) async throws {
+    public func loginWithPasskey(authorizationController: AuthorizationController, authInfo: AuthInfo?) async throws {
         let getWebChallengeResult = try await authInfoHelper(authInfo: authInfo)
         let challenge = try decodeDictionaryResult(getWebChallengeResult, expectedType: String.self, method: "getWebChallenge", key: "challenge")
         let allowedPublicKeys = try decodeDictionaryResult(getWebChallengeResult, expectedType: [String]?.self, method: "getWebChallenge", key: "allowedPublicKeys") ?? []
@@ -215,7 +215,7 @@ extension ParaManager {
     ///   - biometricsId: The biometrics ID for the passkey
     ///   - authorizationController: The controller to handle authorization UI
     @available(macOS 13.3, iOS 16.4, *)
-    public func generatePasskey(identifier: String, biometricsId: String, authorizationController: AuthorizationController) async throws {
+    internal func generatePasskey(identifier: String, biometricsId: String, authorizationController: AuthorizationController) async throws {
         try await ensureWebViewReady()
         var userHandle = Data(count: 32)
         _ = userHandle.withUnsafeMutableBytes {
@@ -254,7 +254,7 @@ extension ParaManager {
     /// Signs up a new user or logs in an existing user
     /// - Parameter auth: Authentication information (email or phone)
     /// - Returns: AuthState object containing information about the next steps
-    public func signUpOrLogIn(auth: Auth) async throws -> AuthState {
+    internal func signUpOrLogIn(auth: Auth) async throws -> AuthState {
         try await ensureWebViewReady()
         
         // Create a properly structured Encodable payload
@@ -273,7 +273,7 @@ extension ParaManager {
     /// Verifies a new account with the provided verification code
     /// - Parameter verificationCode: The verification code sent to the user
     /// - Returns: AuthState object containing information about the next steps
-    public func verifyNewAccount(verificationCode: String) async throws -> AuthState {
+    internal func verifyNewAccount(verificationCode: String) async throws -> AuthState {
         try await ensureWebViewReady()
         
         let result = try await postMessage(method: "verifyNewAccount", arguments: [verificationCode])
@@ -597,7 +597,7 @@ extension ParaManager {
         do {
             // If verification code is provided, handle verification flow
             if let code = verificationCode {
-                return try await handleVerification(code: code, email: email, authorizationController: authorizationController)
+                return try await handleEmailVerification(code: code, email: email, authorizationController: authorizationController)
             }
             
             // Otherwise start the initial auth flow
@@ -611,7 +611,7 @@ extension ParaManager {
             case .login:
                 // Existing user, handle passkey login
                 if authState.passkeyUrl != nil || authState.passkeyKnownDeviceUrl != nil {
-                    try await login(authorizationController: authorizationController, authInfo: EmailAuthInfo(email: email))
+                    try await loginWithPasskey(authorizationController: authorizationController, authInfo: EmailAuthInfo(email: email))
                     return (.success, nil)
                 } else {
                     return (.error, "Unable to get passkey authentication URL")
@@ -626,7 +626,7 @@ extension ParaManager {
         }
     }
     
-    private func handleVerification(
+    private func handleEmailVerification(
         code: String,
         email: String,
         authorizationController: AuthorizationController
@@ -706,7 +706,7 @@ extension ParaManager {
             case .login:
                 // Existing user, handle passkey login
                 if authState.passkeyUrl != nil || authState.passkeyKnownDeviceUrl != nil {
-                    try await login(
+                    try await loginWithPasskey(
                         authorizationController: authorizationController,
                         authInfo: PhoneAuthInfo(phone: phoneNumber, countryCode: countryCode)
                     )
@@ -766,69 +766,6 @@ extension ParaManager {
         case needsVerification
         /// Error occurred during authentication
         case error
-    }
-}
-
-// MARK: - Deprecated Methods
-
-@available(iOS 16.4,*)
-extension ParaManager {
-    /// Deprecated: Use `signUpOrLogIn` instead
-    @available(*, deprecated, message: "Use signUpOrLogIn instead to align with V2 authentication flow")
-    public func checkIfUserExists(email: String) async throws -> Bool {
-        let result = try await postMessage(method: "checkIfUserExists", arguments: [email])
-        return try decodeResult(result, expectedType: Bool.self, method: "checkIfUserExists")
-    }
-    
-    /// Deprecated: Use `signUpOrLogIn` instead
-    @available(*, deprecated, message: "Use signUpOrLogIn instead to align with V2 authentication flow")
-    public func checkIfUserExistsByPhone(phoneNumber: String, countryCode: String) async throws -> Bool {
-        let result = try await postMessage(method: "checkIfUserExistsByPhone", arguments: [phoneNumber, countryCode])
-        return try decodeResult(result, expectedType: Bool.self, method: "checkIfUserExistsByPhone")
-    }
-    
-    /// Deprecated: Use `signUpOrLogIn` instead
-    @available(*, deprecated, message: "Use signUpOrLogIn instead to align with V2 authentication flow")
-    public func createUser(email: String) async throws {
-        _ = try await postMessage(method: "createUser", arguments: [email])
-    }
-    
-    /// Deprecated: Use `signUpOrLogIn` instead
-    @available(*, deprecated, message: "Use signUpOrLogIn instead to align with V2 authentication flow")
-    public func createUserByPhone(phoneNumber: String, countryCode: String) async throws {
-        _ = try await postMessage(method: "createUserByPhone", arguments: [phoneNumber, countryCode])
-    }
-    
-    /// Deprecated: Use `verifyNewAccount` instead
-    @available(*, deprecated, message: "Use verifyNewAccount instead to align with V2 authentication flow")
-    public func verify(verificationCode: String) async throws -> String {
-        try await ensureWebViewReady()
-        let result = try await postMessage(method: "verifyEmail", arguments: [verificationCode])
-        let resultString = try decodeResult(result, expectedType: String.self, method: "verifyEmail")
-        
-        let paths = resultString.split(separator: "/")
-        guard let lastPath = paths.last,
-              let biometricsId = lastPath.split(separator: "?").first else {
-            throw ParaError.bridgeError("Invalid path format in result")
-        }
-        
-        return String(biometricsId)
-    }
-    
-    /// Deprecated: Use `verifyNewAccount` instead
-    @available(*, deprecated, message: "Use verifyNewAccount instead to align with V2 authentication flow")
-    public func verifyByPhone(verificationCode: String) async throws -> String {
-        try await ensureWebViewReady()
-        let result = try await postMessage(method: "verifyPhone", arguments: [verificationCode])
-        let resultString = try decodeResult(result, expectedType: String.self, method: "verifyPhone")
-        
-        let paths = resultString.split(separator: "/")
-        guard let lastPath = paths.last,
-              let biometricsId = lastPath.split(separator: "?").first else {
-            throw ParaError.bridgeError("Invalid path format in result")
-        }
-        
-        return String(biometricsId)
     }
 }
 

@@ -48,7 +48,7 @@ extension ParaManager {
     ///   - provider: The OAuth provider to verify
     ///   - webAuthenticationSession: The WebAuthenticationSession to use for the OAuth flow
     /// - Returns: An AuthState object containing information about the next steps in the authentication flow
-    public func verifyOAuth(provider: OAuthProvider, webAuthenticationSession: WebAuthenticationSession) async throws -> AuthState {
+    internal func verifyOAuth(provider: OAuthProvider, webAuthenticationSession: WebAuthenticationSession) async throws -> AuthState {
         let logger = Logger(subsystem: "com.paraSwift", category: "OAuth")
         try await ensureWebViewReady()
         
@@ -115,30 +115,6 @@ extension ParaManager {
             logger.error("OAuth error: \(error.localizedDescription)")
             return (success: false, errorMessage: String(describing: error))
         }
-    }
-    
-    /// Deprecated: Use verifyOAuth instead to align with V2 authentication flow
-    /// Connects to an OAuth provider and returns the email associated with the account
-    /// - Parameters:
-    ///   - provider: The OAuth provider to connect to
-    ///   - webAuthenticationSession: The WebAuthenticationSession to use for the OAuth flow
-    /// - Returns: The email associated with the OAuth account
-    @available(*, deprecated, message: "Use verifyOAuth instead to align with V2 authentication flow")
-    public func oAuthConnect(provider: OAuthProvider, webAuthenticationSession: WebAuthenticationSession) async throws -> String {
-        let oAuthParams = OAuthUrlParams(method: provider.rawValue, deeplinkUrl: deepLink)
-        let result = try await postMessage(method: "getOAuthUrl", arguments: [oAuthParams])
-        let oAuthURL = try decodeResult(result, expectedType: String.self, method: "getOAuthUrl")
-        
-        guard let url = URL(string: oAuthURL) else {
-            throw ParaError.error("Invalid url")
-        }
-        
-        let urlWithToken = try await webAuthenticationSession.authenticate(using: url, callbackURLScheme: deepLink)
-        guard let email = urlWithToken.valueOf("email") else {
-            throw ParaError.error("No email found in returned url")
-        }
-        
-        return email
     }
     
     // MARK: - Private OAuth Helper Methods
@@ -252,7 +228,7 @@ extension ParaManager {
             
             // Use the email from OAuth response for authentication
             let emailAuthInfo = authState.email.map { EmailAuthInfo(email: $0) }
-            try await login(authorizationController: authorizationController, authInfo: emailAuthInfo)
+            try await loginWithPasskey(authorizationController: authorizationController, authInfo: emailAuthInfo)
             logger.debug("Login successful")
             return (success: true, errorMessage: nil)
             
