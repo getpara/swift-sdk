@@ -68,11 +68,11 @@ public class ParaWebView: NSObject, ObservableObject {
     /// Posts a message to the JavaScript bridge
     /// - Parameters:
     ///   - method: The method name to call
-    ///   - arguments: The arguments to pass to the method
+    ///   - payload: The payload object to pass to the method
     /// - Returns: The result from the JavaScript call
     /// - Throws: ParaWebViewError if the WebView is not ready or if the request fails
     @discardableResult
-    public func postMessage(method: String, arguments: [Encodable]) async throws -> Any? {
+    public func postMessage(method: String, payload: Encodable) async throws -> Any? {
         guard isReady else {
             logger.error("WebView not ready for method: \(method)")
             throw ParaWebViewError.webViewNotReady
@@ -87,20 +87,20 @@ public class ParaWebView: NSObject, ObservableObject {
             let requestId = "req-\(UUID().uuidString)"
             logger.debug("Sending message: method=\(method) requestId=\(requestId)")
             
-            let encodedArgs: Any
+            let encodedPayload: Any
             do {
-                let data = try JSONEncoder().encode(arguments.map { AnyEncodable($0) })
-                encodedArgs = try JSONSerialization.jsonObject(with: data, options: [])
+                let data = try JSONEncoder().encode(AnyEncodable(payload))
+                encodedPayload = try JSONSerialization.jsonObject(with: data, options: [])
             } catch {
-                logger.error("Failed to encode arguments: \(error.localizedDescription)")
-                continuation.resume(throwing: ParaWebViewError.invalidArguments("Failed to encode arguments: \(error)"))
+                logger.error("Failed to encode payload: \(error.localizedDescription)")
+                continuation.resume(throwing: ParaWebViewError.invalidArguments("Failed to encode payload: \(error)"))
                 return
             }
             
             let message: [String: Any] = [
                 "messageType": "Capsule#invokeMethod",
                 "methodName": method,
-                "arguments": encodedArgs,
+                "arguments": encodedPayload,
                 "requestId": requestId
             ]
             
@@ -229,6 +229,9 @@ public class ParaWebView: NSObject, ObservableObject {
         entry.continuation.resume(returning: responseData)
     }
 }
+
+/// Represents an empty payload for bridge calls with no arguments
+struct EmptyPayload: Encodable {}
 
 /// Extension implementing WKNavigationDelegate for ParaWebView
 @available(iOS 16.4,*)

@@ -147,7 +147,8 @@ public class ParaEvmSigner: ObservableObject {
     }
     
     private func initEthersSigner(rpcUrl: String, walletId: String) async throws {
-        let _ = try await paraManager.postMessage(method: "initEthersSigner", arguments: [walletId, rpcUrl])
+        let args = EthersSignerInitArgs(walletId: walletId, providerUrl: rpcUrl)
+        let _ = try await paraManager.postMessage(method: "initEthersSigner", payload: args)
     }
     
     public func selectWallet(walletId: String) async throws {
@@ -155,17 +156,20 @@ public class ParaEvmSigner: ObservableObject {
     }
     
     public func signMessage(message: String) async throws -> String {
-        let result = try await paraManager.postMessage(method: "ethersSignMessage", arguments: [message])
+        let args = EthersSignMessageArgs(message: message)
+        let result = try await paraManager.postMessage(method: "ethersSignMessage", payload: args)
         return try paraManager.decodeResult(result, expectedType: String.self, method: "ethersSignMessage")
     }
     
     public func signTransaction(transactionB64: String) async throws -> String {
-        let result = try await paraManager.postMessage(method: "ethersSignTransaction", arguments: [transactionB64])
+        let args = EthersSignTransactionArgs(b64EncodedTx: transactionB64)
+        let result = try await paraManager.postMessage(method: "ethersSignTransaction", payload: args)
         return try paraManager.decodeResult(result, expectedType: String.self, method: "ethersSignTransaction")
     }
     
     public func sendTransaction(transactionB64: String) async throws -> Any {
-        let result = try await paraManager.postMessage(method: "ethersSendTransaction", arguments: [transactionB64])
+        let args = EthersSendTransactionArgs(b64EncodedTx: transactionB64)
+        let result = try await paraManager.postMessage(method: "ethersSendTransaction", payload: args)
         return result!
     }
 }

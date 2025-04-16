@@ -56,7 +56,7 @@ extension ParaManager {
         logger.debug("Getting OAuth URL for provider: \(provider.rawValue)")
         let oAuthParams = OAuthUrlParams(method: provider.rawValue, deeplinkUrl: deepLink)
         
-        let oAuthUrlResult = try await postMessage(method: "getOAuthUrl", arguments: [oAuthParams])
+        let oAuthUrlResult = try await paraWebView.postMessage(method: "getOAuthUrl", payload: oAuthParams)
         guard let oAuthURL = oAuthUrlResult as? String, let url = URL(string: oAuthURL) else {
             throw ParaError.error("Invalid OAuth URL")
         }
@@ -77,7 +77,7 @@ extension ParaManager {
         )
         
         logger.debug("Calling verifyOAuth with provider: \(provider.rawValue)")
-        let result = try await postMessage(method: "verifyOAuth", arguments: [verifyParams])
+        let result = try await paraWebView.postMessage(method: "verifyOAuth", payload: verifyParams)
         
         // Step 5: Process the verification result
         let authState = try processOAuthResult(result, logger: logger)

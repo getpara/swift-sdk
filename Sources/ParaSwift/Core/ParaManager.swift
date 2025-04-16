@@ -43,7 +43,7 @@ public class ParaManager: NSObject, ObservableObject {
     private let passkeysManager: PasskeysManager
     
     /// Web view interface for communicating with Para services.
-    private let paraWebView: ParaWebView
+    internal let paraWebView: ParaWebView
     
     /// Deep link for app authentication flows.
     internal let deepLink: String
@@ -113,13 +113,20 @@ public class ParaManager: NSObject, ObservableObject {
     /// Posts a message to the Para bridge
     /// - Parameters:
     ///   - method: The method name to call
-    ///   - arguments: The arguments to pass
+    ///   - payload: The payload to pass
     /// - Returns: The response from the bridge
-    internal func postMessage(method: String, arguments: [Encodable]) async throws -> Any? {
-        logger.debug("Posting message to bridge - Method: \(method), Arguments: \(arguments)")
+    internal func postMessage(method: String, payload: Encodable) async throws -> Any? {
+        // Log payload as JSON string
+        var payloadString = "<encoding error>"
+        if let data = try? JSONEncoder().encode(AnyEncodable(payload)),
+           let jsonString = String(data: data, encoding: .utf8) {
+            payloadString = jsonString
+        }
+        logger.debug("Posting message to bridge - Method: \(method), Payload: \(payloadString)")
         
         do {
-            let result = try await paraWebView.postMessage(method: method, arguments: arguments)
+            // Call the ParaWebView postMessage with payload
+            let result: Any? = try await paraWebView.postMessage(method: method, payload: payload)
             logger.debug("Bridge response for method \(method): \(String(describing: result))")
             return result
         } catch {
@@ -166,15 +173,16 @@ extension ParaManager {
     /// - Parameter authInfo: Optional authentication information (email or phone).
     /// - Returns: The web challenge result.
     private func authInfoHelper(authInfo: AuthInfo?) async throws -> Any? {
-        if let authInfo = authInfo as? EmailAuthInfo {
-            return try await postMessage(method: "getWebChallenge", arguments: [authInfo])
+        let emailArg: String?
+        // TODO: Add phone support when bridge supports it
+        if let emailInfo = authInfo as? EmailAuthInfo {
+            emailArg = emailInfo.email
+        } else {
+            emailArg = nil
         }
-        
-        if let authInfo = authInfo as? PhoneAuthInfo {
-            return try await postMessage(method: "getWebChallenge", arguments: [authInfo])
-        }
-        
-        return try await postMessage(method: "getWebChallenge", arguments: [])
+        let payload = GetWebChallengeArgs(email: emailArg)
+        // Use the wrapper with payload
+        return try await postMessage(method: "getWebChallenge", payload: payload)
     }
     
     /// Logs in with passkey authentication.
@@ -210,15 +218,28 @@ extension ParaManager {
         let clientDataJSON = signIntoPasskeyAccountResult.rawClientDataJSON.base64URLEncodedString()
         let signature = signIntoPasskeyAccountResult.signature.base64URLEncodedString()
         
+        let verifyArgs = VerifyWebChallengeArgs(
+            publicKey: id,
+            authenticatorData: authenticatorData,
+            clientDataJSON: clientDataJSON,
+            signature: signature
+        )
+        // Use the wrapper with payload
         let verifyWebChallengeResult = try await postMessage(
             method: "verifyWebChallenge",
-            arguments: [id, authenticatorData, clientDataJSON, signature]
+            payload: verifyArgs
         )
         let userId = try decodeResult(verifyWebChallengeResult, expectedType: String.self, method: "verifyWebChallenge")
         
+        let loginArgs = LoginV2Args(
+            userId: userId,
+            credentialsId: id,
+            userHandle: signIntoPasskeyAccountResult.userID.base64URLEncodedString()
+        )
+        // Use the wrapper with payload
         _ = try await postMessage(
             method: "loginV2",
-            arguments: [userId, id, signIntoPasskeyAccountResult.userID.base64URLEncodedString()]
+            payload: loginArgs
         )
         self.wallets = try await fetchWallets()
         sessionState = .activeLoggedIn
@@ -254,15 +275,17 @@ extension ParaManager {
         let clientDataJSONEncoded = rawClientData.base64URLEncodedString()
         let credentialIDEncoded = credID.base64URLEncodedString()
 
+        let generateArgs = GeneratePasskeyV2Args(
+            attestationObject: attestationObjectEncoded,
+            clientDataJson: clientDataJSONEncoded,
+            credentialsId: credentialIDEncoded,
+            userHandle: userHandleEncoded,
+            biometricsId: biometricsId
+        )
+        // Use the wrapper with payload
         _ = try await postMessage(
             method: "generatePasskeyV2",
-            arguments: [
-                attestationObjectEncoded,
-                clientDataJSONEncoded,
-                credentialIDEncoded,
-                userHandleEncoded,
-                biometricsId
-            ]
+            payload: generateArgs
         )
     }
     
@@ -275,7 +298,7 @@ extension ParaManager {
         // Create a properly structured Encodable payload
         let payload = createSignUpOrLogInPayload(from: auth)
         
-        let result = try await postMessage(method: "signUpOrLogIn", arguments: [payload])
+        let result = try await postMessage(method: "signUpOrLogIn", payload: payload)
         let authState = try parseAuthStateFromResult(result)
         
         if authState.stage == .verify || authState.stage == .login {
@@ -291,7 +314,7 @@ extension ParaManager {
     internal func verifyNewAccount(verificationCode: String) async throws -> AuthState {
         try await ensureWebViewReady()
         
-        let result = try await postMessage(method: "verifyNewAccount", arguments: [verificationCode])
+        let result = try await postMessage(method: "verifyNewAccount", payload: VerifyNewAccountArgs(verificationCode: verificationCode))
         let authState = try parseAuthStateFromResult(result)
         
         if authState.stage == .signup {
@@ -305,35 +328,35 @@ extension ParaManager {
     /// - Returns: URI for configuring 2FA in an authenticator app
     public func setup2FA() async throws -> String {
         try await ensureWebViewReady()
-        let result = try await postMessage(method: "setup2FA", arguments: [])
+        let result = try await postMessage(method: "setup2FA", payload: EmptyPayload())
         return try decodeDictionaryResult(result, expectedType: String.self, method: "setup2FA", key: "uri")
     }
     
     /// Enable two-factor authentication after setup
     public func enable2FA() async throws {
         try await ensureWebViewReady()
-        _ = try await postMessage(method: "enable2FA", arguments: [])
+        _ = try await postMessage(method: "enable2FA", payload: EmptyPayload())
     }
     
     /// Check if two-factor authentication is set up
     /// - Returns: True if 2FA is set up
     public func is2FASetup() async throws -> Bool {
         try await ensureWebViewReady()
-        let result = try await postMessage(method: "check2FAStatus", arguments: [])
+        let result = try await postMessage(method: "check2FAStatus", payload: EmptyPayload())
         return try decodeDictionaryResult(result, expectedType: Bool.self, method: "check2FAStatus", key: "isSetup")
     }
     
     /// Resend verification code for account verification
     public func resendVerificationCode() async throws {
         try await ensureWebViewReady()
-        _ = try await postMessage(method: "resendVerificationCode", arguments: [])
+        _ = try await postMessage(method: "resendVerificationCode", payload: EmptyPayload())
     }
     
     /// Check if the user is fully logged in
     /// - Returns: True if the user is fully logged in
     public func isFullyLoggedIn() async throws -> Bool {
         try await ensureWebViewReady()
-        let result = try await postMessage(method: "isFullyLoggedIn", arguments: [])
+        let result = try await postMessage(method: "isFullyLoggedIn", payload: EmptyPayload())
         return try decodeResult(result, expectedType: Bool.self, method: "isFullyLoggedIn")
     }
     
@@ -341,7 +364,7 @@ extension ParaManager {
     /// - Returns: True if the session is active
     public func isSessionActive() async throws -> Bool {
         try await ensureWebViewReady()
-        let result = try await postMessage(method: "isSessionActive", arguments: [])
+        let result = try await postMessage(method: "isSessionActive", payload: EmptyPayload())
         return try decodeResult(result, expectedType: Bool.self, method: "isSessionActive")
     }
     
@@ -349,13 +372,13 @@ extension ParaManager {
     /// - Returns: Session data as a string
     public func exportSession() async throws -> String {
         try await ensureWebViewReady()
-        let result = try await postMessage(method: "exportSession", arguments: [])
+        let result = try await postMessage(method: "exportSession", payload: EmptyPayload())
         return try decodeResult(result, expectedType: String.self, method: "exportSession")
     }
     
     /// Logs out the current user and clears all session data
     public func logout() async throws {
-        _ = try await postMessage(method: "logout", arguments: [])
+        _ = try await postMessage(method: "logout", payload: EmptyPayload())
         
         // Clear web data store
         let dataStore = WKWebsiteDataStore.default()
@@ -392,7 +415,7 @@ extension ParaManager {
             )
         )
         
-        _ = try await postMessage(method: "loginExternalWallet", arguments: [params])
+        _ = try await postMessage(method: "loginExternalWallet", payload: params)
         self.sessionState = .activeLoggedIn
         
         logger.debug("External wallet login completed for address: \(externalAddress)")
@@ -485,7 +508,7 @@ extension ParaManager {
     @MainActor
     public func createWallet(type: WalletType, skipDistributable: Bool) async throws {
         try await ensureWebViewReady()
-        _ = try await postMessage(method: "createWallet", arguments: [type.rawValue, skipDistributable])
+        _ = try await postMessage(method: "createWallet", payload: CreateWalletArgs(type: type.rawValue, skipDistributable: skipDistributable))
         self.wallets = try await fetchWallets()
         self.sessionState = .activeLoggedIn
     }
@@ -495,7 +518,7 @@ extension ParaManager {
     /// - Returns: Array of wallet objects.
     public func fetchWallets() async throws -> [Wallet] {
         try await ensureWebViewReady()
-        let result = try await postMessage(method: "fetchWallets", arguments: [])
+        let result = try await postMessage(method: "fetchWallets", payload: EmptyPayload())
         let walletsData = try decodeResult(result, expectedType: [[String: Any]].self, method: "fetchWallets")
         return walletsData.map { Wallet(result: $0) }
     }
@@ -507,7 +530,7 @@ extension ParaManager {
     ///   - userShare: The user share.
     public func distributeNewWalletShare(walletId: String, userShare: String) async throws {
         try await ensureWebViewReady()
-        _ = try await postMessage(method: "distributeNewWalletShare", arguments: [walletId, userShare])
+        _ = try await postMessage(method: "distributeNewWalletShare", payload: DistributeNewWalletShareArgs(walletId: walletId, userShare: userShare))
     }
     
     /// Gets the current user's email address.
@@ -515,7 +538,7 @@ extension ParaManager {
     /// - Returns: Email address as a string.
     public func getEmail() async throws -> String {
         try await ensureWebViewReady()
-        let result = try await postMessage(method: "getEmail", arguments: [])
+        let result = try await postMessage(method: "getEmail", payload: EmptyPayload())
         return try decodeResult(result, expectedType: String.self, method: "getEmail")
     }
 }
@@ -547,7 +570,7 @@ extension ParaManager {
             timeoutMs: timeoutMs
         )
         
-        let result = try await postMessage(method: "signMessage", arguments: [params])
+        let result = try await postMessage(method: "signMessage", payload: params)
         return try decodeDictionaryResult(
             result,
             expectedType: String.self,
@@ -586,7 +609,7 @@ extension ParaManager {
             timeoutMs: timeoutMs
         )
         
-        let result = try await postMessage(method: "signTransaction", arguments: [params])
+        let result = try await postMessage(method: "signTransaction", payload: params)
         return try decodeDictionaryResult(
             result,
             expectedType: String.self,
