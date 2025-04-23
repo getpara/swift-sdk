@@ -391,59 +391,57 @@ extension ParaManager {
         self.sessionState = .inactive
     }
     
-    /// Logs in with an external wallet address
+    /// Logs in with an external wallet
     /// - Parameters:
-    ///   - externalAddress: The external wallet address
-    ///   - type: The type of wallet (e.g. "EVM")
-    internal func externalWalletLogin(externalAddress: String, type: String) async throws {
+    ///   - wallet: Information about the external wallet
+    internal func externalWalletLogin(wallet: ExternalWalletInfo) async throws {
         try await ensureWebViewReady()
         
-        // Create proper Encodable structs for the parameters
-        struct ExternalWallet: Encodable {
-            let address: String
-            let type: String
-        }
-        
-        struct LoginExternalWalletParams: Encodable {
-            let externalWallet: ExternalWallet
-        }
-        
-        let params = LoginExternalWalletParams(
-            externalWallet: ExternalWallet(
-                address: externalAddress,
-                type: type
-            )
-        )
+        // Create proper Encodable payload using ExternalWalletIdentity
+        let identity = ExternalWalletIdentity(wallet: wallet)
+        let params = SignUpOrLogInPayload(auth: identity)
         
         _ = try await postMessage(method: "loginExternalWallet", payload: params)
         self.sessionState = .activeLoggedIn
         
-        logger.debug("External wallet login completed for address: \(externalAddress)")
+        logger.debug("External wallet login completed for address: \(wallet.address)")
+    }
+    
+    /// Logs in with an external wallet address (legacy version)
+    /// - Parameters:
+    ///   - externalAddress: The external wallet address
+    ///   - type: The type of wallet (e.g. "EVM")
+    internal func externalWalletLogin(externalAddress: String, type: String) async throws {
+        let walletType = ExternalWalletType(rawValue: type) ?? .evm
+        let wallet = ExternalWalletInfo(address: externalAddress, type: walletType)
+        try await externalWalletLogin(wallet: wallet)
     }
     
     // MARK: - Auth Helper Methods
     
     // Private struct for the signUpOrLogIn payload
     private struct SignUpOrLogInPayload: Encodable {
-        let auth: AuthPayload
+        let auth: AnyEncodable
         
-        struct AuthPayload: Encodable {
-            let email: String?
-            let phone: String?
-            
-            init(email: String? = nil, phone: String? = nil) {
-                self.email = email
-                self.phone = phone
-            }
+        init(auth: Encodable) {
+            self.auth = AnyEncodable(auth)
         }
     }
     
     private func createSignUpOrLogInPayload(from auth: Auth) -> SignUpOrLogInPayload {
         switch auth {
         case .email(let emailAddress):
-            return SignUpOrLogInPayload(auth: SignUpOrLogInPayload.AuthPayload(email: emailAddress))
+            return SignUpOrLogInPayload(auth: EmailIdentity(email: emailAddress))
         case .phone(let phoneNumber):
-            return SignUpOrLogInPayload(auth: SignUpOrLogInPayload.AuthPayload(phone: phoneNumber))
+            return SignUpOrLogInPayload(auth: PhoneIdentity(phone: phoneNumber, countryCode: phoneNumber.hasPrefix("+") ? "" : ""))
+        case .farcaster(let fid):
+            return SignUpOrLogInPayload(auth: FarcasterIdentity(fid: fid))
+        case .telegram(let id):
+            return SignUpOrLogInPayload(auth: TelegramIdentity(id: id))
+        case .externalWallet(let wallet):
+            return SignUpOrLogInPayload(auth: ExternalWalletIdentity(wallet: wallet))
+        case .identity(let identity):
+            return SignUpOrLogInPayload(auth: identity)
         }
     }
     
@@ -462,6 +460,10 @@ extension ParaManager {
         let passkeyId = resultDict["passkeyId"] as? String
         let passwordUrl = resultDict["passwordUrl"] as? String
         let passkeyKnownDeviceUrl = resultDict["passkeyKnownDeviceUrl"] as? String
+        let displayName = resultDict["displayName"] as? String
+        let profilePictureUrl = resultDict["profilePictureUrl"] as? String
+        let username = resultDict["username"] as? String
+        let signatureVerificationMessage = resultDict["signatureVerificationMessage"] as? String
         
         // Extract biometric hints if available
         var biometricHints: [AuthState.BiometricHint]?
@@ -477,16 +479,51 @@ extension ParaManager {
             }
         }
         
-        // Extract email if available
-        var email: String? = nil
+        // Extract auth identity and external wallet if available
+        var authIdentity: AuthIdentity? = nil
+        var externalWalletInfo: ExternalWalletInfo? = nil
+        
         if let auth = resultDict["auth"] as? [String: Any] {
-            email = auth["email"] as? String
+            // Determine the type of auth identity
+            if let email = auth["email"] as? String {
+                authIdentity = EmailIdentity(email: email)
+            } else if let phone = auth["phone"] as? String, let countryCode = auth["countryCode"] as? String {
+                authIdentity = PhoneIdentity(phone: phone, countryCode: countryCode)
+            } else if let fid = auth["fid"] as? String {
+                authIdentity = FarcasterIdentity(fid: fid)
+            } else if let telegramId = auth["id"] as? String, auth["type"] as? String == "telegram" {
+                authIdentity = TelegramIdentity(id: telegramId)
+            } else if let wallet = auth["wallet"] as? [String: Any] {
+                if let address = wallet["address"] as? String,
+                   let typeString = wallet["type"] as? String,
+                   let type = ExternalWalletType(rawValue: typeString) {
+                    let provider = wallet["provider"] as? String
+                    let walletInfo = ExternalWalletInfo(address: address, type: type, provider: provider)
+                    authIdentity = ExternalWalletIdentity(wallet: walletInfo)
+                    externalWalletInfo = walletInfo
+                }
+            }
+        } else if let externalWallet = resultDict["externalWallet"] as? [String: Any] {
+            // Handle direct externalWallet in the result
+            if let address = externalWallet["address"] as? String,
+               let typeString = externalWallet["type"] as? String,
+               let type = ExternalWalletType(rawValue: typeString) {
+                let provider = externalWallet["provider"] as? String
+                let walletInfo = ExternalWalletInfo(address: address, type: type, provider: provider) 
+                authIdentity = ExternalWalletIdentity(wallet: walletInfo)
+                externalWalletInfo = walletInfo
+            }
         }
         
         return AuthState(
             stage: stage,
             userId: userId,
-            email: email,
+            authIdentity: authIdentity,
+            displayName: displayName,
+            profilePictureUrl: profilePictureUrl,
+            username: username,
+            externalWalletInfo: externalWalletInfo,
+            signatureVerificationMessage: signatureVerificationMessage,
             passkeyUrl: passkeyUrl,
             passkeyId: passkeyId,
             passkeyKnownDeviceUrl: passkeyKnownDeviceUrl,
@@ -666,7 +703,9 @@ extension ParaManager {
                 )
             }
             
-            let authState = try await signUpOrLogIn(auth: .email(email))
+            // Use EmailIdentity instead of .email case directly
+            let emailIdentity = EmailIdentity(email: email)
+            let authState = try await signUpOrLogIn(auth: .identity(emailIdentity))
             
             switch authState.stage {
             case .verify:
@@ -709,14 +748,26 @@ extension ParaManager {
             return (.error, "Unexpected auth stage: \(authState.stage)")
         }
         
+        // Get the identifier from auth identity or fall back to email parameter
+        let identifier: String
+        if let emailIdentity = authState.authIdentity as? EmailIdentity {
+            identifier = emailIdentity.email
+        } else {
+            identifier = email
+        }
+        
         if let passkeyId = authState.passkeyId {
             try await generatePasskey(
-                identifier: authState.email ?? email,
+                identifier: identifier,
                 biometricsId: passkeyId,
                 authorizationController: authorizationController
             )
             
             try await createWallet(type: .evm, skipDistributable: false)
+            return (.success, nil)
+        } else if let wallet = authState.externalWalletInfo {
+            // For external wallet signup, use the wallet info directly
+            try await externalWalletLogin(wallet: wallet)
             return (.success, nil)
         } else if authState.passwordUrl != nil {
             try await createWallet(type: .evm, skipDistributable: false)
@@ -754,8 +805,6 @@ extension ParaManager {
         authorizationController: AuthorizationController
     ) async -> (status: PhoneAuthStatus, errorMessage: String?) {
         do {
-            let formattedPhoneNumber = formatPhoneNumber(phoneNumber: phoneNumber, countryCode: countryCode)
-            
             if let code = verificationCode {
                 return try await handlePhoneVerification(
                     code: code,
@@ -765,7 +814,9 @@ extension ParaManager {
                 )
             }
             
-            let authState = try await signUpOrLogIn(auth: .phone(formattedPhoneNumber))
+            // Use PhoneIdentity instead of .phone case directly
+            let phoneIdentity = PhoneIdentity(phone: phoneNumber, countryCode: countryCode)
+            let authState = try await signUpOrLogIn(auth: .identity(phoneIdentity))
             
             switch authState.stage {
             case .verify:
@@ -810,8 +861,15 @@ extension ParaManager {
             return (.error, "Unexpected auth stage: \(authState.stage)")
         }
         
+        // Get the identifier from auth identity or format the phone number
+        let identifier: String
+        if let phoneIdentity = authState.authIdentity as? PhoneIdentity {
+            identifier = formatPhoneNumber(phoneNumber: phoneIdentity.phone, countryCode: phoneIdentity.countryCode)
+        } else {
+            identifier = formatPhoneNumber(phoneNumber: phoneNumber, countryCode: countryCode)
+        }
+        
         if let passkeyId = authState.passkeyId {
-            let identifier = formatPhoneNumber(phoneNumber: phoneNumber, countryCode: countryCode)
             try await generatePasskey(
                 identifier: identifier,
                 biometricsId: passkeyId,
@@ -819,6 +877,10 @@ extension ParaManager {
             )
             
             try await createWallet(type: .evm, skipDistributable: false)
+            return (.success, nil)
+        } else if let wallet = authState.externalWalletInfo {
+            // For external wallet signup, use the wallet info directly
+            try await externalWalletLogin(wallet: wallet)
             return (.success, nil)
         } else if authState.passwordUrl != nil {
             try await createWallet(type: .evm, skipDistributable: false)

@@ -63,7 +63,7 @@ extension ParaManager {
         logger.debug("Received OAuth URL: \(oAuthURL)")
         
         // Step 2: Extract session information if available
-        let sessionLookupId = extractSessionLookupId(from: oAuthURL, logger: logger)
+        _ = extractSessionLookupId(from: oAuthURL, logger: logger)
         
         // Step 3: Perform the authentication flow
         let callbackURL = try await webAuthenticationSession.authenticate(using: url, callbackURLScheme: deepLink)
@@ -134,6 +134,9 @@ extension ParaManager {
         return nil
     }
     
+    // Note: The sessionLookupId is currently not used in the OAuth flow, 
+    // but may be needed for future OAuth implementations
+    
     /// Processes the result from verifyOAuth and creates an AuthState object
     /// - Parameters:
     ///   - result: The result from the verifyOAuth call
@@ -156,11 +159,45 @@ extension ParaManager {
         let passkeyId = resultDict["passkeyId"] as? String
         let passwordUrl = resultDict["passwordUrl"] as? String
         let passkeyKnownDeviceUrl = resultDict["passkeyKnownDeviceUrl"] as? String
+        let displayName = resultDict["displayName"] as? String
+        let profilePictureUrl = resultDict["profilePictureUrl"] as? String
+        let username = resultDict["username"] as? String
+        let signatureVerificationMessage = resultDict["signatureVerificationMessage"] as? String
         
-        // Extract email if available
-        var email: String? = nil
+        // Extract auth identity and external wallet if available
+        var authIdentity: AuthIdentity? = nil
+        var externalWalletInfo: ExternalWalletInfo? = nil
+        
         if let auth = resultDict["auth"] as? [String: Any] {
-            email = auth["email"] as? String
+            // Determine the type of auth identity
+            if let email = auth["email"] as? String {
+                authIdentity = EmailIdentity(email: email)
+            } else if let phone = auth["phone"] as? String, let countryCode = auth["countryCode"] as? String {
+                authIdentity = PhoneIdentity(phone: phone, countryCode: countryCode)
+            } else if let fid = auth["fid"] as? String {
+                authIdentity = FarcasterIdentity(fid: fid)
+            } else if let telegramId = auth["id"] as? String, auth["type"] as? String == "telegram" {
+                authIdentity = TelegramIdentity(id: telegramId)
+            } else if let wallet = auth["wallet"] as? [String: Any] {
+                if let address = wallet["address"] as? String,
+                   let typeString = wallet["type"] as? String,
+                   let type = ExternalWalletType(rawValue: typeString) {
+                    let provider = wallet["provider"] as? String
+                    let walletInfo = ExternalWalletInfo(address: address, type: type, provider: provider)
+                    authIdentity = ExternalWalletIdentity(wallet: walletInfo)
+                    externalWalletInfo = walletInfo
+                }
+            }
+        } else if let externalWallet = resultDict["externalWallet"] as? [String: Any] {
+            // Handle direct externalWallet in the result
+            if let address = externalWallet["address"] as? String,
+               let typeString = externalWallet["type"] as? String,
+               let type = ExternalWalletType(rawValue: typeString) {
+                let provider = externalWallet["provider"] as? String
+                let walletInfo = ExternalWalletInfo(address: address, type: type, provider: provider)
+                authIdentity = ExternalWalletIdentity(wallet: walletInfo)
+                externalWalletInfo = walletInfo
+            }
         }
         
         // Extract biometric hints if available
@@ -170,7 +207,12 @@ extension ParaManager {
         let authState = AuthState(
             stage: stage,
             userId: userId,
-            email: email,
+            authIdentity: authIdentity,
+            displayName: displayName,
+            profilePictureUrl: profilePictureUrl,
+            username: username,
+            externalWalletInfo: externalWalletInfo,
+            signatureVerificationMessage: signatureVerificationMessage,
             passkeyUrl: passkeyUrl,
             passkeyId: passkeyId,
             passkeyKnownDeviceUrl: passkeyKnownDeviceUrl,
@@ -222,13 +264,34 @@ extension ParaManager {
         switch authState.stage {
         case .login:
             logger.debug("Processing login stage for user ID: \(authState.userId)")
-            if let email = authState.email {
-                logger.debug("User email from OAuth: \(email)")
+            
+            // Log auth identity details
+            if let emailIdentity = authState.authIdentity as? EmailIdentity {
+                logger.debug("User email from OAuth: \(emailIdentity.email)")
+            } else if let phoneIdentity = authState.authIdentity as? PhoneIdentity {
+                logger.debug("User phone from OAuth: \(phoneIdentity.phone)")
+            } else if authState.authIdentity != nil {
+                logger.debug("User identity type from OAuth: \(authState.authIdentity!.type)")
             }
             
-            // Use the email from OAuth response for authentication
-            let emailAuthInfo = authState.email.map { EmailAuthInfo(email: $0) }
-            try await loginWithPasskey(authorizationController: authorizationController, authInfo: emailAuthInfo)
+            // Use the appropriate auth info for passkey login
+            var authInfo: AuthInfo? = nil
+            if let emailIdentity = authState.authIdentity as? EmailIdentity {
+                authInfo = EmailAuthInfo(email: emailIdentity.email)
+            } else if let phoneIdentity = authState.authIdentity as? PhoneIdentity {
+                authInfo = PhoneAuthInfo(phone: phoneIdentity.phone, countryCode: phoneIdentity.countryCode)
+            } else if let walletIdentity = authState.authIdentity as? ExternalWalletIdentity {
+                // For wallet-based login, we don't need passkeys
+                let wallet = walletIdentity.wallet
+                try await externalWalletLogin(wallet: wallet)
+                return (success: true, errorMessage: nil)
+            } else if let wallet = authState.externalWalletInfo {
+                // Alternative way to get wallet info directly from authState
+                try await externalWalletLogin(wallet: wallet)
+                return (success: true, errorMessage: nil)
+            }
+            
+            try await loginWithPasskey(authorizationController: authorizationController, authInfo: authInfo)
             logger.debug("Login successful")
             return (success: true, errorMessage: nil)
             
@@ -238,8 +301,18 @@ extension ParaManager {
             // Handle signup with passkey if available
             if let passkeyId = authState.passkeyId {
                 logger.debug("Generating passkey with ID: \(passkeyId)")
+                // Use the appropriate identifier based on auth identity
+                let identifier: String
+                if let emailIdentity = authState.authIdentity as? EmailIdentity {
+                    identifier = emailIdentity.email
+                } else if let phoneIdentity = authState.authIdentity as? PhoneIdentity {
+                    identifier = formatPhoneNumber(phoneNumber: phoneIdentity.phone, countryCode: phoneIdentity.countryCode)
+                } else {
+                    identifier = authState.userId
+                }
+                
                 try await generatePasskey(
-                    identifier: authState.userId,
+                    identifier: identifier,
                     biometricsId: passkeyId,
                     authorizationController: authorizationController
                 )
@@ -247,9 +320,13 @@ extension ParaManager {
                 logger.debug("Creating wallet")
                 try await createWallet(type: .evm, skipDistributable: false)
                 return (success: true, errorMessage: nil)
+            } else if let wallet = authState.externalWalletInfo {
+                // For external wallet signup, use the wallet info directly
+                try await externalWalletLogin(wallet: wallet)
+                return (success: true, errorMessage: nil)
             } else {
-                logger.error("No passkey ID available for signup")
-                return (success: false, errorMessage: "No passkey ID available")
+                logger.error("No passkey ID or external wallet available for signup")
+                return (success: false, errorMessage: "No authentication method available")
             }
             
         case .verify:
