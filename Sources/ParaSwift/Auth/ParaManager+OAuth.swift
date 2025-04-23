@@ -283,11 +283,11 @@ extension ParaManager {
             } else if let walletIdentity = authState.authIdentity as? ExternalWalletIdentity {
                 // For wallet-based login, we don't need passkeys
                 let wallet = walletIdentity.wallet
-                try await externalWalletLogin(wallet: wallet)
+                try await loginExternalWallet(wallet: wallet)
                 return (success: true, errorMessage: nil)
             } else if let wallet = authState.externalWalletInfo {
                 // Alternative way to get wallet info directly from authState
-                try await externalWalletLogin(wallet: wallet)
+                try await loginExternalWallet(wallet: wallet)
                 return (success: true, errorMessage: nil)
             }
             
@@ -322,7 +322,7 @@ extension ParaManager {
                 return (success: true, errorMessage: nil)
             } else if let wallet = authState.externalWalletInfo {
                 // For external wallet signup, use the wallet info directly
-                try await externalWalletLogin(wallet: wallet)
+                try await loginExternalWallet(wallet: wallet)
                 return (success: true, errorMessage: nil)
             } else {
                 logger.error("No passkey ID or external wallet available for signup")

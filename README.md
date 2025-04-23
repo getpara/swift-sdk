@@ -493,7 +493,7 @@ guard let address = accounts.first, !address.isEmpty else {
 }
 do {
     // Login to Para using the external EVM address
-    try await para.externalWalletLogin(externalAddress: address, type: "EVM")
+    try await para.loginExternalWallet(externalAddress: address, type: "EVM")
     // Update session state, complete continuation, etc.
 } catch {
     // Handle external login error
@@ -776,7 +776,7 @@ struct MetaMaskView: View {
             do {
                 try await metaMaskConnector.connect()
                 // Connection successful, MetaMaskConnector automatically calls
-                // paraManager.externalWalletLogin and updates its own state.
+                // paraManager.loginExternalWallet and updates its own state.
                 // You might want to navigate or update UI here.
                 // Example: appRootManager.currentRoot = .home
                 operationResult = "Connected!"

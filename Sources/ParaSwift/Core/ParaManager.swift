@@ -391,10 +391,10 @@ extension ParaManager {
         self.sessionState = .inactive
     }
     
-    /// Logs in with an external wallet
+    /// Logs in using an external wallet
     /// - Parameters:
     ///   - wallet: Information about the external wallet
-    internal func externalWalletLogin(wallet: ExternalWalletInfo) async throws {
+    internal func loginExternalWallet(wallet: ExternalWalletInfo) async throws {
         try await ensureWebViewReady()
         
         // Create proper Encodable payload using ExternalWalletIdentity
@@ -411,10 +411,10 @@ extension ParaManager {
     /// - Parameters:
     ///   - externalAddress: The external wallet address
     ///   - type: The type of wallet (e.g. "EVM")
-    internal func externalWalletLogin(externalAddress: String, type: String) async throws {
+    internal func loginExternalWallet(externalAddress: String, type: String) async throws {
         let walletType = ExternalWalletType(rawValue: type) ?? .evm
         let wallet = ExternalWalletInfo(address: externalAddress, type: walletType)
-        try await externalWalletLogin(wallet: wallet)
+        try await loginExternalWallet(wallet: wallet)
     }
     
     // MARK: - Auth Helper Methods
@@ -767,7 +767,7 @@ extension ParaManager {
             return (.success, nil)
         } else if let wallet = authState.externalWalletInfo {
             // For external wallet signup, use the wallet info directly
-            try await externalWalletLogin(wallet: wallet)
+            try await loginExternalWallet(wallet: wallet)
             return (.success, nil)
         } else if authState.passwordUrl != nil {
             try await createWallet(type: .evm, skipDistributable: false)
@@ -880,7 +880,7 @@ extension ParaManager {
             return (.success, nil)
         } else if let wallet = authState.externalWalletInfo {
             // For external wallet signup, use the wallet info directly
-            try await externalWalletLogin(wallet: wallet)
+            try await loginExternalWallet(wallet: wallet)
             return (.success, nil)
         } else if authState.passwordUrl != nil {
             try await createWallet(type: .evm, skipDistributable: false)
