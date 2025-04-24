@@ -231,14 +231,14 @@ extension ParaManager {
         )
         let userId = try decodeResult(verifyWebChallengeResult, expectedType: String.self, method: "verifyWebChallenge")
         
-        let loginArgs = LoginV2Args(
+        let loginArgs = LoginWithPasskeyArgs(
             userId: userId,
             credentialsId: id,
             userHandle: signIntoPasskeyAccountResult.userID.base64URLEncodedString()
         )
         // Use the wrapper with payload
         _ = try await postMessage(
-            method: "loginV2",
+            method: "loginWithPasskey",
             payload: loginArgs
         )
         self.wallets = try await fetchWallets()
@@ -275,7 +275,7 @@ extension ParaManager {
         let clientDataJSONEncoded = rawClientData.base64URLEncodedString()
         let credentialIDEncoded = credID.base64URLEncodedString()
 
-        let generateArgs = GeneratePasskeyV2Args(
+        let generateArgs = GeneratePasskeyArgs(
             attestationObject: attestationObjectEncoded,
             clientDataJson: clientDataJSONEncoded,
             credentialsId: credentialIDEncoded,
@@ -284,7 +284,7 @@ extension ParaManager {
         )
         // Use the wrapper with payload
         _ = try await postMessage(
-            method: "generatePasskeyV2",
+            method: "generatePasskey",
             payload: generateArgs
         )
     }

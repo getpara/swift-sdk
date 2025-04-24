@@ -1,6 +1,6 @@
 import Foundation
 
-struct GeneratePasskeyV2Args: Encodable {
+struct GeneratePasskeyArgs: Encodable {
     let attestationObject: String // Base64 encoded
     let clientDataJson: String    // Base64 encoded
     let credentialsId: String
@@ -15,7 +15,7 @@ struct VerifyWebChallengeArgs: Encodable {
     let signature: String         // Base64 encoded
 }
 
-struct LoginV2Args: Encodable {
+struct LoginWithPasskeyArgs: Encodable {
     let userId: String
     let credentialsId: String
     let userHandle: String        // Base64 encoded
