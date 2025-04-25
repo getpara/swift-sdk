@@ -325,25 +325,17 @@ extension ParaManager {
     }
     
     /// Setup two-factor authentication
-    /// - Returns: URI for configuring 2FA in an authenticator app
-    public func setup2FA() async throws -> String {
+    /// - Returns: URI for configuring 2fa in an authenticator app
+    public func setup2fa() async throws -> String {
         try await ensureWebViewReady()
         let result = try await postMessage(method: "setup2FA", payload: EmptyPayload())
         return try decodeDictionaryResult(result, expectedType: String.self, method: "setup2FA", key: "uri")
     }
     
     /// Enable two-factor authentication after setup
-    public func enable2FA() async throws {
+    public func enable2fa() async throws {
         try await ensureWebViewReady()
         _ = try await postMessage(method: "enable2FA", payload: EmptyPayload())
-    }
-    
-    /// Check if two-factor authentication is set up
-    /// - Returns: True if 2FA is set up
-    public func is2FASetup() async throws -> Bool {
-        try await ensureWebViewReady()
-        let result = try await postMessage(method: "check2FAStatus", payload: EmptyPayload())
-        return try decodeDictionaryResult(result, expectedType: Bool.self, method: "check2FAStatus", key: "isSetup")
     }
     
     /// Resend verification code for account verification
@@ -461,7 +453,7 @@ extension ParaManager {
         let passwordUrl = resultDict["passwordUrl"] as? String
         let passkeyKnownDeviceUrl = resultDict["passkeyKnownDeviceUrl"] as? String
         let displayName = resultDict["displayName"] as? String
-        let profilePictureUrl = resultDict["profilePictureUrl"] as? String
+        let profilePictureUrl = resultDict["pfpUrl"] as? String
         let username = resultDict["username"] as? String
         let signatureVerificationMessage = resultDict["signatureVerificationMessage"] as? String
         
