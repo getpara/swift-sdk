@@ -328,14 +328,14 @@ extension ParaManager {
     /// - Returns: URI for configuring 2fa in an authenticator app
     public func setup2fa() async throws -> String {
         try await ensureWebViewReady()
-        let result = try await postMessage(method: "setup2FA", payload: EmptyPayload())
-        return try decodeDictionaryResult(result, expectedType: String.self, method: "setup2FA", key: "uri")
+        let result = try await postMessage(method: "setup2fa", payload: EmptyPayload())
+        return try decodeDictionaryResult(result, expectedType: String.self, method: "setup2fa", key: "uri")
     }
     
     /// Enable two-factor authentication after setup
     public func enable2fa() async throws {
         try await ensureWebViewReady()
-        _ = try await postMessage(method: "enable2FA", payload: EmptyPayload())
+        _ = try await postMessage(method: "enable2fa", payload: EmptyPayload())
     }
     
     /// Resend verification code for account verification
@@ -453,7 +453,7 @@ extension ParaManager {
         let passwordUrl = resultDict["passwordUrl"] as? String
         let passkeyKnownDeviceUrl = resultDict["passkeyKnownDeviceUrl"] as? String
         let displayName = resultDict["displayName"] as? String
-        let profilePictureUrl = resultDict["pfpUrl"] as? String
+        let pfpUrl = resultDict["pfpUrl"] as? String
         let username = resultDict["username"] as? String
         let signatureVerificationMessage = resultDict["signatureVerificationMessage"] as? String
         
@@ -512,7 +512,7 @@ extension ParaManager {
             userId: userId,
             authIdentity: authIdentity,
             displayName: displayName,
-            profilePictureUrl: profilePictureUrl,
+            pfpUrl: pfpUrl,
             username: username,
             externalWalletInfo: externalWalletInfo,
             signatureVerificationMessage: signatureVerificationMessage,

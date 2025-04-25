@@ -372,7 +372,7 @@ public struct AuthState: Codable {
     /// Display name for the authenticating user
     public let displayName: String?
     /// Profile picture URL for the authenticating user
-    public let profilePictureUrl: String?
+    public let pfpUrl: String?
     /// Username for the authenticating user
     public let username: String?
     /// External wallet information
@@ -404,7 +404,7 @@ public struct AuthState: Codable {
     ///   - userId: The Para userId
     ///   - authIdentity: Optional authentication identity
     ///   - displayName: Optional display name
-    ///   - profilePictureUrl: Optional profile picture URL
+    ///   - pfpUrl: Optional profile picture URL
     ///   - username: Optional username
     ///   - externalWalletInfo: Optional external wallet information
     ///   - signatureVerificationMessage: Optional signature verification message
@@ -418,7 +418,7 @@ public struct AuthState: Codable {
         userId: String,
         authIdentity: AuthIdentity? = nil,
         displayName: String? = nil,
-        profilePictureUrl: String? = nil,
+        pfpUrl: String? = nil,
         username: String? = nil,
         externalWalletInfo: ExternalWalletInfo? = nil,
         signatureVerificationMessage: String? = nil,
@@ -432,7 +432,7 @@ public struct AuthState: Codable {
         self.userId = userId
         self.authIdentity = authIdentity
         self.displayName = displayName
-        self.profilePictureUrl = profilePictureUrl
+        self.pfpUrl = pfpUrl
         self.username = username
         self.externalWalletInfo = externalWalletInfo
         self.signatureVerificationMessage = signatureVerificationMessage
@@ -455,7 +455,7 @@ public struct AuthState: Codable {
     
     /// Coding keys for encoding/decoding
     private enum CodingKeys: String, CodingKey {
-        case stage, userId, displayName, profilePictureUrl, username
+        case stage, userId, displayName, pfpUrl, username
         case externalWalletInfo, signatureVerificationMessage
         case passkeyUrl, passkeyId, passkeyKnownDeviceUrl, passwordUrl, biometricHints
         case auth, type
@@ -467,7 +467,7 @@ public struct AuthState: Codable {
         try container.encode(stage, forKey: .stage)
         try container.encode(userId, forKey: .userId)
         try container.encodeIfPresent(displayName, forKey: .displayName)
-        try container.encodeIfPresent(profilePictureUrl, forKey: .profilePictureUrl)
+        try container.encodeIfPresent(pfpUrl, forKey: .pfpUrl)
         try container.encodeIfPresent(username, forKey: .username)
         try container.encodeIfPresent(externalWalletInfo, forKey: .externalWalletInfo)
         try container.encodeIfPresent(signatureVerificationMessage, forKey: .signatureVerificationMessage)
@@ -497,7 +497,7 @@ public struct AuthState: Codable {
         
         // Decode optional fields
         displayName = try container.decodeIfPresent(String.self, forKey: .displayName)
-        profilePictureUrl = try container.decodeIfPresent(String.self, forKey: .profilePictureUrl)
+        pfpUrl = try container.decodeIfPresent(String.self, forKey: .pfpUrl)
         username = try container.decodeIfPresent(String.self, forKey: .username)
         externalWalletInfo = try container.decodeIfPresent(ExternalWalletInfo.self, forKey: .externalWalletInfo)
         signatureVerificationMessage = try container.decodeIfPresent(String.self, forKey: .signatureVerificationMessage)

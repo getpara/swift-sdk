@@ -160,7 +160,7 @@ extension ParaManager {
         let passwordUrl = resultDict["passwordUrl"] as? String
         let passkeyKnownDeviceUrl = resultDict["passkeyKnownDeviceUrl"] as? String
         let displayName = resultDict["displayName"] as? String
-        let profilePictureUrl = resultDict["profilePictureUrl"] as? String
+        let pfpUrl = resultDict["pfpUrl"] as? String
         let username = resultDict["username"] as? String
         let signatureVerificationMessage = resultDict["signatureVerificationMessage"] as? String
         
@@ -209,7 +209,7 @@ extension ParaManager {
             userId: userId,
             authIdentity: authIdentity,
             displayName: displayName,
-            profilePictureUrl: profilePictureUrl,
+            pfpUrl: pfpUrl,
             username: username,
             externalWalletInfo: externalWalletInfo,
             signatureVerificationMessage: signatureVerificationMessage,
