@@ -325,11 +325,20 @@ extension ParaManager {
     }
     
     /// Setup two-factor authentication
-    /// - Returns: URI for configuring 2fa in an authenticator app
-    public func setup2fa() async throws -> String {
+    /// - Returns: Response indicating if 2FA is already set up or needs to be configured
+    public func setup2fa() async throws -> TwoFactorSetupResponse {
         try await ensureWebViewReady()
         let result = try await postMessage(method: "setup2fa", payload: EmptyPayload())
-        return try decodeDictionaryResult(result, expectedType: String.self, method: "setup2fa", key: "uri")
+        guard let dict = result as? [String: Any] else {
+            throw ParaError.bridgeError("Invalid result format from setup2fa")
+        }
+        
+        if let isSetup = dict["isSetup"] as? Bool, isSetup {
+            return .alreadySetup
+        }
+        
+        let uri = try decodeDictionaryResult(result, expectedType: String.self, method: "setup2fa", key: "uri")
+        return .needsSetup(uri: uri)
     }
     
     /// Enable two-factor authentication after setup
@@ -914,5 +923,13 @@ public enum ParaError: Error, CustomStringConvertible {
             return "An error occurred: \(info)"
         }
     }
+}
+
+/// Response type for 2FA setup operation
+public enum TwoFactorSetupResponse {
+    /// 2FA is already set up
+    case alreadySetup
+    /// 2FA needs to be set up, contains the URI for configuration
+    case needsSetup(uri: String)
 }
 #endif
