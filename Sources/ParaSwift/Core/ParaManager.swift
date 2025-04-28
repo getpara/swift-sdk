@@ -229,6 +229,7 @@ extension ParaManager {
             method: "verifyWebChallenge",
             payload: verifyArgs
         )
+        // Decode the result directly as a String (userId)
         let userId = try decodeResult(verifyWebChallengeResult, expectedType: String.self, method: "verifyWebChallenge")
         
         let loginArgs = LoginWithPasskeyArgs(
@@ -237,10 +238,14 @@ extension ParaManager {
             userHandle: signIntoPasskeyAccountResult.userID.base64URLEncodedString()
         )
         // Use the wrapper with payload
-        _ = try await postMessage(
+        let loginResult = try await postMessage(
             method: "loginWithPasskey",
             payload: loginArgs
         )
+        if let walletDict = loginResult as? [String: Any] {
+            logger.debug("loginWithPasskey bridge call returned wallet data: \(walletDict)")
+        }
+
         self.wallets = try await fetchWallets()
         sessionState = .activeLoggedIn
     }
@@ -342,9 +347,15 @@ extension ParaManager {
     }
     
     /// Enable two-factor authentication after setup
-    public func enable2fa() async throws {
+    /// - Parameter verificationCode: The code from the user's authenticator app.
+    public func enable2fa(verificationCode: String) async throws {
         try await ensureWebViewReady()
-        _ = try await postMessage(method: "enable2fa", payload: EmptyPayload())
+        // Define the payload structure expected by the bridge
+        struct Enable2faArgs: Encodable {
+            let verificationCode: String
+        }
+        let payload = Enable2faArgs(verificationCode: verificationCode)
+        _ = try await postMessage(method: "enable2fa", payload: payload)
     }
     
     /// Resend verification code for account verification
@@ -402,7 +413,18 @@ extension ParaManager {
         let identity = ExternalWalletIdentity(wallet: wallet)
         let params = SignUpOrLogInPayload(auth: identity)
         
-        _ = try await postMessage(method: "loginExternalWallet", payload: params)
+        // Explicitly type the result from postMessage
+        let authStateResult: Any? = try await postMessage(method: "loginExternalWallet", payload: params)
+        
+        // Parse the returned AuthState
+        do {
+            let authState = try parseAuthStateFromResult(authStateResult)
+            let logMessage = "loginExternalWallet completed. Returned AuthState: Stage=\(authState.stage), UserId=\(authState.userId)"
+            logger.debug("\(logMessage)") // Log the pre-formatted string
+        } catch let parseError {
+            logger.error("loginExternalWallet: Failed to parse AuthState result: \(parseError.localizedDescription)")
+        }
+        
         self.sessionState = .activeLoggedIn
         
         logger.debug("External wallet login completed for address: \(wallet.address)")
@@ -538,17 +560,37 @@ extension ParaManager {
 
 @available(iOS 16.4,*)
 extension ParaManager {
-    /// Creates a new wallet of the specified type.
+    /// Creates a new wallet of the specified type and returns it along with any recovery secret.
     ///
     /// - Parameters:
     ///   - type: The type of wallet to create.
     ///   - skipDistributable: Whether to skip distributable shares.
+    /// - Returns: A tuple containing the new `Wallet` object and an optional recovery secret string.
     @MainActor
-    public func createWallet(type: WalletType, skipDistributable: Bool) async throws {
+    public func createWallet(type: WalletType, skipDistributable: Bool) async throws -> (newWallet: Wallet, recoverySecret: String?) {
         try await ensureWebViewReady()
-        _ = try await postMessage(method: "createWallet", payload: CreateWalletArgs(type: type.rawValue, skipDistributable: skipDistributable))
-        self.wallets = try await fetchWallets()
+        let result = try await postMessage(method: "createWallet", payload: CreateWalletArgs(type: type.rawValue, skipDistributable: skipDistributable))
+        
+        // The bridge returns an array: [WalletDictionary, optionalRecoverySecretString]
+        guard let resultArray = result as? [Any], !resultArray.isEmpty else {
+            throw ParaError.bridgeError("METHOD_ERROR<createWallet>: Invalid result format, expected array but got \(String(describing: result))")
+        }
+        
+        guard let walletDict = resultArray[0] as? [String: Any] else {
+            throw ParaError.bridgeError("METHOD_ERROR<createWallet>: Invalid wallet data in result array")
+        }
+        
+        let newWallet = Wallet(result: walletDict)
+        let recoverySecret = resultArray.count > 1 ? resultArray[1] as? String : nil
+        
+        // Update session state, but don't fetch wallets here as the new wallet is returned.
+        // The caller can decide whether to fetch or just update the local list.
         self.sessionState = .activeLoggedIn
+        
+        // Update the local wallets list immediately
+        self.wallets.append(newWallet)
+
+        return (newWallet, recoverySecret)
     }
     
     /// Fetches all wallets associated with the current user.
