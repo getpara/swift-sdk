@@ -1,8 +1,8 @@
 /*
-See the LICENSE.txt file for this sample’s licensing information.
+See the LICENSE.txt file for this sample's licensing information.
 
 Abstract:
-AccountStore manages account sign in and out.
+PasskeysManager handles passkey-based authentication using Apple's AuthenticationServices framework.
 */
 
 #if os(iOS)
@@ -12,11 +12,12 @@ import SwiftUI
 import Combine
 import os
 
-
-
+/// Errors that can occur during authorization handling
 @available(iOS 16.4,*)
 public enum AuthorizationHandlingError: Error {
+    /// An unknown authorization result was received
     case unknownAuthorizationResult(ASAuthorizationResult)
+    /// An unspecified error occurred
     case otherError
 }
 
@@ -34,17 +35,29 @@ extension AuthorizationHandlingError: LocalizedError {
         }
 }
 
+/// Manages passkey-based authentication using Apple's AuthenticationServices framework
 @available(iOS 16.4,*)
 final class PasskeysManager: NSObject, ASAuthorizationControllerDelegate {
     
+    /// The relying party identifier for passkey authentication
     public var relyingPartyIdentifier: String
     
+    /// The presentation context provider for authorization requests
     public weak var presentationContextProvider: ASAuthorizationControllerPresentationContextProviding?
     
+    /// Creates a new PasskeysManager instance
+    /// - Parameter relyingPartyIdentifier: The relying party identifier for passkey authentication
     public init(relyingPartyIdentifier: String) {
         self.relyingPartyIdentifier = relyingPartyIdentifier
     }
     
+    /// Signs into a passkey account
+    /// - Parameters:
+    ///   - authorizationController: The authorization controller to use
+    ///   - challenge: The challenge string for authentication
+    ///   - allowedPublicKeys: Array of allowed public keys
+    ///   - options: Optional authorization request options
+    /// - Returns: A passkey assertion for authentication
     public func signIntoPasskeyAccount(authorizationController: AuthorizationController,
                                        challenge: String,
                                        allowedPublicKeys: [String],
@@ -62,6 +75,13 @@ final class PasskeysManager: NSObject, ASAuthorizationControllerDelegate {
         }
     }
     
+    /// Creates a new passkey account
+    /// - Parameters:
+    ///   - authorizationController: The authorization controller to use
+    ///   - username: The username for the new account
+    ///   - userHandle: The user handle data
+    ///   - options: Optional authorization request options
+    /// - Returns: A passkey registration for the new account
     public func createPasskeyAccount(authorizationController: AuthorizationController, username: String, userHandle: Data,
                                      options: ASAuthorizationController.RequestOptions = []) async throws -> ASAuthorizationPlatformPublicKeyCredentialRegistration {
         let authorizationResult = try await authorizationController.performRequests(
@@ -77,10 +97,17 @@ final class PasskeysManager: NSObject, ASAuthorizationControllerDelegate {
         }
     }
     
+    /// Generates a passkey challenge
+    /// - Returns: The challenge data
     private func passkeyChallenge() async -> Data {
         Data("passkey challenge".utf8)
     }
 
+    /// Creates a passkey assertion request
+    /// - Parameters:
+    ///   - challenge: The challenge string
+    ///   - allowedPublicKeys: Array of allowed public keys
+    /// - Returns: An authorization request for passkey assertion
     private func passkeyAssertionRequest(challenge: String, allowedPublicKeys: [String]) async -> ASAuthorizationRequest {
         let request = ASAuthorizationPlatformPublicKeyCredentialProvider(relyingPartyIdentifier: relyingPartyIdentifier)
             .createCredentialAssertionRequest(challenge: Data(base64URLEncoded: challenge)!)
@@ -93,15 +120,29 @@ final class PasskeysManager: NSObject, ASAuthorizationControllerDelegate {
         return request
     }
 
+    /// Creates a passkey registration request
+    /// - Parameters:
+    ///   - username: The username for registration
+    ///   - userHandle: The user handle data
+    /// - Returns: An authorization request for passkey registration
     private func passkeyRegistrationRequest(username: String, userHandle: Data) async -> ASAuthorizationRequest {
         await ASAuthorizationPlatformPublicKeyCredentialProvider(relyingPartyIdentifier: relyingPartyIdentifier)
            .createCredentialRegistrationRequest(challenge: passkeyChallenge(), name: username, userID: userHandle)
     }
 
+    /// Creates sign-in requests for passkey authentication
+    /// - Parameters:
+    ///   - challenge: The challenge string
+    ///   - allowedPublicKeys: Array of allowed public keys
+    /// - Returns: Array of authorization requests
     private func signInRequests(challenge: String, allowedPublicKeys: [String]) async -> [ASAuthorizationRequest] {
         await [passkeyAssertionRequest(challenge: challenge, allowedPublicKeys: allowedPublicKeys), ASAuthorizationPasswordProvider().createRequest()]
     }
     
+    /// Handles the authorization result
+    /// - Parameters:
+    ///   - authorizationResult: The result of the authorization request
+    ///   - username: Optional username for logging
     private func handleAuthorizationResult(_ authorizationResult: ASAuthorizationResult, username: String? = nil) async throws {
         switch authorizationResult {
         case let .passkeyAssertion(passkeyAssertion):

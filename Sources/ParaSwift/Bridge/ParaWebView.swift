@@ -3,16 +3,28 @@ import WebKit
 import os
 
 #if os(iOS)
+/// A WebView implementation for Para that handles communication between Swift and JavaScript
+/// This class manages the WebView lifecycle, message passing, and error handling for the Para SDK
 @available(iOS 16.4,*)
 @MainActor
 public class ParaWebView: NSObject, ObservableObject {
     
+    /// Indicates whether the WebView is ready to accept requests
     @Published public private(set) var isReady: Bool = false
+    
+    /// The error that occurred during initialization, if any
     @Published public var initializationError: Error?
+    
+    /// The last error that occurred during WebView operations
     @Published public var lastError: Error?
     
+    /// The Para environment configuration
     public var environment: ParaEnvironment
+    
+    /// The API key for Para services
     public var apiKey: String
+    
+    /// The current package version of the SDK
     public static let packageVersion = "0.0.3"
     
     private let webView: WKWebView
@@ -23,6 +35,11 @@ public class ParaWebView: NSObject, ObservableObject {
     
     private let logger = Logger(subsystem: "com.paraSwift", category: "ParaWebView")
     
+    /// Creates a new ParaWebView instance
+    /// - Parameters:
+    ///   - environment: The Para environment configuration
+    ///   - apiKey: The API key for Para services
+    ///   - requestTimeout: The timeout duration for requests in seconds (default: 30.0)
     public init(environment: ParaEnvironment, apiKey: String, requestTimeout: TimeInterval = 30.0) {
         self.environment = environment
         self.apiKey = apiKey
@@ -48,8 +65,14 @@ public class ParaWebView: NSObject, ObservableObject {
         loadBridge()
     }
     
+    /// Posts a message to the JavaScript bridge
+    /// - Parameters:
+    ///   - method: The method name to call
+    ///   - payload: The payload object to pass to the method
+    /// - Returns: The result from the JavaScript call
+    /// - Throws: ParaWebViewError if the WebView is not ready or if the request fails
     @discardableResult
-    public func postMessage(method: String, arguments: [Encodable]) async throws -> Any? {
+    public func postMessage(method: String, payload: Encodable) async throws -> Any? {
         guard isReady else {
             logger.error("WebView not ready for method: \(method)")
             throw ParaWebViewError.webViewNotReady
@@ -64,20 +87,20 @@ public class ParaWebView: NSObject, ObservableObject {
             let requestId = "req-\(UUID().uuidString)"
             logger.debug("Sending message: method=\(method) requestId=\(requestId)")
             
-            let encodedArgs: Any
+            let encodedPayload: Any
             do {
-                let data = try JSONEncoder().encode(arguments.map { AnyEncodable($0) })
-                encodedArgs = try JSONSerialization.jsonObject(with: data, options: [])
+                let data = try JSONEncoder().encode(AnyEncodable(payload))
+                encodedPayload = try JSONSerialization.jsonObject(with: data, options: [])
             } catch {
-                logger.error("Failed to encode arguments: \(error.localizedDescription)")
-                continuation.resume(throwing: ParaWebViewError.invalidArguments("Failed to encode arguments: \(error)"))
+                logger.error("Failed to encode payload: \(error.localizedDescription)")
+                continuation.resume(throwing: ParaWebViewError.invalidArguments("Failed to encode payload: \(error)"))
                 return
             }
             
             let message: [String: Any] = [
                 "messageType": "Capsule#invokeMethod",
                 "methodName": method,
-                "arguments": encodedArgs,
+                "arguments": encodedPayload,
                 "requestId": requestId
             ]
             
@@ -117,11 +140,13 @@ public class ParaWebView: NSObject, ObservableObject {
         }
     }
     
+    /// Loads the JavaScript bridge into the WebView
     private func loadBridge() {
         let request = URLRequest(url: environment.jsBridgeUrl)
         webView.load(request)
     }
     
+    /// Initializes Para with the current environment and API key
     private func initPara() {
         let args: [String: String] = [
             "environment": environment.name,
@@ -150,6 +175,8 @@ public class ParaWebView: NSObject, ObservableObject {
         }
     }
     
+    /// Handles callbacks from the JavaScript bridge
+    /// - Parameter response: The response data from JavaScript
     private func handleCallback(response: [String: Any]) {
         guard let method = response["method"] as? String else {
             logger.error("Invalid response: missing method")
@@ -203,23 +230,32 @@ public class ParaWebView: NSObject, ObservableObject {
     }
 }
 
+/// Represents an empty payload for bridge calls with no arguments
+struct EmptyPayload: Encodable {}
+
+/// Extension implementing WKNavigationDelegate for ParaWebView
 @available(iOS 16.4,*)
 extension ParaWebView: WKNavigationDelegate {
+    /// Called when the WebView finishes loading
     public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         initPara()
     }
     
+    /// Called when the WebView fails to load
     public func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         initializationError = error
     }
     
+    /// Called when the WebView fails to load provisionally
     public func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         initializationError = error
     }
 }
 
+/// Extension implementing WKScriptMessageHandler for ParaWebView
 @available(iOS 16.4,*)
 extension ParaWebView: WKScriptMessageHandler {
+    /// Handles messages received from JavaScript
     public func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard message.name == "callback" else { return }
         guard let resp = message.body as? [String: Any] else {
@@ -230,13 +266,19 @@ extension ParaWebView: WKScriptMessageHandler {
     }
 }
 
+/// Errors that can occur during WebView operations
 @available(iOS 16.4,*)
 enum ParaWebViewError: Error, CustomStringConvertible {
+    /// The WebView is not ready to accept requests
     case webViewNotReady
+    /// Invalid arguments were provided
     case invalidArguments(String)
+    /// The request timed out
     case requestTimeout
+    /// An error occurred in the bridge
     case bridgeError(String)
     
+    /// A human-readable description of the error
     var description: String {
         switch self {
         case .webViewNotReady:
@@ -251,6 +293,7 @@ enum ParaWebViewError: Error, CustomStringConvertible {
     }
 }
 
+/// A helper class to avoid retain cycles in script message handling
 @available(iOS 16.4,*)
 private class LeakAvoider: NSObject, WKScriptMessageHandler {
     weak var delegate: WKScriptMessageHandler?
@@ -260,6 +303,7 @@ private class LeakAvoider: NSObject, WKScriptMessageHandler {
     }
 }
 
+/// A wrapper for any encodable type
 @available(iOS 16.4,*)
 struct AnyEncodable: Encodable {
     private let encodeFunc: (Encoder) throws -> Void

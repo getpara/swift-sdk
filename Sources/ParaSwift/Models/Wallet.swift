@@ -7,26 +7,53 @@
 
 import Foundation
 
+/// Types of wallets supported by Para
 public enum WalletType: String {
-    case evm = "EVM", solana = "SOLANA", cosmos = "COSMOS"
+    /// Ethereum Virtual Machine compatible wallet
+    case evm = "EVM"
+    /// Solana blockchain wallet
+    case solana = "SOLANA"
+    /// Cosmos blockchain wallet
+    case cosmos = "COSMOS"
 }
 
+/// Represents a cryptocurrency wallet in the Para system
 public struct Wallet {
+    /// Unique identifier for the wallet
     public let id: String
+    /// ID of the user who owns the wallet
     public let userId: String?
+    /// Type of the wallet (EVM, Solana, Cosmos)
     public let type: WalletType?
+    /// Identifier for pre-generated wallet
     public let pregenIdentifier: String?
+    /// Type of pre-generated wallet identifier
     public let pregenIdentifierType: String?
+    /// Whether key generation is complete
     public let keyGenComplete: Bool?
+    /// Last update timestamp
     public let updatedAt: Date?
+    /// ID of the partner associated with the wallet
     public let partnerId: String?
+    /// Signer information for the wallet
     public let signer: String?
+    /// Public address of the wallet
     public let address: String?
+    /// Scheme used by the wallet
     public let scheme: String?
+    /// Public key of the wallet
     public let publicKey: String?
+    /// Creation timestamp
     public let createdAt: Date?
+    /// Name of the wallet
     public let name: String?
     
+    /// Creates a new wallet with basic information
+    /// - Parameters:
+    ///   - id: Unique identifier for the wallet
+    ///   - signer: Signer information for the wallet
+    ///   - address: Public address of the wallet
+    ///   - publicKey: Public key of the wallet
     public init(id: String, signer: String?, address: String?, publicKey: String?) {
         self.id = id
         self.userId = nil
@@ -44,6 +71,8 @@ public struct Wallet {
         self.name = nil
     }
     
+    /// Creates a wallet from a dictionary of values
+    /// - Parameter result: Dictionary containing wallet information
     public init(result: [String: Any]) {
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZ"

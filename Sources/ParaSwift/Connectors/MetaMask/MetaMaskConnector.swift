@@ -8,6 +8,7 @@
 import Foundation
 import UIKit
 import os
+import BigInt
 
 /// Main connector class for interacting with MetaMask
 @available(iOS 16.4, *)
@@ -177,7 +178,7 @@ public class MetaMaskConnector: ObservableObject {
                 }
                 
                 logger.debug("Attempting external wallet login: address=\(address)")
-                try await para.externalWalletLogin(externalAddress: address, type: "EVM")
+                try await para.loginExternalWallet(wallet: ExternalWalletInfo(address: address, type: .evm))
                 logger.debug("External wallet login completed")
                 complete(with: ())
             } catch {
@@ -314,5 +315,34 @@ private extension MetaMaskConnector {
             throw MetaMaskError.invalidURL
         }
         return url
+    }
+}
+
+// MARK: - EVMTransaction Extension
+
+@available(iOS 16.4, *)
+internal extension EVMTransaction {
+    /// Converts the transaction to MetaMask format
+    /// - Parameter from: The sender address
+    /// - Returns: Transaction in MetaMask format
+    func toMetaMaskFormat(from: String) -> [String: String] {
+        var tx: [String: String] = ["from": from]
+        
+        // Helper function to convert BigUInt to hex string
+        func toHexString(_ value: BigUInt?) -> String? {
+            value.map { "0x" + String($0, radix: 16) }
+        }
+        
+        if let to = to { tx["to"] = to }
+        if let value = toHexString(value) { tx["value"] = value }
+        if let gasLimit = toHexString(gasLimit) { tx["gas"] = gasLimit }
+        if let gasPrice = toHexString(gasPrice) { tx["gasPrice"] = gasPrice }
+        if let maxPriorityFeePerGas = toHexString(maxPriorityFeePerGas) { tx["maxPriorityFeePerGas"] = maxPriorityFeePerGas }
+        if let maxFeePerGas = toHexString(maxFeePerGas) { tx["maxFeePerGas"] = maxFeePerGas }
+        if let nonce = toHexString(nonce) { tx["nonce"] = nonce }
+        if let type = type { tx["type"] = "0x" + String(type, radix: 16) }
+        if let chainId = toHexString(chainId) { tx["chainId"] = chainId }
+        
+        return tx
     }
 }
