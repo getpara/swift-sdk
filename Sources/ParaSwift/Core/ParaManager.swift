@@ -117,9 +117,9 @@ public class ParaManager: NSObject, ObservableObject {
     /// - Returns: The response from the bridge
     internal func postMessage(method: String, payload: Encodable) async throws -> Any? {
         // Log payload as JSON string
-        var payloadString = "<encoding error>"
-        if let data = try? JSONEncoder().encode(AnyEncodable(payload)),
-           let jsonString = String(data: data, encoding: .utf8) {
+        var payloadString: String = "<encoding error>"
+        if let data: Data = try? JSONEncoder().encode(AnyEncodable(payload)),
+           let jsonString: String = String(data: data, encoding: .utf8) {
             payloadString = jsonString
         }
         logger.debug("Posting message to bridge - Method: \(method), Payload: \(payloadString)")
@@ -256,7 +256,7 @@ extension ParaManager {
     ///   - biometricsId: The biometrics ID for the passkey
     ///   - authorizationController: The controller to handle authorization UI
     @available(macOS 13.3, iOS 16.4, *)
-    internal func generatePasskey(identifier: String, biometricsId: String, authorizationController: AuthorizationController) async throws {
+    public func generatePasskey(identifier: String, biometricsId: String, authorizationController: AuthorizationController) async throws {
         try await ensureWebViewReady()
         var userHandle = Data(count: 32)
         _ = userHandle.withUnsafeMutableBytes {
@@ -316,10 +316,13 @@ extension ParaManager {
     /// Verifies a new account with the provided verification code
     /// - Parameter verificationCode: The verification code sent to the user
     /// - Returns: AuthState object containing information about the next steps
-    internal func verifyNewAccount(verificationCode: String) async throws -> AuthState {
+    public func verifyNewAccount(verificationCode: String) async throws -> AuthState {
         try await ensureWebViewReady()
         
         let result = try await postMessage(method: "verifyNewAccount", payload: VerifyNewAccountArgs(verificationCode: verificationCode))
+        // Log the raw result from the bridge before parsing
+        let logger = Logger(subsystem: "com.paraSwift", category: "ParaManager.Verify")
+        logger.debug("Raw result from verifyNewAccount bridge call: \(String(describing: result))")
         let authState = try parseAuthStateFromResult(result)
         
         if authState.stage == .signup {
@@ -722,104 +725,247 @@ extension ParaManager {
 
 @available(iOS 16.4,*)
 extension ParaManager {
+    /// Specifies the intended authentication method.
+    public enum AuthMethod {
+        case passkey
+        case password
+    }
+    
+    // Internal enum for unified auth flow status
+    private enum AuthFlowStatus {
+        case success
+        case needsVerification
+        case error(String?)
+    }
+
+    /// Orchestrates the main authentication flow (signup/login/verify).
+    private func _handleAuthFlow(
+        authIdentity: AuthIdentity,
+        authInfoForPasskeyLogin: AuthInfo?, // Optional because verification doesn't need it
+        identifierForPasskeySignup: String,
+        verificationCode: String? = nil,
+        authMethod: AuthMethod,
+        authorizationController: AuthorizationController,
+        webAuthenticationSession: WebAuthenticationSession? = nil
+    ) async -> AuthFlowStatus {
+        do {
+            if let code = verificationCode {
+                // --- Verification Flow ---
+                let authState: AuthState = try await verifyNewAccount(verificationCode: code)
+                guard authState.stage == .signup else {
+                    return .error("Unexpected auth stage after verification: \(authState.stage)")
+                }
+                
+                let signupSuccess: Bool = await _completeSignup(
+                    authState: authState,
+                    identifier: identifierForPasskeySignup,
+                    authMethod: authMethod,
+                    authorizationController: authorizationController,
+                    webAuthenticationSession: webAuthenticationSession
+                )
+                return signupSuccess ? .success : .error("Signup completion failed after verification.")
+
+            } else {
+                // --- Initial Signup/Login Flow ---
+                let authState: AuthState = try await signUpOrLogIn(auth: .identity(authIdentity))
+
+                switch authState.stage {
+                case .verify:
+                    return .needsVerification
+
+                case .login:
+                    guard let authInfo = authInfoForPasskeyLogin else {
+                         return .error("Internal error: AuthInfo missing for login stage.")
+                    }
+                    let loginSuccess: Bool = await _completeLogin(
+                        authState: authState,
+                        authInfo: authInfo,
+                        authMethod: authMethod,
+                        authorizationController: authorizationController,
+                        webAuthenticationSession: webAuthenticationSession
+                    )
+                    return loginSuccess ? .success : .error("Login completion failed.")
+
+                case .signup:
+                    // This case might happen if verification was skipped server-side (e.g., trusted device)
+                    // Treat it like the verification flow's signup completion path.
+                    logger.debug("Received signup stage directly from signUpOrLogIn - attempting signup completion.")
+                    let signupSuccess: Bool = await _completeSignup(
+                        authState: authState,
+                        identifier: identifierForPasskeySignup,
+                        authMethod: authMethod,
+                        authorizationController: authorizationController,
+                        webAuthenticationSession: webAuthenticationSession
+                    )
+                    // If signup completion fails here, it's an error.
+                    return signupSuccess ? .success : .error("Direct signup completion failed.")
+                }
+            }
+        } catch let error as ParaError {
+             logger.error("ParaError during auth flow: \(error.description)")
+             return .error(error.description)
+        } catch {
+            let errorMsg: String = "Unexpected error during auth flow: \(error.localizedDescription)"
+            logger.error("\(errorMsg)")
+            return .error(errorMsg)
+        }
+    }
+
+    /// Handles the completion of the signup process (post-verification or direct signup).
+    private func _completeSignup(
+        authState: AuthState,
+        identifier: String,
+        authMethod: AuthMethod,
+        authorizationController: AuthorizationController,
+        webAuthenticationSession: WebAuthenticationSession?
+    ) async -> Bool {
+        do {
+            switch authMethod {
+            case .password:
+                guard let passwordUrl: String = authState.passwordUrl else {
+                    logger.error("Password auth requested for signup, but no passwordUrl available.")
+                    return false
+                }
+                guard let webAuthSession: WebAuthenticationSession = webAuthenticationSession else {
+                    logger.error("WebAuthenticationSession required for password signup.")
+                    return false
+                }
+                // presentPasswordUrl handles wallet creation internally for signup=true
+                if let _: URL = try await presentPasswordUrl(passwordUrl, webAuthenticationSession: webAuthSession, isSignup: true) {
+                    return true
+                } else {
+                    logger.error("Password signup failed or timed out.")
+                    return false
+                }
+                
+            case .passkey:
+                // Check for passkey first
+                if let passkeyId: String = authState.passkeyId {
+                    try await generatePasskey(
+                        identifier: identifier,
+                        biometricsId: passkeyId,
+                        authorizationController: authorizationController
+                    )
+                    // Explicitly create wallet after generating passkey
+                    logger.debug("Explicitly calling createWallet after passkey generation (signup flow).")
+                    let _: (newWallet: Wallet, recoverySecret: String?) = try await createWallet(type: .evm, skipDistributable: false)
+                    self.sessionState = .activeLoggedIn // Assume success if createWallet doesn't throw
+                    return true
+                }
+                
+                // If no passkeyId, check for external wallet signup
+                if let wallet: ExternalWalletInfo = authState.externalWalletInfo {
+                    logger.debug("Completing signup via external wallet login.")
+                    try await loginExternalWallet(wallet: wallet) // loginExternalWallet sets state
+                    return true
+                }
+                
+                // If neither passkey nor external wallet, it's an error for the .passkey case
+                logger.error("Passkey auth requested for signup, but no passkeyId or externalWalletInfo available.")
+                return false
+            }
+        } catch {
+            let errorMsg: String = "Error during signup completion (method: \(authMethod)): \(error.localizedDescription)"
+            logger.error("\(errorMsg)")
+            // Ensure state reflects potential failure if createWallet/loginExternalWallet failed
+             if self.sessionState == .activeLoggedIn { // Check if state was optimistically set
+                 // Attempt to check actual logged-in status, default to inactive on error
+                 self.sessionState = (try? await isFullyLoggedIn()) == true ? .activeLoggedIn : .inactive
+             }
+            return false
+        }
+    }
+
+    /// Handles the completion of the login process.
+    private func _completeLogin(
+        authState: AuthState,
+        authInfo: AuthInfo,
+        authMethod: AuthMethod,
+        authorizationController: AuthorizationController,
+        webAuthenticationSession: WebAuthenticationSession?
+    ) async -> Bool {
+        do {
+            switch authMethod {
+            case .password:
+                guard let passwordUrl: String = authState.passwordUrl else {
+                    logger.error("Password auth requested for login, but no passwordUrl available.")
+                    return false
+                }
+                guard let webAuthSession: WebAuthenticationSession = webAuthenticationSession else {
+                    logger.error("WebAuthenticationSession required for password login.")
+                    return false
+                }
+                if let _: URL = try await presentPasswordUrl(passwordUrl, webAuthenticationSession: webAuthSession, isSignup: false) {
+                    return true // presentPasswordUrl handles state update on success
+                } else {
+                     logger.error("Password login failed.")
+                     return false
+                }
+                
+            case .passkey:
+                guard authState.passkeyUrl != nil || authState.passkeyKnownDeviceUrl != nil else {
+                    logger.error("Passkey auth requested for login, but no passkey URLs available.")
+                    return false
+                }
+                // Use the provided authInfo (EmailAuthInfo or PhoneAuthInfo)
+                 try await loginWithPasskey(
+                    authorizationController: authorizationController,
+                    authInfo: authInfo
+                 )
+                 return true // loginWithPasskey handles state update
+            }
+        } catch {
+            let errorMsg: String = "Error during login completion (method: \(authMethod)): \(error.localizedDescription)"
+            logger.error("\(errorMsg)")
+            // Reset state on login error
+            self.sessionState = .inactive
+            return false
+        }
+    }
+
     /// Handles the complete email authentication flow.
     ///
     /// This method manages the entire email authentication process, including signup/login decision
-    /// and verification if needed.
+    /// and verification if needed. It supports both passkey and password authentication.
     ///
     /// - Parameters:
     ///   - email: The user's email address.
     ///   - verificationCode: Optional verification code, to be provided if the first call results in a verify stage.
+    ///   - authMethod: The intended authentication method.
     ///   - authorizationController: The AuthorizationController to use for passkey operations.
-    /// - Returns: A tuple containing the authentication status, next required action, and any error message.
+    ///   - webAuthenticationSession: Required when using password authentication to present the password URL.
+    /// - Returns: A tuple containing the authentication status and any error message.
     public func handleEmailAuth(
         email: String,
         verificationCode: String? = nil,
-        authorizationController: AuthorizationController
+        authMethod: AuthMethod, // UPDATED
+        authorizationController: AuthorizationController,
+        webAuthenticationSession: WebAuthenticationSession? = nil
     ) async -> (status: EmailAuthStatus, errorMessage: String?) {
-        do {
-            if let code = verificationCode {
-                return try await handleEmailVerification(
-                    code: code,
-                    email: email,
-                    authorizationController: authorizationController
-                )
-            }
-            
-            // Use EmailIdentity instead of .email case directly
-            let emailIdentity = EmailIdentity(email: email)
-            let authState = try await signUpOrLogIn(auth: .identity(emailIdentity))
-            
-            switch authState.stage {
-            case .verify:
-                return (.needsVerification, nil)
-                
-            case .login:
-                if authState.passkeyUrl != nil || authState.passkeyKnownDeviceUrl != nil {
-                    try await loginWithPasskey(
-                        authorizationController: authorizationController,
-                        authInfo: EmailAuthInfo(email: email)
-                    )
-                    return (.success, nil)
-                } else {
-                    return (.error, "Unable to get passkey authentication URL")
-                }
-                
-            case .signup:
-                return (.error, "Unexpected authentication state")
-            }
-        } catch {
-            return (.error, String(describing: error))
+
+        let emailIdentity = EmailIdentity(email: email)
+        let emailAuthInfo = EmailAuthInfo(email: email) // Needed for loginWithPasskey
+
+        let flowStatus = await _handleAuthFlow(
+            authIdentity: emailIdentity,
+            authInfoForPasskeyLogin: emailAuthInfo,
+            identifierForPasskeySignup: email, // Use raw email for passkey generation identifier
+            verificationCode: verificationCode,
+            authMethod: authMethod, // UPDATED
+            authorizationController: authorizationController,
+            webAuthenticationSession: webAuthenticationSession
+        )
+
+        switch flowStatus {
+        case .success:
+            return (.success, nil)
+        case .needsVerification:
+            return (.needsVerification, nil)
+        case .error(let message):
+            return (.error, message)
         }
     }
-    
-    /// Handles email verification for a new account.
-    ///
-    /// - Parameters:
-    ///   - code: The verification code.
-    ///   - email: The user's email address.
-    ///   - authorizationController: The AuthorizationController to use for passkey operations.
-    /// - Returns: A tuple containing the authentication status and any error message.
-    private func handleEmailVerification(
-        code: String,
-        email: String,
-        authorizationController: AuthorizationController
-    ) async throws -> (status: EmailAuthStatus, errorMessage: String?) {
-        let authState = try await verifyNewAccount(verificationCode: code)
-        
-        guard authState.stage == .signup else {
-            return (.error, "Unexpected auth stage: \(authState.stage)")
-        }
-        
-        // Get the identifier from auth identity or fall back to email parameter
-        let identifier: String
-        if let emailIdentity = authState.authIdentity as? EmailIdentity {
-            identifier = emailIdentity.email
-        } else {
-            identifier = email
-        }
-        
-        if let passkeyId = authState.passkeyId {
-            try await generatePasskey(
-                identifier: identifier,
-                biometricsId: passkeyId,
-                authorizationController: authorizationController
-            )
-            
-            try await createWallet(type: .evm, skipDistributable: false)
-            return (.success, nil)
-        } else if let wallet = authState.externalWalletInfo {
-            // For external wallet signup, use the wallet info directly
-            try await loginExternalWallet(wallet: wallet)
-            return (.success, nil)
-        } else if authState.passwordUrl != nil {
-            try await createWallet(type: .evm, skipDistributable: false)
-            return (.success, nil)
-        } else {
-            return (.error, "No authentication method available")
-        }
-    }
-    
+
     /// Status of the email authentication process.
     public enum EmailAuthStatus {
         /// Authentication successful.
@@ -829,110 +975,53 @@ extension ParaManager {
         /// Error occurred during authentication.
         case error
     }
-    
+
     /// Handles the complete phone authentication flow.
     ///
     /// This method manages the entire phone authentication process, including signup/login decision
-    /// and verification if needed.
+    /// and verification if needed. It supports both passkey and password authentication.
     ///
     /// - Parameters:
     ///   - phoneNumber: The user's phone number (without country code).
     ///   - countryCode: The country code (without the + prefix).
     ///   - verificationCode: Optional verification code, to be provided if the first call results in a verify stage.
+    ///   - authMethod: The intended authentication method.
     ///   - authorizationController: The AuthorizationController to use for passkey operations.
+    ///   - webAuthenticationSession: Required when using password authentication to present the password URL.
     /// - Returns: A tuple containing the authentication status, next required action, and any error message.
     public func handlePhoneAuth(
         phoneNumber: String,
         countryCode: String,
         verificationCode: String? = nil,
-        authorizationController: AuthorizationController
+        authMethod: AuthMethod, // UPDATED
+        authorizationController: AuthorizationController,
+        webAuthenticationSession: WebAuthenticationSession? = nil
     ) async -> (status: PhoneAuthStatus, errorMessage: String?) {
-        do {
-            if let code = verificationCode {
-                return try await handlePhoneVerification(
-                    code: code,
-                    phoneNumber: phoneNumber,
-                    countryCode: countryCode,
-                    authorizationController: authorizationController
-                )
-            }
-            
-            // Use PhoneIdentity instead of .phone case directly
-            let phoneIdentity = PhoneIdentity(phone: phoneNumber, countryCode: countryCode)
-            let authState = try await signUpOrLogIn(auth: .identity(phoneIdentity))
-            
-            switch authState.stage {
-            case .verify:
-                return (.needsVerification, nil)
-                
-            case .login:
-                if authState.passkeyUrl != nil || authState.passkeyKnownDeviceUrl != nil {
-                    try await loginWithPasskey(
-                        authorizationController: authorizationController,
-                        authInfo: PhoneAuthInfo(phone: phoneNumber, countryCode: countryCode)
-                    )
-                    return (.success, nil)
-                } else {
-                    return (.error, "Unable to get passkey authentication URL")
-                }
-                
-            case .signup:
-                return (.error, "Unexpected authentication state")
-            }
-        } catch {
-            return (.error, String(describing: error))
+
+        let phoneIdentity = PhoneIdentity(phone: phoneNumber, countryCode: countryCode)
+        let phoneAuthInfo = PhoneAuthInfo(phone: phoneNumber, countryCode: countryCode) // Needed for loginWithPasskey
+        let formattedPhoneNumber = formatPhoneNumber(phoneNumber: phoneNumber, countryCode: countryCode) // Needed for passkey generation
+
+        let flowStatus = await _handleAuthFlow(
+            authIdentity: phoneIdentity,
+            authInfoForPasskeyLogin: phoneAuthInfo,
+            identifierForPasskeySignup: formattedPhoneNumber,
+            verificationCode: verificationCode,
+            authMethod: authMethod, // UPDATED
+            authorizationController: authorizationController,
+            webAuthenticationSession: webAuthenticationSession
+        )
+
+        switch flowStatus {
+        case .success:
+            return (.success, nil)
+        case .needsVerification:
+            return (.needsVerification, nil)
+        case .error(let message):
+            return (.error, message)
         }
     }
-    
-    /// Handles phone verification for a new account.
-    ///
-    /// - Parameters:
-    ///   - code: The verification code.
-    ///   - phoneNumber: The user's phone number.
-    ///   - countryCode: The country code.
-    ///   - authorizationController: The AuthorizationController to use for passkey operations.
-    /// - Returns: A tuple containing the authentication status and any error message.
-    private func handlePhoneVerification(
-        code: String,
-        phoneNumber: String,
-        countryCode: String,
-        authorizationController: AuthorizationController
-    ) async throws -> (status: PhoneAuthStatus, errorMessage: String?) {
-        let authState = try await verifyNewAccount(verificationCode: code)
-        
-        guard authState.stage == .signup else {
-            return (.error, "Unexpected auth stage: \(authState.stage)")
-        }
-        
-        // Get the identifier from auth identity or format the phone number
-        let identifier: String
-        if let phoneIdentity = authState.authIdentity as? PhoneIdentity {
-            identifier = formatPhoneNumber(phoneNumber: phoneIdentity.phone, countryCode: phoneIdentity.countryCode)
-        } else {
-            identifier = formatPhoneNumber(phoneNumber: phoneNumber, countryCode: countryCode)
-        }
-        
-        if let passkeyId = authState.passkeyId {
-            try await generatePasskey(
-                identifier: identifier,
-                biometricsId: passkeyId,
-                authorizationController: authorizationController
-            )
-            
-            try await createWallet(type: .evm, skipDistributable: false)
-            return (.success, nil)
-        } else if let wallet = authState.externalWalletInfo {
-            // For external wallet signup, use the wallet info directly
-            try await loginExternalWallet(wallet: wallet)
-            return (.success, nil)
-        } else if authState.passwordUrl != nil {
-            try await createWallet(type: .evm, skipDistributable: false)
-            return (.success, nil)
-        } else {
-            return (.error, "No authentication method available")
-        }
-    }
-    
+
     /// Status of the phone authentication process.
     public enum PhoneAuthStatus {
         /// Authentication successful.
@@ -941,6 +1030,161 @@ extension ParaManager {
         case needsVerification
         /// Error occurred during authentication.
         case error
+    }
+
+    /// Presents a password URL using a web authentication session and verifies authentication completion.
+    /// This implementation mimics the web-sdk waitForWalletCreation and waitForSignup methods.
+    /// 
+    /// - Parameters:
+    ///   - url: The password authentication URL to present
+    ///   - webAuthenticationSession: The session to use for presenting the URL
+    ///   - isSignup: Whether this is a new account signup (true) or login (false)
+    /// - Returns: The callback URL if authentication was successful, nil otherwise
+    public func presentPasswordUrl(_ url: String, webAuthenticationSession: WebAuthenticationSession, isSignup: Bool = false) async throws -> URL? {
+        let logger = Logger(subsystem: "com.paraSwift", category: "PasswordAuth")
+        guard let passwordUrl = URL(string: url) else {
+            throw ParaError.error("Invalid password authentication URL")
+        }
+        
+        logger.debug("Presenting password authentication URL (\(isSignup ? "signup" : "login")): \(url)")
+        
+        // When the web portal calls window.close() after password creation/login,
+        // ASWebAuthenticationSession throws a canceledLogin error, which we need to handle as success
+        do {
+            // Attempt to authenticate with the web session
+            let callbackURL = try await webAuthenticationSession.authenticate(using: passwordUrl, callbackURLScheme: deepLink)
+            // Normal callback URL completion (rare for password auth)
+            logger.debug("Received callback URL: \(callbackURL.absoluteString)")
+            
+            // For standard callback completion, update state immediately
+            self.sessionState = try await isFullyLoggedIn() ? .activeLoggedIn : .active
+            try await fetchWallets()
+            
+            return callbackURL
+        } catch {
+            // This is expected for password auth - handle as intentional window close
+            logger.debug("WebAuthenticationSession ended: \(error.localizedDescription)")
+            
+            // Start polling for session/wallet creation similar to web-sdk's waitForSignup/waitForWalletCreation
+            logger.debug("Beginning to poll for session activation...")
+        }
+        
+        // For signup, we need a much longer total timeout as wallet creation takes time
+        let startTime = Date()
+        let maxTimeout: TimeInterval = isSignup ? 45.0 : 15.0
+        let pollingInterval: TimeInterval = isSignup ? 2.0 : 1.0
+        
+        // Mimic the waitForSignup and waitForWalletCreation behavior from web-sdk
+        while Date().timeIntervalSince(startTime) < maxTimeout {
+            // Sleep between polling attempts
+            try await Task.sleep(nanoseconds: UInt64(pollingInterval * 1_000_000_000))
+            
+            do {
+                logger.debug("Polling session state (\(Int(Date().timeIntervalSince(startTime)))s elapsed)...")
+                
+                // Store async results in local variables first
+                let sessionIsActive = try await isSessionActive()
+
+                if sessionIsActive {
+                    logger.debug("Session is active - checking login status")
+                    
+                    // For LOGIN (!isSignup)
+                    if !isSignup {
+                        let fullyLoggedIn = try await isFullyLoggedIn()
+                        if fullyLoggedIn {
+                            logger.debug("Success: User is fully logged in (login flow)")
+                            self.sessionState = .activeLoggedIn
+                            await refreshWalletsWithRetry(maxAttempts: 3, isSignup: false)
+                            return URL(string: "success://password.login.authenticated")
+                        } else {
+                             // Still waiting for login state or handling unexpected case
+                             logger.debug("Session active but not fully logged in (login flow), continuing poll...")
+                        }
+                    // For SIGNUP (isSignup)
+                    } else {
+                        logger.debug("Success: Session is active (signup flow) - proceeding to wallet refresh")
+                        self.sessionState = .active // Mark as active, loggedIn status determined by refreshWallets
+
+                        do {
+                            // *** NEW: Explicitly create wallet ***
+                            logger.debug("Attempting explicit wallet creation (signup flow)...")
+                            _ = try await createWallet(type: .evm, skipDistributable: false)
+                            logger.debug("Successfully called createWallet (signup flow)")
+
+                            // Now refresh wallets to get the newly created one and update state
+                            await refreshWalletsWithRetry(maxAttempts: 5, isSignup: true) // refreshWallets already sets state to activeLoggedIn on success
+
+                            // Check state after refresh
+                            if self.sessionState == .activeLoggedIn {
+                               logger.debug("Success: Signup completed and wallet fetched.")
+                               return URL(string: "success://password.signup.completedWithWallet")
+                            } else {
+                               // Wallet might not have been fetched immediately even if created?
+                               // Or refresh failed? Keep polling? Or return a different success state?
+                               // Let's assume createWallet + successful refresh means logged in.
+                               logger.warning("Signup session active, createWallet called, but refreshWallets didn't result in activeLoggedIn state.")
+                               // Maybe still return a success indicator, but log the warning.
+                               return URL(string: "success://password.signup.sessionActiveWalletCreated") // New distinct success URL
+                            }
+                        } catch {
+                            logger.error("Error explicitly calling createWallet during signup: \(error.localizedDescription)")
+                            // Decide how to handle createWallet failure. Stop polling? Continue?
+                            // For now, let's stop and return failure.
+                            self.sessionState = .inactive // Revert state if wallet creation failed
+                            return nil // Indicate failure
+                        }
+                    }
+                } else {
+                    logger.debug("Session not yet active, continuing to poll...")
+                }
+            } catch {
+                logger.error("Error during status check: \(error.localizedDescription)")
+                // Continue polling even if one check fails
+            }
+        }
+        
+        // After timeout with no success
+        logger.error("Password authentication polling timed out after \(maxTimeout) seconds")
+        self.sessionState = .inactive
+        return nil
+    }
+    
+    /// Helper method to refresh wallets with retry logic
+    private func refreshWalletsWithRetry(maxAttempts: Int = 5, isSignup: Bool = false) async {
+        let logger: Logger = Logger(subsystem: "com.paraSwift", category: "WalletRefresh")
+        
+        // For signup, wallets can take longer to be available
+        let delayBetweenAttempts: UInt64 = isSignup ? 3_000_000_000 : 1_500_000_000 // 3 seconds for signup, 1.5 for login
+        
+        for attempt in 1...maxAttempts {
+            do {
+                logger.debug("Attempting to fetch wallets (attempt \(attempt)/\(maxAttempts))...")
+                let newWallets: [Wallet] = try await fetchWallets()
+                
+                if !newWallets.isEmpty {
+                    logger.debug("Successfully fetched \(newWallets.count) wallets")
+                    self.wallets = newWallets
+                    
+                    // Ensure session state is updated
+                    self.sessionState = .activeLoggedIn
+                    return
+                } else {
+                    logger.debug("Fetched empty wallet list, retrying in \(delayBetweenAttempts/1_000_000_000) seconds...")
+                    
+                    // Check if we're logged in even though wallets aren't available yet
+                    if let isLoggedIn: Bool = try? await isFullyLoggedIn(), isLoggedIn {
+                        logger.debug("User is fully logged in despite no wallets yet - continuing to wait")
+                    }
+                    
+                    try await Task.sleep(nanoseconds: delayBetweenAttempts)
+                }
+            } catch {
+                logger.error("Error fetching wallets: \(error.localizedDescription)")
+                try? await Task.sleep(nanoseconds: delayBetweenAttempts)
+            }
+        }
+        
+        logger.warning("Failed to fetch wallets after \(maxAttempts) attempts")
     }
 }
 
