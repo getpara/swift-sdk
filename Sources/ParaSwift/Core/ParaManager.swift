@@ -12,44 +12,35 @@ import os
 /// It handles authentication flows, wallet creation and management, and transaction signing operations.
 public class ParaManager: NSObject, ObservableObject {
     // MARK: - Properties
-    
-    private let logger = Logger(subsystem: "com.paraSwift", category: "ParaManager")
-    
-    /// Available Para wallets connected to this instance.
-    @Published public var wallets: [Wallet] = []
-    
-    /// Current state of the Para Manager session.
-    @Published public var sessionState: ParaSessionState = .unknown
-    
-    /// Indicates if the ParaManager is ready to receive requests.
-    public var isReady: Bool {
-        return paraWebView.isReady
-    }
-    
     /// Current package version.
     public static let packageVersion = "1.2.1"
-    
+    /// Available Para wallets connected to this instance.
+    @Published public var wallets: [Wallet] = []
+    /// Current state of the Para Manager session.
+    @Published public var sessionState: ParaSessionState = .unknown
+    /// API key for Para services.
+    public var apiKey: String
     /// Para environment configuration.
     public var environment: ParaEnvironment {
         didSet {
             self.passkeysManager.relyingPartyIdentifier = environment.relyingPartyId
         }
     }
-    
-    /// API key for Para services.
-    public var apiKey: String
-    
+    /// Indicates if the ParaManager is ready to receive requests.
+    public var isReady: Bool {
+        return paraWebView.isReady
+    }
+    // MARK: - Internal Properties
+    /// Logger for internal diagnostics.
+    private let logger = Logger(subsystem: "com.paraSwift", category: "ParaManager")
     /// Internal passkeys manager for handling authentication.
     private let passkeysManager: PasskeysManager
-    
     /// Web view interface for communicating with Para services.
     internal let paraWebView: ParaWebView
-    
     /// Deep link for app authentication flows.
     internal let deepLink: String
     
     // MARK: - Initialization
-    
     /// Creates a new Para manager instance.
     ///
     /// - Parameters:
@@ -68,7 +59,7 @@ public class ParaManager: NSObject, ObservableObject {
         }
     }
     
-    // MARK: - Internal Utilities
+    // MARK: - Internal Utilities & Bridge Communication
     
     /// Waits for the Para web view to be ready with a timeout
     private func waitForParaReady() async {
@@ -162,12 +153,140 @@ public class ParaManager: NSObject, ObservableObject {
         }
         return value
     }
+    
+    /// Formats a phone number into the international format required by Para.
+    ///
+    /// - Parameters:
+    ///   - phoneNumber: The national phone number (without country code).
+    ///   - countryCode: The country code (without the plus sign).
+    /// - Returns: Formatted phone number in international format (+${countryCode}${phoneNumber}).
+    ///
+    /// - Note: This method is provided as a convenience for formatting phone numbers correctly.
+    ///         All Para authentication methods expect phone numbers in international format.
+    ///         Example: formatPhoneNumber(phoneNumber: "5551234", countryCode: "1") returns "+15551234".
+    public func formatPhoneNumber(phoneNumber: String, countryCode: String) -> String {
+        return "+\(countryCode)\(phoneNumber)"
+    }
+    
+    // Private struct for the signUpOrLogIn payload
+    private struct SignUpOrLogInPayload: Encodable {
+        let auth: AnyEncodable
+        
+        init(auth: Encodable) {
+            self.auth = AnyEncodable(auth)
+        }
+    }
+    
+    private func createSignUpOrLogInPayload(from auth: Auth) -> SignUpOrLogInPayload {
+        switch auth {
+        case .email(let emailAddress):
+            return SignUpOrLogInPayload(auth: EmailIdentity(email: emailAddress))
+        case .phone(let phoneNumber):
+            return SignUpOrLogInPayload(auth: PhoneIdentity(phone: phoneNumber, countryCode: phoneNumber.hasPrefix("+") ? "" : ""))
+        case .farcaster(let fid):
+            return SignUpOrLogInPayload(auth: FarcasterIdentity(fid: fid))
+        case .telegram(let id):
+            return SignUpOrLogInPayload(auth: TelegramIdentity(id: id))
+        case .externalWallet(let wallet):
+            return SignUpOrLogInPayload(auth: ExternalWalletIdentity(wallet: wallet))
+        case .identity(let identity):
+            return SignUpOrLogInPayload(auth: identity)
+        }
+    }
+    
+    private func parseAuthStateFromResult(_ result: Any?) throws -> AuthState {
+        guard let resultDict = result as? [String: Any] else {
+            throw ParaError.bridgeError("Invalid result format from authentication call")
+        }
+        
+        guard let stageString = resultDict["stage"] as? String,
+              let stage = AuthStage(rawValue: stageString),
+              let userId = resultDict["userId"] as? String else {
+            throw ParaError.bridgeError("Missing required fields in authentication response")
+        }
+        
+        let passkeyUrl = resultDict["passkeyUrl"] as? String
+        let passkeyId = resultDict["passkeyId"] as? String
+        let passwordUrl = resultDict["passwordUrl"] as? String
+        let passkeyKnownDeviceUrl = resultDict["passkeyKnownDeviceUrl"] as? String
+        let displayName = resultDict["displayName"] as? String
+        let pfpUrl = resultDict["pfpUrl"] as? String
+        let username = resultDict["username"] as? String
+        let signatureVerificationMessage = resultDict["signatureVerificationMessage"] as? String
+        
+        // Extract biometric hints if available
+        var biometricHints: [AuthState.BiometricHint]?
+        if let hintsArray = resultDict["biometricHints"] as? [[String: Any]] {
+            biometricHints = hintsArray.compactMap { hint in
+                let aaguid = hint["aaguid"] as? String
+                let userAgent = hint["userAgent"] as? String ?? hint["useragent"] as? String
+                
+                guard aaguid != nil || userAgent != nil else {
+                    return nil
+                }
+                return AuthState.BiometricHint(aaguid: aaguid, userAgent: userAgent)
+            }
+        }
+        
+        // Extract auth identity and external wallet if available
+        var authIdentity: AuthIdentity? = nil
+        var externalWalletInfo: ExternalWalletInfo? = nil
+        
+        if let auth = resultDict["auth"] as? [String: Any] {
+            // Determine the type of auth identity
+            if let email = auth["email"] as? String {
+                authIdentity = EmailIdentity(email: email)
+            } else if let phone = auth["phone"] as? String, let countryCode = auth["countryCode"] as? String {
+                authIdentity = PhoneIdentity(phone: phone, countryCode: countryCode)
+            } else if let fid = auth["fid"] as? String {
+                authIdentity = FarcasterIdentity(fid: fid)
+            } else if let telegramId = auth["id"] as? String, auth["type"] as? String == "telegram" {
+                authIdentity = TelegramIdentity(id: telegramId)
+            } else if let wallet = auth["wallet"] as? [String: Any] {
+                if let address = wallet["address"] as? String,
+                   let typeString = wallet["type"] as? String,
+                   let type = ExternalWalletType(rawValue: typeString) {
+                    let provider = wallet["provider"] as? String
+                    let walletInfo = ExternalWalletInfo(address: address, type: type, provider: provider)
+                    authIdentity = ExternalWalletIdentity(wallet: walletInfo)
+                    externalWalletInfo = walletInfo
+                }
+            }
+        } else if let externalWallet = resultDict["externalWallet"] as? [String: Any] {
+            // Handle direct externalWallet in the result
+            if let address = externalWallet["address"] as? String,
+               let typeString = externalWallet["type"] as? String,
+               let type = ExternalWalletType(rawValue: typeString) {
+                let provider = externalWallet["provider"] as? String
+                let walletInfo = ExternalWalletInfo(address: address, type: type, provider: provider) 
+                authIdentity = ExternalWalletIdentity(wallet: walletInfo)
+                externalWalletInfo = walletInfo
+            }
+        }
+        
+        return AuthState(
+            stage: stage,
+            userId: userId,
+            authIdentity: authIdentity,
+            displayName: displayName,
+            pfpUrl: pfpUrl,
+            username: username,
+            externalWalletInfo: externalWalletInfo,
+            signatureVerificationMessage: signatureVerificationMessage,
+            passkeyUrl: passkeyUrl,
+            passkeyId: passkeyId,
+            passkeyKnownDeviceUrl: passkeyKnownDeviceUrl,
+            passwordUrl: passwordUrl,
+            biometricHints: biometricHints
+        )
+    }
 }
 
-// MARK: - Authentication Methods
+// MARK: - Core Authentication Methods
 
 @available(iOS 16.4,*)
 extension ParaManager {
+    
     /// Extracts authentication information and gets a web challenge.
     ///
     /// - Parameter authInfo: Optional authentication information (email or phone).
@@ -442,121 +561,6 @@ extension ParaManager {
         let wallet = ExternalWalletInfo(address: externalAddress, type: walletType)
         try await loginExternalWallet(wallet: wallet)
     }
-    
-    // MARK: - Auth Helper Methods
-    
-    // Private struct for the signUpOrLogIn payload
-    private struct SignUpOrLogInPayload: Encodable {
-        let auth: AnyEncodable
-        
-        init(auth: Encodable) {
-            self.auth = AnyEncodable(auth)
-        }
-    }
-    
-    private func createSignUpOrLogInPayload(from auth: Auth) -> SignUpOrLogInPayload {
-        switch auth {
-        case .email(let emailAddress):
-            return SignUpOrLogInPayload(auth: EmailIdentity(email: emailAddress))
-        case .phone(let phoneNumber):
-            return SignUpOrLogInPayload(auth: PhoneIdentity(phone: phoneNumber, countryCode: phoneNumber.hasPrefix("+") ? "" : ""))
-        case .farcaster(let fid):
-            return SignUpOrLogInPayload(auth: FarcasterIdentity(fid: fid))
-        case .telegram(let id):
-            return SignUpOrLogInPayload(auth: TelegramIdentity(id: id))
-        case .externalWallet(let wallet):
-            return SignUpOrLogInPayload(auth: ExternalWalletIdentity(wallet: wallet))
-        case .identity(let identity):
-            return SignUpOrLogInPayload(auth: identity)
-        }
-    }
-    
-    private func parseAuthStateFromResult(_ result: Any?) throws -> AuthState {
-        guard let resultDict = result as? [String: Any] else {
-            throw ParaError.bridgeError("Invalid result format from authentication call")
-        }
-        
-        guard let stageString = resultDict["stage"] as? String,
-              let stage = AuthStage(rawValue: stageString),
-              let userId = resultDict["userId"] as? String else {
-            throw ParaError.bridgeError("Missing required fields in authentication response")
-        }
-        
-        let passkeyUrl = resultDict["passkeyUrl"] as? String
-        let passkeyId = resultDict["passkeyId"] as? String
-        let passwordUrl = resultDict["passwordUrl"] as? String
-        let passkeyKnownDeviceUrl = resultDict["passkeyKnownDeviceUrl"] as? String
-        let displayName = resultDict["displayName"] as? String
-        let pfpUrl = resultDict["pfpUrl"] as? String
-        let username = resultDict["username"] as? String
-        let signatureVerificationMessage = resultDict["signatureVerificationMessage"] as? String
-        
-        // Extract biometric hints if available
-        var biometricHints: [AuthState.BiometricHint]?
-        if let hintsArray = resultDict["biometricHints"] as? [[String: Any]] {
-            biometricHints = hintsArray.compactMap { hint in
-                let aaguid = hint["aaguid"] as? String
-                let userAgent = hint["userAgent"] as? String ?? hint["useragent"] as? String
-                
-                guard aaguid != nil || userAgent != nil else {
-                    return nil
-                }
-                return AuthState.BiometricHint(aaguid: aaguid, userAgent: userAgent)
-            }
-        }
-        
-        // Extract auth identity and external wallet if available
-        var authIdentity: AuthIdentity? = nil
-        var externalWalletInfo: ExternalWalletInfo? = nil
-        
-        if let auth = resultDict["auth"] as? [String: Any] {
-            // Determine the type of auth identity
-            if let email = auth["email"] as? String {
-                authIdentity = EmailIdentity(email: email)
-            } else if let phone = auth["phone"] as? String, let countryCode = auth["countryCode"] as? String {
-                authIdentity = PhoneIdentity(phone: phone, countryCode: countryCode)
-            } else if let fid = auth["fid"] as? String {
-                authIdentity = FarcasterIdentity(fid: fid)
-            } else if let telegramId = auth["id"] as? String, auth["type"] as? String == "telegram" {
-                authIdentity = TelegramIdentity(id: telegramId)
-            } else if let wallet = auth["wallet"] as? [String: Any] {
-                if let address = wallet["address"] as? String,
-                   let typeString = wallet["type"] as? String,
-                   let type = ExternalWalletType(rawValue: typeString) {
-                    let provider = wallet["provider"] as? String
-                    let walletInfo = ExternalWalletInfo(address: address, type: type, provider: provider)
-                    authIdentity = ExternalWalletIdentity(wallet: walletInfo)
-                    externalWalletInfo = walletInfo
-                }
-            }
-        } else if let externalWallet = resultDict["externalWallet"] as? [String: Any] {
-            // Handle direct externalWallet in the result
-            if let address = externalWallet["address"] as? String,
-               let typeString = externalWallet["type"] as? String,
-               let type = ExternalWalletType(rawValue: typeString) {
-                let provider = externalWallet["provider"] as? String
-                let walletInfo = ExternalWalletInfo(address: address, type: type, provider: provider) 
-                authIdentity = ExternalWalletIdentity(wallet: walletInfo)
-                externalWalletInfo = walletInfo
-            }
-        }
-        
-        return AuthState(
-            stage: stage,
-            userId: userId,
-            authIdentity: authIdentity,
-            displayName: displayName,
-            pfpUrl: pfpUrl,
-            username: username,
-            externalWalletInfo: externalWalletInfo,
-            signatureVerificationMessage: signatureVerificationMessage,
-            passkeyUrl: passkeyUrl,
-            passkeyId: passkeyId,
-            passkeyKnownDeviceUrl: passkeyKnownDeviceUrl,
-            passwordUrl: passwordUrl,
-            biometricHints: biometricHints
-        )
-    }
 }
 
 // MARK: - Wallet Management
@@ -623,6 +627,44 @@ extension ParaManager {
         try await ensureWebViewReady()
         let result = try await postMessage(method: "getEmail", payload: EmptyPayload())
         return try decodeResult(result, expectedType: String.self, method: "getEmail")
+    }
+    
+    /// Helper method to refresh wallets with retry logic
+    private func refreshWalletsWithRetry(maxAttempts: Int = 5, isSignup: Bool = false) async {
+        let logger: Logger = Logger(subsystem: "com.paraSwift", category: "WalletRefresh")
+        
+        // For signup, wallets can take longer to be available
+        let delayBetweenAttempts: UInt64 = isSignup ? 3_000_000_000 : 1_500_000_000 // 3 seconds for signup, 1.5 for login
+        
+        for attempt in 1...maxAttempts {
+            do {
+                logger.debug("Attempting to fetch wallets (attempt \(attempt)/\(maxAttempts))...")
+                let newWallets: [Wallet] = try await fetchWallets()
+                
+                if !newWallets.isEmpty {
+                    logger.debug("Successfully fetched \(newWallets.count) wallets")
+                    self.wallets = newWallets
+                    
+                    // Ensure session state is updated
+                    self.sessionState = .activeLoggedIn
+                    return
+                } else {
+                    logger.debug("Fetched empty wallet list, retrying in \(delayBetweenAttempts/1_000_000_000) seconds...")
+                    
+                    // Check if we're logged in even though wallets aren't available yet
+                    if let isLoggedIn: Bool = try? await isFullyLoggedIn(), isLoggedIn {
+                        logger.debug("User is fully logged in despite no wallets yet - continuing to wait")
+                    }
+                    
+                    try await Task.sleep(nanoseconds: delayBetweenAttempts)
+                }
+            } catch {
+                logger.error("Error fetching wallets: \(error.localizedDescription)")
+                try? await Task.sleep(nanoseconds: delayBetweenAttempts)
+            }
+        }
+        
+        logger.warning("Failed to fetch wallets after \(maxAttempts) attempts")
     }
 }
 
@@ -702,34 +744,10 @@ extension ParaManager {
     }
 }
 
-// MARK: - Utility Methods
-
-@available(iOS 16.4,*)
-extension ParaManager {
-    /// Formats a phone number into the international format required by Para.
-    ///
-    /// - Parameters:
-    ///   - phoneNumber: The national phone number (without country code).
-    ///   - countryCode: The country code (without the plus sign).
-    /// - Returns: Formatted phone number in international format (+${countryCode}${phoneNumber}).
-    ///
-    /// - Note: This method is provided as a convenience for formatting phone numbers correctly.
-    ///         All Para authentication methods expect phone numbers in international format.
-    ///         Example: formatPhoneNumber(phoneNumber: "5551234", countryCode: "1") returns "+15551234".
-    public func formatPhoneNumber(phoneNumber: String, countryCode: String) -> String {
-        return "+\(countryCode)\(phoneNumber)"
-    }
-}
-
 // MARK: - High-Level Authentication Flows
 
 @available(iOS 16.4,*)
 extension ParaManager {
-    /// Specifies the intended authentication method.
-    public enum AuthMethod {
-        case passkey
-        case password
-    }
     
     // Internal enum for unified auth flow status
     private enum AuthFlowStatus {
@@ -966,16 +984,6 @@ extension ParaManager {
         }
     }
 
-    /// Status of the email authentication process.
-    public enum EmailAuthStatus {
-        /// Authentication successful.
-        case success
-        /// User needs to verify their email.
-        case needsVerification
-        /// Error occurred during authentication.
-        case error
-    }
-
     /// Handles the complete phone authentication flow.
     ///
     /// This method manages the entire phone authentication process, including signup/login decision
@@ -1022,16 +1030,6 @@ extension ParaManager {
         }
     }
 
-    /// Status of the phone authentication process.
-    public enum PhoneAuthStatus {
-        /// Authentication successful.
-        case success
-        /// User needs to verify their phone number.
-        case needsVerification
-        /// Error occurred during authentication.
-        case error
-    }
-
     /// Presents a password URL using a web authentication session and verifies authentication completion.
     /// This implementation mimics the web-sdk waitForWalletCreation and waitForSignup methods.
     /// 
@@ -1042,17 +1040,29 @@ extension ParaManager {
     /// - Returns: The callback URL if authentication was successful, nil otherwise
     public func presentPasswordUrl(_ url: String, webAuthenticationSession: WebAuthenticationSession, isSignup: Bool = false) async throws -> URL? {
         let logger = Logger(subsystem: "com.paraSwift", category: "PasswordAuth")
-        guard let passwordUrl = URL(string: url) else {
+        guard let originalPasswordUrl = URL(string: url) else {
             throw ParaError.error("Invalid password authentication URL")
         }
         
-        logger.debug("Presenting password authentication URL (\(isSignup ? "signup" : "login")): \(url)")
+        // Add nativeCallbackUrl query parameter for ASWebAuthenticationSession
+        var components = URLComponents(url: originalPasswordUrl, resolvingAgainstBaseURL: false)
+        let callbackQueryItem = URLQueryItem(name: "nativeCallbackUrl", value: deepLink + "://")
+        // Resolve overlapping access warning by modifying a local variable
+        var currentQueryItems = components?.queryItems ?? []
+        currentQueryItems.append(callbackQueryItem)
+        components?.queryItems = currentQueryItems
+
+        guard let finalPasswordUrl = components?.url else {
+            throw ParaError.error("Failed to construct final password URL with callback parameter")
+        }
+        
+        logger.debug("Presenting password authentication URL (\(isSignup ? "signup" : "login")) with native callback: \(finalPasswordUrl.absoluteString)")
         
         // When the web portal calls window.close() after password creation/login,
         // ASWebAuthenticationSession throws a canceledLogin error, which we need to handle as success
         do {
-            // Attempt to authenticate with the web session
-            let callbackURL = try await webAuthenticationSession.authenticate(using: passwordUrl, callbackURLScheme: deepLink)
+            // Attempt to authenticate with the web session using the modified URL
+            let callbackURL = try await webAuthenticationSession.authenticate(using: finalPasswordUrl, callbackURLScheme: deepLink)
             // Normal callback URL completion (rare for password auth)
             logger.debug("Received callback URL: \(callbackURL.absoluteString)")
             
@@ -1063,132 +1073,70 @@ extension ParaManager {
             return callbackURL
         } catch {
             // This is expected for password auth - handle as intentional window close
-            logger.debug("WebAuthenticationSession ended: \(error.localizedDescription)")
-            
-            // Start polling for session/wallet creation similar to web-sdk's waitForSignup/waitForWalletCreation
-            logger.debug("Beginning to poll for session activation...")
-        }
-        
-        // For signup, we need a much longer total timeout as wallet creation takes time
-        let startTime = Date()
-        let maxTimeout: TimeInterval = isSignup ? 45.0 : 15.0
-        let pollingInterval: TimeInterval = isSignup ? 2.0 : 1.0
-        
-        // Mimic the waitForSignup and waitForWalletCreation behavior from web-sdk
-        while Date().timeIntervalSince(startTime) < maxTimeout {
-            // Sleep between polling attempts
-            try await Task.sleep(nanoseconds: UInt64(pollingInterval * 1_000_000_000))
-            
-            do {
-                logger.debug("Polling session state (\(Int(Date().timeIntervalSince(startTime)))s elapsed)...")
-                
-                // Store async results in local variables first
-                let sessionIsActive = try await isSessionActive()
+            logger.debug("WebAuthenticationSession ended, likely due to window.close(): \(error.localizedDescription)")
 
-                if sessionIsActive {
-                    logger.debug("Session is active - checking login status")
-                    
-                    // For LOGIN (!isSignup)
-                    if !isSignup {
-                        let fullyLoggedIn = try await isFullyLoggedIn()
-                        if fullyLoggedIn {
-                            logger.debug("Success: User is fully logged in (login flow)")
-                            self.sessionState = .activeLoggedIn
-                            await refreshWalletsWithRetry(maxAttempts: 3, isSignup: false)
-                            return URL(string: "success://password.login.authenticated")
-                        } else {
-                             // Still waiting for login state or handling unexpected case
-                             logger.debug("Session active but not fully logged in (login flow), continuing poll...")
-                        }
-                    // For SIGNUP (isSignup)
-                    } else {
-                        logger.debug("Success: Session is active (signup flow) - proceeding to wallet refresh")
-                        self.sessionState = .active // Mark as active, loggedIn status determined by refreshWallets
+            // Removed polling. Assume success based on window close and proceed.
 
-                        do {
-                            // *** NEW: Explicitly create wallet ***
-                            logger.debug("Attempting explicit wallet creation (signup flow)...")
-                            _ = try await createWallet(type: .evm, skipDistributable: false)
-                            logger.debug("Successfully called createWallet (signup flow)")
-
-                            // Now refresh wallets to get the newly created one and update state
-                            await refreshWalletsWithRetry(maxAttempts: 5, isSignup: true) // refreshWallets already sets state to activeLoggedIn on success
-
-                            // Check state after refresh
-                            if self.sessionState == .activeLoggedIn {
-                               logger.debug("Success: Signup completed and wallet fetched.")
-                               return URL(string: "success://password.signup.completedWithWallet")
-                            } else {
-                               // Wallet might not have been fetched immediately even if created?
-                               // Or refresh failed? Keep polling? Or return a different success state?
-                               // Let's assume createWallet + successful refresh means logged in.
-                               logger.warning("Signup session active, createWallet called, but refreshWallets didn't result in activeLoggedIn state.")
-                               // Maybe still return a success indicator, but log the warning.
-                               return URL(string: "success://password.signup.sessionActiveWalletCreated") // New distinct success URL
-                            }
-                        } catch {
-                            logger.error("Error explicitly calling createWallet during signup: \(error.localizedDescription)")
-                            // Decide how to handle createWallet failure. Stop polling? Continue?
-                            // For now, let's stop and return failure.
-                            self.sessionState = .inactive // Revert state if wallet creation failed
-                            return nil // Indicate failure
-                        }
-                    }
-                } else {
-                    logger.debug("Session not yet active, continuing to poll...")
-                }
-            } catch {
-                logger.error("Error during status check: \(error.localizedDescription)")
-                // Continue polling even if one check fails
-            }
-        }
-        
-        // After timeout with no success
-        logger.error("Password authentication polling timed out after \(maxTimeout) seconds")
-        self.sessionState = .inactive
-        return nil
-    }
-    
-    /// Helper method to refresh wallets with retry logic
-    private func refreshWalletsWithRetry(maxAttempts: Int = 5, isSignup: Bool = false) async {
-        let logger: Logger = Logger(subsystem: "com.paraSwift", category: "WalletRefresh")
-        
-        // For signup, wallets can take longer to be available
-        let delayBetweenAttempts: UInt64 = isSignup ? 3_000_000_000 : 1_500_000_000 // 3 seconds for signup, 1.5 for login
-        
-        for attempt in 1...maxAttempts {
-            do {
-                logger.debug("Attempting to fetch wallets (attempt \(attempt)/\(maxAttempts))...")
-                let newWallets: [Wallet] = try await fetchWallets()
-                
-                if !newWallets.isEmpty {
-                    logger.debug("Successfully fetched \(newWallets.count) wallets")
-                    self.wallets = newWallets
-                    
-                    // Ensure session state is updated
+            if isSignup {
+                // --- Signup Flow ---
+                logger.debug("Attempting explicit wallet creation (signup flow)...")
+                do {
+                    _ = try await createWallet(type: .evm, skipDistributable: false)
+                    logger.debug("Successfully called createWallet (signup flow)")
                     self.sessionState = .activeLoggedIn
-                    return
-                } else {
-                    logger.debug("Fetched empty wallet list, retrying in \(delayBetweenAttempts/1_000_000_000) seconds...")
-                    
-                    // Check if we're logged in even though wallets aren't available yet
-                    if let isLoggedIn: Bool = try? await isFullyLoggedIn(), isLoggedIn {
-                        logger.debug("User is fully logged in despite no wallets yet - continuing to wait")
-                    }
-                    
-                    try await Task.sleep(nanoseconds: delayBetweenAttempts)
+                    // Attempt to fetch wallets once immediately after creation
+                    await refreshWalletsWithRetry(maxAttempts: 1, isSignup: true)
+                    logger.debug("Signup flow completed.")
+                    return URL(string: "success://password.signup.completed")
+                } catch {
+                    logger.error("Error explicitly calling createWallet during signup: \(error.localizedDescription)")
+                    self.sessionState = .inactive // Revert state if wallet creation failed
+                    return nil // Indicate failure
                 }
-            } catch {
-                logger.error("Error fetching wallets: \(error.localizedDescription)")
-                try? await Task.sleep(nanoseconds: delayBetweenAttempts)
+            } else {
+                // --- Login Flow ---
+                logger.debug("Assuming login success (login flow). Setting state and fetching wallets...")
+                self.sessionState = .activeLoggedIn
+                // Attempt to fetch wallets once immediately after login assumption
+                await refreshWalletsWithRetry(maxAttempts: 1, isSignup: false)
+                 logger.debug("Login flow completed.")
+                return URL(string: "success://password.login.completed")
             }
         }
-        
-        logger.warning("Failed to fetch wallets after \(maxAttempts) attempts")
     }
 }
 
-// MARK: - Error Handling
+// MARK: - Supporting Types & Enums
+
+@available(iOS 16.4,*)
+extension ParaManager {
+    
+    /// Specifies the intended authentication method.
+    public enum AuthMethod {
+        case passkey
+        case password
+    }
+
+    /// Status of the email authentication process.
+    public enum EmailAuthStatus {
+        /// Authentication successful.
+        case success
+        /// User needs to verify their email.
+        case needsVerification
+        /// Error occurred during authentication.
+        case error
+    }
+
+    /// Status of the phone authentication process.
+    public enum PhoneAuthStatus {
+        /// Authentication successful.
+        case success
+        /// User needs to verify their phone number.
+        case needsVerification
+        /// Error occurred during authentication.
+        case error
+    }
+}
 
 /// Errors that can occur during Para operations.
 public enum ParaError: Error, CustomStringConvertible {
