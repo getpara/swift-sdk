@@ -165,7 +165,9 @@ public class ParaManager: NSObject, ObservableObject {
     ///         All Para authentication methods expect phone numbers in international format.
     ///         Example: formatPhoneNumber(phoneNumber: "5551234", countryCode: "1") returns "+15551234".
     public func formatPhoneNumber(phoneNumber: String, countryCode: String) -> String {
-        return "+\(countryCode)\(phoneNumber)"
+        // Normalize the phone number input by removing whitespace
+        let normalizedPhoneNumber = phoneNumber.filter { !$0.isWhitespace }
+        return "+\(countryCode)\(normalizedPhoneNumber)"
     }
     
     // Private struct for the signUpOrLogIn payload
@@ -293,13 +295,24 @@ extension ParaManager {
     /// - Returns: The web challenge result.
     private func authInfoHelper(authInfo: AuthInfo?) async throws -> Any? {
         let emailArg: String?
-        // TODO: Add phone support when bridge supports it
+        let phoneArg: String?
+        let countryCodeArg: String?
+        
         if let emailInfo = authInfo as? EmailAuthInfo {
             emailArg = emailInfo.email
+            phoneArg = nil
+            countryCodeArg = nil
+        } else if let phoneInfo = authInfo as? PhoneAuthInfo {
+            emailArg = nil
+            phoneArg = phoneInfo.phone
+            countryCodeArg = phoneInfo.countryCode
         } else {
             emailArg = nil
+            phoneArg = nil
+            countryCodeArg = nil
         }
-        let payload = GetWebChallengeArgs(email: emailArg)
+        
+        let payload = GetWebChallengeArgs(email: emailArg, phone: phoneArg, countryCode: countryCodeArg)
         // Use the wrapper with payload
         return try await postMessage(method: "getWebChallenge", payload: payload)
     }
@@ -1001,9 +1014,12 @@ extension ParaManager {
         webAuthenticationSession: WebAuthenticationSession? = nil
     ) async -> (status: PhoneAuthStatus, errorMessage: String?) {
 
-        let phoneIdentity = PhoneIdentity(phone: phoneNumber, countryCode: countryCode)
-        let phoneAuthInfo = PhoneAuthInfo(phone: phoneNumber, countryCode: countryCode) // Needed for loginWithPasskey
-        let formattedPhoneNumber = formatPhoneNumber(phoneNumber: phoneNumber, countryCode: countryCode) // Needed for passkey generation
+        // Normalize phone number: remove spaces and potentially other common formatting characters
+        let normalizedPhoneNumber = phoneNumber.filter { !$0.isWhitespace } 
+
+        let phoneIdentity = PhoneIdentity(phone: normalizedPhoneNumber, countryCode: countryCode)
+        let phoneAuthInfo = PhoneAuthInfo(phone: normalizedPhoneNumber, countryCode: countryCode) // Needed for loginWithPasskey
+        let formattedPhoneNumber = formatPhoneNumber(phoneNumber: normalizedPhoneNumber, countryCode: countryCode) // Needed for passkey generation
 
         let flowStatus = await _handleAuthFlow(
             authIdentity: phoneIdentity,
