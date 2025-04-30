@@ -161,5 +161,5 @@ final class PasskeysManager: NSObject, ASAuthorizationControllerDelegate {
         }
     }
 }
-
 #endif // os(iOS) || os(macOS)
+
