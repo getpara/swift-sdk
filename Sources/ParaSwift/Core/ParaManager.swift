@@ -567,37 +567,32 @@ extension ParaManager {
 
 @available(iOS 16.4,*)
 extension ParaManager {
-    /// Creates a new wallet of the specified type and returns it along with any recovery secret.
+    /// Creates a new wallet of the specified type, refreshes the wallet list, and returns any recovery secret.
+    ///
+    /// Note: This function initiates wallet creation and immediately fetches the updated wallet list.
+    /// The UI should observe the `wallets` property for updates.
     ///
     /// - Parameters:
     ///   - type: The type of wallet to create.
     ///   - skipDistributable: Whether to skip distributable shares.
-    /// - Returns: A tuple containing the new `Wallet` object and an optional recovery secret string.
     @MainActor
-    public func createWallet(type: WalletType, skipDistributable: Bool) async throws -> (newWallet: Wallet, recoverySecret: String?) {
+    public func createWallet(type: WalletType, skipDistributable: Bool) async throws {
         try await ensureWebViewReady()
-        let result = try await postMessage(method: "createWallet", payload: CreateWalletArgs(type: type.rawValue, skipDistributable: skipDistributable))
-        
-        // The bridge returns an array: [WalletDictionary, optionalRecoverySecretString]
-        guard let resultArray = result as? [Any], !resultArray.isEmpty else {
-            throw ParaError.bridgeError("METHOD_ERROR<createWallet>: Invalid result format, expected array but got \(String(describing: result))")
-        }
-        
-        guard let walletDict = resultArray[0] as? [String: Any] else {
-            throw ParaError.bridgeError("METHOD_ERROR<createWallet>: Invalid wallet data in result array")
-        }
-        
-        let newWallet = Wallet(result: walletDict)
-        let recoverySecret = resultArray.count > 1 ? resultArray[1] as? String : nil
-        
-        // Update session state, but don't fetch wallets here as the new wallet is returned.
-        // The caller can decide whether to fetch or just update the local list.
-        self.sessionState = .activeLoggedIn
-        
-        // Update the local wallets list immediately
-        self.wallets.append(newWallet)
+        // Call createWallet but ignore the result as we fetch wallets separately
+        _ = try await postMessage(method: "createWallet", payload: CreateWalletArgs(type: type.rawValue, skipDistributable: skipDistributable))
 
-        return (newWallet, recoverySecret)
+        logger.debug("Wallet creation initiated for type \(type.rawValue). Refreshing wallet list...")
+
+        // Fetch the complete list of wallets to update the list immediately
+        let allWallets = try await fetchWallets()
+
+        // Update the local wallets list with the complete fetched data
+        self.wallets = allWallets
+        self.sessionState = .activeLoggedIn // Update state as wallet creation implies login
+
+        logger.debug("Wallet list refreshed after creation. Found \(allWallets.count) wallets.")
+
+        // No return value
     }
     
     /// Fetches all wallets associated with the current user.
@@ -866,7 +861,7 @@ extension ParaManager {
                     )
                     // Explicitly create wallet after generating passkey
                     logger.debug("Explicitly calling createWallet after passkey generation (signup flow).")
-                    let _: (newWallet: Wallet, recoverySecret: String?) = try await createWallet(type: .evm, skipDistributable: false)
+                    try await createWallet(type: .evm, skipDistributable: false)
                     self.sessionState = .activeLoggedIn // Assume success if createWallet doesn't throw
                     return true
                 }
