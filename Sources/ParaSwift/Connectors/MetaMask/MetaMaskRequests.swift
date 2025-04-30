@@ -45,9 +45,7 @@ struct OriginatorInfo: Codable {
 
 /// Request parameters for signing messages
 struct SignMessageRequest: Codable {
-    /// The parameters for the personal_sign method: [message, account]
     let params: [String]
-    /// The Ethereum JSON-RPC method name
     let method: String
     
     init(params: [String]) {
@@ -63,9 +61,7 @@ struct SignMessageRequest: Codable {
 
 /// Request parameters for sending transactions
 struct SendTransactionRequest: Codable {
-    /// The parameters for the eth_sendTransaction method: [transaction]
     let params: [[String: String]]
-    /// The Ethereum JSON-RPC method name
     let method: String
     
     init(params: [[String: String]]) {
