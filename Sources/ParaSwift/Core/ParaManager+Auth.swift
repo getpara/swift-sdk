@@ -3,9 +3,7 @@ import AuthenticationServices
 import WebKit // Needed for presentPasswordUrl
 import os
 
-#if os(iOS)
 // MARK: - Core Authentication Methods
-@available(iOS 16.4,*)
 extension ParaManager {
 
     // Private struct for the signUpOrLogIn payload
@@ -154,7 +152,6 @@ extension ParaManager {
     /// - Parameters:
     ///   - authorizationController: The controller to handle authorization UI.
     ///   - authInfo: Optional authentication information (email or phone).
-    @available(macOS 13.3, iOS 16.4, *)
     @MainActor
     public func loginWithPasskey(authorizationController: AuthorizationController, authInfo: AuthInfo?) async throws {
         let getWebChallengeResult = try await authInfoHelper(authInfo: authInfo)
@@ -219,7 +216,6 @@ extension ParaManager {
     ///   - identifier: The user identifier
     ///   - biometricsId: The biometrics ID for the passkey
     ///   - authorizationController: The controller to handle authorization UI
-    @available(macOS 13.3, iOS 16.4, *)
     public func generatePasskey(identifier: String, biometricsId: String, authorizationController: AuthorizationController) async throws {
         try await ensureWebViewReady()
         var userHandle = Data(count: 32)
@@ -371,7 +367,6 @@ extension ParaManager {
 }
 
 // MARK: - High-Level Authentication Flows
-@available(iOS 16.4,*)
 extension ParaManager {
 
     // Internal enum for unified auth flow status
@@ -733,4 +728,3 @@ extension ParaManager {
         }
     }
 }
-#endif 

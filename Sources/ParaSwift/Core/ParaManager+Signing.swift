@@ -1,9 +1,7 @@
 import SwiftUI // Keep if @MainActor is used, otherwise Foundation
 import os
 
-#if os(iOS)
 // MARK: - Signing Operations
-@available(iOS 16.4,*)
 extension ParaManager {
     /// Signs a message with a wallet.
     ///
@@ -76,4 +74,3 @@ extension ParaManager {
         )
     }
 }
-#endif 

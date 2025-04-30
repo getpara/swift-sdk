@@ -1,9 +1,7 @@
 import SwiftUI // Keep if @MainActor is used
 import os
 
-#if os(iOS)
 // MARK: - Wallet Management
-@available(iOS 16.4,*)
 extension ParaManager {
     /// Creates a new wallet of the specified type, refreshes the wallet list, and returns any recovery secret.
     ///
@@ -100,4 +98,3 @@ extension ParaManager {
         logger.warning("Failed to fetch wallets after \(maxAttempts) attempts")
     }
 }
-#endif 

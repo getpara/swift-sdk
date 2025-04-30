@@ -1,6 +1,5 @@
 import Foundation // Use Foundation instead of SwiftUI if UI elements aren't needed
 
-#if os(iOS)
 /// Specifies the intended authentication method.
 public enum AuthMethod {
     case passkey
@@ -55,4 +54,3 @@ public enum TwoFactorSetupResponse {
     /// 2FA needs to be set up, contains the URI for configuration
     case needsSetup(uri: String)
 }
-#endif 

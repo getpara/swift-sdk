@@ -41,7 +41,6 @@ private struct VerifyOAuthParams: Encodable {
 
 // MARK: - OAuth Authentication Methods
 
-@available(iOS 16.4,*)
 extension ParaManager {
     /// Verifies an OAuth authentication and returns an AuthState object according to the V2 authentication flow
     /// - Parameters:

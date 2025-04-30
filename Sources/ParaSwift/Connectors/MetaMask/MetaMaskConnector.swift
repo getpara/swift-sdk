@@ -11,7 +11,6 @@ import os
 import BigInt
 
 /// Main connector class for interacting with MetaMask
-@available(iOS 16.4, *)
 public class MetaMaskConnector: ObservableObject {
     private let logger = Logger(subsystem: "com.paraSwift", category: "MetaMaskConnector")
     
@@ -266,7 +265,6 @@ public class MetaMaskConnector: ObservableObject {
 
 // MARK: - URL Construction
 
-@available(iOS 16.4, *)
 private extension MetaMaskConnector {
     private func openMetaMaskURL(_ url: URL) throws {
         if !UIApplication.shared.canOpenURL(url) {
@@ -320,7 +318,6 @@ private extension MetaMaskConnector {
 
 // MARK: - EVMTransaction Extension
 
-@available(iOS 16.4, *)
 internal extension EVMTransaction {
     /// Converts the transaction to MetaMask format
     /// - Parameter from: The sender address

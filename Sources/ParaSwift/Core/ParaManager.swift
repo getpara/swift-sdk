@@ -3,8 +3,6 @@ import AuthenticationServices
 import WebKit
 import os
 
-#if os(iOS)
-@available(iOS 16.4,*)
 @MainActor
 /// Manages Para wallet services including authentication, wallet management, and transaction signing.
 ///
@@ -211,4 +209,3 @@ public class ParaManager: NSObject, ObservableObject {
         self.sessionState = .inactive
     }
 }
-#endif

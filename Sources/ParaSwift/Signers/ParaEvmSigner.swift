@@ -129,7 +129,6 @@ public struct EVMTransaction: Codable {
     }
 }
 
-@available(iOS 16.4, *)
 @MainActor
 public class ParaEvmSigner: ObservableObject {
     private let paraManager: ParaManager

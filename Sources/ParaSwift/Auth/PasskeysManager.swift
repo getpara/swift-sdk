@@ -5,15 +5,12 @@ Abstract:
 PasskeysManager handles passkey-based authentication using Apple's AuthenticationServices framework.
 */
 
-#if os(iOS)
-
 import AuthenticationServices
 import SwiftUI
 import Combine
 import os
 
 /// Errors that can occur during authorization handling
-@available(iOS 16.4,*)
 public enum AuthorizationHandlingError: Error {
     /// An unknown authorization result was received
     case unknownAuthorizationResult(ASAuthorizationResult)
@@ -21,7 +18,6 @@ public enum AuthorizationHandlingError: Error {
     case otherError
 }
 
-@available(iOS 16.4,*)
 extension AuthorizationHandlingError: LocalizedError {
     public var errorDescription: String? {
             switch self {
@@ -36,7 +32,6 @@ extension AuthorizationHandlingError: LocalizedError {
 }
 
 /// Manages passkey-based authentication using Apple's AuthenticationServices framework
-@available(iOS 16.4,*)
 final class PasskeysManager: NSObject, ASAuthorizationControllerDelegate {
     
     /// The relying party identifier for passkey authentication
@@ -161,5 +156,3 @@ final class PasskeysManager: NSObject, ASAuthorizationControllerDelegate {
         }
     }
 }
-#endif // os(iOS) || os(macOS)
-

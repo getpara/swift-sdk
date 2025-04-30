@@ -2,10 +2,8 @@ import SwiftUI
 import WebKit
 import os
 
-#if os(iOS)
 /// A WebView implementation for Para that handles communication between Swift and JavaScript
 /// This class manages the WebView lifecycle, message passing, and error handling for the Para SDK
-@available(iOS 16.4,*)
 @MainActor
 public class ParaWebView: NSObject, ObservableObject {
     
@@ -234,7 +232,6 @@ public class ParaWebView: NSObject, ObservableObject {
 struct EmptyPayload: Encodable {}
 
 /// Extension implementing WKNavigationDelegate for ParaWebView
-@available(iOS 16.4,*)
 extension ParaWebView: WKNavigationDelegate {
     /// Called when the WebView finishes loading
     public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -253,7 +250,6 @@ extension ParaWebView: WKNavigationDelegate {
 }
 
 /// Extension implementing WKScriptMessageHandler for ParaWebView
-@available(iOS 16.4,*)
 extension ParaWebView: WKScriptMessageHandler {
     /// Handles messages received from JavaScript
     public func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
@@ -267,7 +263,6 @@ extension ParaWebView: WKScriptMessageHandler {
 }
 
 /// Errors that can occur during WebView operations
-@available(iOS 16.4,*)
 enum ParaWebViewError: Error, CustomStringConvertible {
     /// The WebView is not ready to accept requests
     case webViewNotReady
@@ -294,7 +289,6 @@ enum ParaWebViewError: Error, CustomStringConvertible {
 }
 
 /// A helper class to avoid retain cycles in script message handling
-@available(iOS 16.4,*)
 private class LeakAvoider: NSObject, WKScriptMessageHandler {
     weak var delegate: WKScriptMessageHandler?
     init(delegate: WKScriptMessageHandler?) { self.delegate = delegate }
@@ -304,7 +298,6 @@ private class LeakAvoider: NSObject, WKScriptMessageHandler {
 }
 
 /// A wrapper for any encodable type
-@available(iOS 16.4,*)
 struct AnyEncodable: Encodable {
     private let encodeFunc: (Encoder) throws -> Void
     init<T: Encodable>(_ value: T) {
@@ -316,4 +309,3 @@ struct AnyEncodable: Encodable {
         try encodeFunc(encoder)
     }
 }
-#endif
