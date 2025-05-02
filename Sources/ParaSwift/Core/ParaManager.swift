@@ -11,7 +11,9 @@ import os
 public class ParaManager: NSObject, ObservableObject {
     // MARK: - Properties
     /// Current package version.
-    public static let packageVersion = "1.2.1"
+    public static var packageVersion: String {
+        return ParaPackage.version
+    }
     /// Available Para wallets connected to this instance.
     @Published public var wallets: [Wallet] = []
     /// Current state of the Para Manager session.

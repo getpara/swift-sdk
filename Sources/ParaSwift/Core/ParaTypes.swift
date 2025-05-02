@@ -1,5 +1,11 @@
 import Foundation
 
+/// Current package version.
+public struct ParaPackage {
+    /// Package version of the Swift SDK
+    public static let version = "2.0.0"
+}
+
 /// Specifies the intended authentication method.
 public enum AuthMethod {
     case passkey

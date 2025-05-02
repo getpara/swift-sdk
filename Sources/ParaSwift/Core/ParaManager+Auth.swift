@@ -1,11 +1,11 @@
-import SwiftUI // Keep SwiftUI if @MainActor or other UI-related things are used
+import SwiftUI
 import AuthenticationServices
-import WebKit // Needed for presentPasswordUrl
+import WebKit
 import os
 
 // MARK: - Internal Authentication Helpers and Types
 extension ParaManager {
-    // Private struct for the signUpOrLogIn payload
+
     private struct SignUpOrLogInPayload: Encodable {
         let auth: AnyEncodable
 

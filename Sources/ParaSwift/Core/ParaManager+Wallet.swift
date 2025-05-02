@@ -1,4 +1,4 @@
-import SwiftUI // Keep if @MainActor is used
+import SwiftUI
 import os
 
 // MARK: - Wallet Management

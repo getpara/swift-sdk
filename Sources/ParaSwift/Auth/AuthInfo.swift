@@ -1,4 +1,4 @@
-import Foundation // Use Foundation instead of SwiftUI if UI elements aren't needed
+import Foundation
 
 /// Protocol defining authentication information that can be encoded
 public protocol AuthInfo: Codable {}

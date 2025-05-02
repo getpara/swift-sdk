@@ -23,7 +23,9 @@ public class ParaWebView: NSObject, ObservableObject {
     public var apiKey: String
     
     /// The current package version of the SDK
-    public static let packageVersion = "0.0.3"
+    public static var packageVersion: String {
+        return ParaPackage.version
+    }
     
     private let webView: WKWebView
     private let requestTimeout: TimeInterval
