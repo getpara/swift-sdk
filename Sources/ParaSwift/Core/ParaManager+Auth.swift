@@ -197,12 +197,32 @@ extension ParaManager {
         return authState
     }
     
+    /// Check if a specific login method is available for the given authentication state.
+    /// - Parameters:
+    ///   - method: The login method to check availability for.
+    ///   - authState: The current authentication state.
+    /// - Returns: Boolean indicating if the method is available.
+    public func isLoginMethodAvailable(method: LoginMethod, authState: AuthState) -> Bool {
+        guard authState.stage == .login else {
+            return false
+        }
+        
+        switch method {
+        case .passkey:
+            return authState.passkeyUrl != nil || authState.passkeyKnownDeviceUrl != nil
+        case .password:
+            return authState.passwordUrl != nil
+        case .passkeyKnownDevice:
+            return authState.passkeyKnownDeviceUrl != nil
+        }
+    }
+    
     /// Determines which login method to use when a user has previously registered.
     /// This prioritizes passkeys for security when available.
     /// 
     /// - Parameter authState: The current authentication state
     /// - Returns: The recommended login method to use
-    public func determinePreferredLoginMethod(authState: AuthState) -> LoginMethod? {
+    private func determinePreferredLoginMethod(authState: AuthState) -> LoginMethod? {
         guard authState.stage == .login else {
             logger.error("determinePreferredLoginMethod called with invalid stage: \(authState.stage.rawValue)")
             return nil
@@ -338,7 +358,7 @@ extension ParaManager {
             method: "loginWithPasskey",
             payload: loginArgs
         )
-        if let walletDict = loginResult as? [String: Any] {
+        if let _ = loginResult as? [String: Any] {
             logger.debug("loginWithPasskey bridge call returned wallet data")
         }
 
@@ -508,26 +528,27 @@ extension ParaManager {
 
 // MARK: - High-Level Auth Workflow Methods
 extension ParaManager {
-    /// Handles the login process for an existing user based on the chosen method.
+    /// Handles the login process for an existing user with the specified method.
     /// Assumes the `authState.stage` is `.login`.
     /// - Parameters:
     ///   - authState: The current `AuthState` (must be in `.login` stage).
-    ///   - method: The chosen login method (`.passkey` or `.password`).
+    ///   - method: The user's chosen login method (`.passkey` or `.password`).
     ///   - authorizationController: Required for passkey operations.
     ///   - webAuthenticationSession: Required for password operations.
+    /// - Throws: Error if login fails or the chosen method is unavailable.
     @MainActor
-    public func handleLoginMethod(
+    public func handleLoginWithMethod(
         authState: AuthState,
         method: LoginMethod,
         authorizationController: AuthorizationController,
         webAuthenticationSession: WebAuthenticationSession
     ) async throws {
         guard authState.stage == .login else {
-            logger.error("handleLoginMethod called with invalid stage: \(authState.stage.rawValue)")
+            logger.error("handleLoginWithMethod called with invalid stage: \(authState.stage.rawValue)")
             throw ParaError.error("Invalid application state: Expected login stage.")
         }
 
-        logger.debug("Handling login method: \(method.description) for userId: \(authState.userId)")
+        logger.debug("Handling login with method: \(method.description) for userId: \(authState.userId)")
 
         switch method {
         case .passkey:
@@ -574,42 +595,128 @@ extension ParaManager {
                 self.sessionState = .activeLoggedIn
             } else {
                 // Should only happen if webAuthenticationSession throws internally and presentPasswordUrl catches/returns nil
-                 logger.warning("Password login flow seemed to fail (nil result from presentPasswordUrl).")
-                 throw ParaError.error("Password login failed or was cancelled.")
+                logger.warning("Password login flow seemed to fail (nil result from presentPasswordUrl).")
+                throw ParaError.error("Password login failed or was cancelled.")
             }
 
         case .passkeyKnownDevice:
-             logger.error("PasskeyKnownDevice login method not yet implemented.")
-             throw ParaError.notImplemented("PasskeyKnownDevice login")
+            logger.error("PasskeyKnownDevice login method not yet implemented.")
+            throw ParaError.notImplemented("PasskeyKnownDevice login")
         }
         logger.info("Login successful via \(method.description). Session active.")
     }
+    
+    /// Handles the login process for an existing user by automatically determining 
+    /// and using the preferred login method.
+    /// Assumes the `authState.stage` is `.login`.
+    /// - Parameters:
+    ///   - authState: The current `AuthState` (must be in `.login` stage).
+    ///   - authorizationController: Required for passkey operations.
+    ///   - webAuthenticationSession: Required for password operations.
+    /// - Throws: Error if login fails or no login methods are available.
+    /// - Note: This is a convenience method that uses `handleLoginWithMethod` with the best available method.
+    @MainActor
+    public func handleLogin(
+        authState: AuthState,
+        authorizationController: AuthorizationController,
+        webAuthenticationSession: WebAuthenticationSession
+    ) async throws {
+        guard authState.stage == .login else {
+            logger.error("handleLogin called with invalid stage: \(authState.stage.rawValue)")
+            throw ParaError.error("Invalid application state: Expected login stage.")
+        }
+        
+        // Determine the preferred login method automatically
+        guard let preferredMethod = determinePreferredLoginMethod(authState: authState) else {
+            logger.error("No login methods available for userId: \(authState.userId)")
+            throw ParaError.error("No login methods available for this account.")
+        }
+        
+        logger.debug("Automatically selected login method: \(preferredMethod.description) for userId: \(authState.userId)")
+        
+        // Use the method-specific implementation
+        try await handleLoginWithMethod(
+            authState: authState,
+            method: preferredMethod,
+            authorizationController: authorizationController,
+            webAuthenticationSession: webAuthenticationSession
+        )
+    }
 
-    /// Handles the signup process for a new user after verification, based on the chosen method.
+    /// Determines which signup method to use when a user is creating an account.
+    /// This prioritizes passkeys for security when available.
+    /// 
+    /// - Parameter authState: The current authentication state
+    /// - Returns: The recommended signup method to use
+    private func determinePreferredSignupMethod(authState: AuthState) -> SignupMethod? {
+        guard authState.stage == .signup else {
+            logger.error("determinePreferredSignupMethod called with invalid stage: \(authState.stage.rawValue)")
+            return nil
+        }
+        
+        // Check for available signup options
+        let hasPasskeyOption = authState.passkeyId != nil
+        let hasPasswordOption = authState.passwordUrl != nil
+        
+        // Prioritize passkeys when available as they are more secure
+        if hasPasskeyOption {
+            return .passkey
+        }
+        
+        // Fall back to password if passkey is not available
+        if hasPasswordOption {
+            return .password
+        }
+        
+        return nil
+    }
+    
+    /// Check if a specific signup method is available for the given authentication state.
+    /// - Parameters:
+    ///   - method: The signup method to check availability for.
+    ///   - authState: The current authentication state.
+    /// - Returns: Boolean indicating if the method is available.
+    public func isSignupMethodAvailable(method: SignupMethod, authState: AuthState) -> Bool {
+        guard authState.stage == .signup else {
+            return false
+        }
+        
+        switch method {
+        case .passkey:
+            return authState.passkeyId != nil
+        case .password:
+            return authState.passwordUrl != nil
+        }
+    }
+    
+    /// Handles the signup process for a new user with the specified method.
     /// Assumes the `authState.stage` is `.signup`.
     /// - Parameters:
     ///   - authState: The current `AuthState` (must be in `.signup` stage).
-    ///   - method: The chosen signup method (`.passkey` or `.password`).
+    ///   - method: The user's chosen signup method (`.passkey` or `.password`).
     ///   - authorizationController: Required for passkey operations.
     ///   - webAuthenticationSession: Required for password operations.
+    /// - Throws: Error if signup fails or the chosen method is unavailable.
     @MainActor
-    public func handleSignupMethod(
+    public func handleSignup(
         authState: AuthState,
         method: SignupMethod,
         authorizationController: AuthorizationController,
         webAuthenticationSession: WebAuthenticationSession
     ) async throws {
         guard authState.stage == .signup else {
-            logger.error("handleSignupMethod called with invalid stage: \(authState.stage.rawValue)")
+            logger.error("handleSignup called with invalid stage: \(authState.stage.rawValue)")
             throw ParaError.error("Invalid application state: Expected signup stage.")
         }
+        
         guard let identifier = authState.authIdentity?.identifier else {
-             logger.error("Cannot perform signup without user identifier in AuthState.")
-             throw ParaError.error("Missing user identifier for signup.")
+            logger.error("Cannot perform signup without user identifier in AuthState.")
+            throw ParaError.error("Missing user identifier for signup.")
         }
-
-        logger.debug("Handling signup method: \(method.description) for userId: \(authState.userId)")
-
+        
+        logger.debug("Handling signup with method: \(method.description) for userId: \(authState.userId)")
+        
+        // Execute the signup workflow based on the specified method
         switch method {
         case .passkey:
             guard let passkeyId = authState.passkeyId else {
@@ -623,7 +730,7 @@ extension ParaManager {
                 authorizationController: authorizationController
             )
             logger.debug("Passkey generated. Creating wallet...")
-             _ = try await createWallet(type: .evm, skipDistributable: false) // Assuming default EVM
+            _ = try await createWallet(type: .evm, skipDistributable: false) // Assuming default EVM
             logger.debug("Wallet created after passkey signup.")
 
         case .password:
@@ -641,11 +748,11 @@ extension ParaManager {
             if resultUrl != nil {
                 logger.debug("presentPasswordUrl successful for signup.")
                 logger.debug("Creating wallet after password signup...")
-                 _ = try await createWallet(type: .evm, skipDistributable: false) // Assuming default EVM
+                _ = try await createWallet(type: .evm, skipDistributable: false) // Assuming default EVM
                 logger.debug("Wallet created after password signup.")
             } else {
-                 logger.warning("Password signup flow seemed to fail (nil result from presentPasswordUrl).")
-                 throw ParaError.error("Password setup failed or was cancelled.")
+                logger.warning("Password signup flow seemed to fail (nil result from presentPasswordUrl).")
+                throw ParaError.error("Password setup failed or was cancelled.")
             }
         }
 
