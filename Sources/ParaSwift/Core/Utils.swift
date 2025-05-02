@@ -1,6 +1,26 @@
 import Foundation
 import os
 
+/// Utility class containing formatting helpers and common operations
+public struct ParaFormatting {
+    
+    /// Formats a phone number into the international format required by Para.
+    ///
+    /// - Parameters:
+    ///   - phoneNumber: The national phone number (without country code).
+    ///   - countryCode: The country code (without the plus sign).
+    /// - Returns: Formatted phone number in international format (+${countryCode}${phoneNumber}).
+    ///
+    /// - Note: This method is provided as a convenience for formatting phone numbers correctly.
+    ///         All Para authentication methods expect phone numbers in international format.
+    ///         Example: formatPhoneNumber(phoneNumber: "5551234", countryCode: "1") returns "+15551234".
+    public static func formatPhoneNumber(phoneNumber: String, countryCode: String) -> String {
+        // Normalize the phone number input by removing whitespace
+        let normalizedPhoneNumber = phoneNumber.filter { !$0.isWhitespace }
+        return "+\(countryCode)\(normalizedPhoneNumber)"
+    }
+}
+
 @available(macOS 11.0, iOS 14.0, *)
 public extension Logger {
     static let authorization = Logger(subsystem: "Para Swift", category: "Passkeys Manager")

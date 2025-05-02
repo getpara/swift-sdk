@@ -3,9 +3,8 @@ import AuthenticationServices
 import WebKit // Needed for presentPasswordUrl
 import os
 
-// MARK: - Core Authentication Methods
+// MARK: - Internal Authentication Helpers and Types
 extension ParaManager {
-    
     // Private struct for the signUpOrLogIn payload
     private struct SignUpOrLogInPayload: Encodable {
         let auth: AnyEncodable
@@ -141,10 +140,139 @@ extension ParaManager {
         }
 
         let payload = GetWebChallengeArgs(email: emailArg, phone: phoneArg)
-        // Use the wrapper with payload
         return try await postMessage(method: "getWebChallenge", payload: payload)
     }
+}
 
+// MARK: - Authentication Types and Methods
+extension ParaManager {
+    /// Enum defining the possible methods for login when the stage is .login
+    public enum LoginMethod: String, CustomStringConvertible {
+        case passkey
+        case password
+        case passkeyKnownDevice // If applicable in future
+        
+        public var description: String {
+            return self.rawValue
+        }
+    }
+
+    /// Enum defining the possible methods for signup when the stage is .signup
+    public enum SignupMethod: String, CustomStringConvertible {
+        case passkey
+        case password
+        
+        public var description: String {
+            return self.rawValue
+        }
+    }
+    
+    /// Signs up a new user or logs in an existing user
+    /// - Parameter auth: Authentication information (email or phone)
+    /// - Returns: AuthState object containing information about the next steps
+    internal func signUpOrLogIn(auth: Auth) async throws -> AuthState {
+        try await ensureWebViewReady()
+
+        let payload = createSignUpOrLogInPayload(from: auth)
+
+        let result = try await postMessage(method: "signUpOrLogIn", payload: payload)
+        let authState = try parseAuthStateFromResult(result)
+
+        if authState.stage == .verify || authState.stage == .login {
+            self.sessionState = .active
+        }
+
+        return authState
+    }
+    
+    /// Initiates the email/phone authentication flow (signup or login).
+    /// Determines if the user exists and returns the appropriate next state.
+    /// - Parameter auth: The authentication identifier (Email, Phone, etc.).
+    /// - Returns: The `AuthState` indicating the next step (.verify for new users, .login for existing users).
+    @MainActor
+    public func initiateAuthFlow(auth: Auth) async throws -> AuthState {
+        logger.debug("Initiating auth flow with: \(auth.debugDescription)")
+        let authState = try await signUpOrLogIn(auth: auth)
+        logger.debug("Auth flow initiated. Resulting stage: \(authState.stage.rawValue)")
+        return authState
+    }
+    
+    /// Determines which login method to use when a user has previously registered.
+    /// This prioritizes passkeys for security when available.
+    /// 
+    /// - Parameter authState: The current authentication state
+    /// - Returns: The recommended login method to use
+    public func determinePreferredLoginMethod(authState: AuthState) -> LoginMethod? {
+        guard authState.stage == .login else {
+            logger.error("determinePreferredLoginMethod called with invalid stage: \(authState.stage.rawValue)")
+            return nil
+        }
+        
+        // Check if we have both password and passkey options available
+        let hasPasswordOption = authState.passwordUrl != nil
+        let hasPasskeyOption = authState.passkeyUrl != nil || authState.passkeyKnownDeviceUrl != nil
+        
+        // Prioritize passkeys when available as they are more secure
+        if hasPasskeyOption {
+            return .passkey
+        }
+        
+        // Fall back to password if passkey is not available
+        if hasPasswordOption {
+            return .password
+        }
+        
+        return nil
+    }
+}
+
+// MARK: - Verification Methods
+extension ParaManager {
+    /// Verifies a new account with the provided verification code
+    /// - Parameter verificationCode: The verification code sent to the user
+    /// - Returns: AuthState object containing information about the next steps
+    public func verifyNewAccount(verificationCode: String) async throws -> AuthState {
+        try await ensureWebViewReady()
+
+        let result = try await postMessage(method: "verifyNewAccount", payload: VerifyNewAccountArgs(verificationCode: verificationCode))
+        // Log the raw result from the bridge before parsing
+        let logger = Logger(subsystem: "com.paraSwift", category: "ParaManager.Verify")
+        logger.debug("Raw result from verifyNewAccount bridge call received")
+        let authState = try parseAuthStateFromResult(result)
+
+        if authState.stage == .signup {
+            self.sessionState = .active
+        }
+
+        return authState
+    }
+    
+    /// Handles the verification step for a new user.
+    /// Assumes the initial `authState.stage` was `.verify`.
+    /// - Parameter verificationCode: The code entered by the user.
+    /// - Returns: The `AuthState` indicating the next step (expected to be `.signup`).
+    @MainActor
+    public func handleVerificationCode(verificationCode: String) async throws -> AuthState {
+        logger.debug("Handling verification code...")
+        let newState = try await verifyNewAccount(verificationCode: verificationCode)
+        logger.debug("Verification code handled. Resulting stage: \(newState.stage.rawValue)")
+        
+        guard newState.stage == .signup else {
+            logger.error("Verification completed but resulted in unexpected stage: \(newState.stage.rawValue)")
+            throw ParaError.bridgeError("Verification resulted in unexpected state.")
+        }
+        return newState
+    }
+    
+    /// Resend verification code for account verification
+    public func resendVerificationCode() async throws {
+        try await ensureWebViewReady()
+        _ = try await postMessage(method: "resendVerificationCode", payload: EmptyPayload())
+    }
+}
+
+// MARK: - Passkey Authentication
+extension ParaManager {
     /// Logs in with passkey authentication.
     ///
     /// - Parameters:
@@ -192,12 +320,12 @@ extension ParaManager {
             clientDataJSON: clientDataJSON,
             signature: signature
         )
-        // Use the wrapper with payload
+        
         let verifyWebChallengeResult = try await postMessage(
             method: "verifyWebChallenge",
             payload: verifyArgs
         )
-        // Decode the result directly as a String (userId)
+        
         let userId = try decodeResult(verifyWebChallengeResult, expectedType: String.self, method: "verifyWebChallenge")
 
         let loginArgs = LoginWithPasskeyArgs(
@@ -205,7 +333,7 @@ extension ParaManager {
             credentialsId: id,
             userHandle: signIntoPasskeyAccountResult.userID.base64URLEncodedString()
         )
-        // Use the wrapper with payload
+        
         let loginResult = try await postMessage(
             method: "loginWithPasskey",
             payload: loginArgs
@@ -254,123 +382,16 @@ extension ParaManager {
             userHandle: userHandleEncoded,
             biometricsId: biometricsId
         )
-        // Use the wrapper with payload
+        
         _ = try await postMessage(
             method: "generatePasskey",
             payload: generateArgs
         )
     }
+}
 
-    /// Signs up a new user or logs in an existing user
-    /// - Parameter auth: Authentication information (email or phone)
-    /// - Returns: AuthState object containing information about the next steps
-    internal func signUpOrLogIn(auth: Auth) async throws -> AuthState {
-        try await ensureWebViewReady()
-
-        let payload = createSignUpOrLogInPayload(from: auth)
-
-        let result = try await postMessage(method: "signUpOrLogIn", payload: payload)
-        let authState = try parseAuthStateFromResult(result)
-
-        if authState.stage == .verify || authState.stage == .login {
-            self.sessionState = .active
-        }
-
-        return authState
-    }
-
-    /// Verifies a new account with the provided verification code
-    /// - Parameter verificationCode: The verification code sent to the user
-    /// - Returns: AuthState object containing information about the next steps
-    public func verifyNewAccount(verificationCode: String) async throws -> AuthState {
-        try await ensureWebViewReady()
-
-        let result = try await postMessage(method: "verifyNewAccount", payload: VerifyNewAccountArgs(verificationCode: verificationCode))
-        // Log the raw result from the bridge before parsing
-        let logger = Logger(subsystem: "com.paraSwift", category: "ParaManager.Verify")
-        logger.debug("Raw result from verifyNewAccount bridge call received")
-        let authState = try parseAuthStateFromResult(result)
-
-        if authState.stage == .signup {
-            self.sessionState = .active
-        }
-
-        return authState
-    }
-
-    /// Setup two-factor authentication
-    /// - Returns: Response indicating if 2FA is already set up or needs to be configured
-    public func setup2fa() async throws -> TwoFactorSetupResponse {
-        try await ensureWebViewReady()
-        let result = try await postMessage(method: "setup2fa", payload: EmptyPayload())
-        guard let dict = result as? [String: Any] else {
-            throw ParaError.bridgeError("Invalid result format from setup2fa")
-        }
-
-        if let isSetup = dict["isSetup"] as? Bool, isSetup {
-            return .alreadySetup
-        }
-
-        let uri = try decodeDictionaryResult(result, expectedType: String.self, method: "setup2fa", key: "uri")
-        return .needsSetup(uri: uri)
-    }
-
-    /// Enable two-factor authentication after setup
-    /// - Parameter verificationCode: The code from the user's authenticator app.
-    public func enable2fa(verificationCode: String) async throws {
-        try await ensureWebViewReady()
-        // Define the payload structure expected by the bridge
-        struct Enable2faArgs: Encodable {
-            let verificationCode: String
-        }
-        let payload = Enable2faArgs(verificationCode: verificationCode)
-        _ = try await postMessage(method: "enable2fa", payload: payload)
-    }
-
-    /// Resend verification code for account verification
-    public func resendVerificationCode() async throws {
-        try await ensureWebViewReady()
-        _ = try await postMessage(method: "resendVerificationCode", payload: EmptyPayload())
-    }
-
-
-    /// Logs in using an external wallet
-    /// - Parameters:
-    ///   - wallet: Information about the external wallet
-    internal func loginExternalWallet(wallet: ExternalWalletInfo) async throws {
-        try await ensureWebViewReady()
-
-        // Create proper Encodable payload using ExternalWalletIdentity
-        let identity = ExternalWalletIdentity(wallet: wallet)
-        let params = SignUpOrLogInPayload(auth: identity)
-
-        // Explicitly type the result from postMessage
-        let authStateResult: Any? = try await postMessage(method: "loginExternalWallet", payload: params)
-
-        // Parse the returned AuthState
-        do {
-            let authState = try parseAuthStateFromResult(authStateResult)
-            // Use a string that doesn't require interpolation of complex objects
-            logger.debug("loginExternalWallet completed. Returned AuthState with userId: \(authState.userId)")
-        } catch let parseError {
-            logger.error("loginExternalWallet: Failed to parse AuthState result: \(parseError.localizedDescription)")
-        }
-
-        self.sessionState = .activeLoggedIn
-
-        logger.debug("External wallet login completed for address: \(wallet.address)")
-    }
-
-    /// Logs in with an external wallet address (legacy version)
-    /// - Parameters:
-    ///   - externalAddress: The external wallet address
-    ///   - type: The type of wallet (e.g. "EVM")
-    internal func loginExternalWallet(externalAddress: String, type: String) async throws {
-        let walletType = ExternalWalletType(rawValue: type) ?? .evm
-        let wallet = ExternalWalletInfo(address: externalAddress, type: walletType)
-        try await loginExternalWallet(wallet: wallet)
-    }
-
+// MARK: - Password Authentication
+extension ParaManager {
     /// Presents a password URL using a web authentication session and verifies authentication completion.
     /// The caller is responsible for handling subsequent steps like wallet creation if needed.
     ///
@@ -411,51 +432,82 @@ extension ParaManager {
             return callbackURL
         } catch {
             logger.error("WebAuthenticationSession failed with unexpected error: \(error.localizedDescription)")
-            //self.sessionState = .inactive // Ensure state is inactive on definitive failure
             throw error // Rethrow the specific error
         }
     }
 }
 
-// MARK: - Simplified High-Level Authentication Flow
+// MARK: - External Wallet Authentication
 extension ParaManager {
+    /// Logs in using an external wallet
+    /// - Parameters:
+    ///   - wallet: Information about the external wallet
+    internal func loginExternalWallet(wallet: ExternalWalletInfo) async throws {
+        try await ensureWebViewReady()
 
-    /// Enum defining the possible methods for login when the stage is .login
-    public enum LoginMethod: String, CustomStringConvertible {
-        case passkey
-        case password
-        case passkeyKnownDevice // If applicable in future
-        
-        public var description: String {
-            return self.rawValue
+        // Create proper Encodable payload using ExternalWalletIdentity
+        let identity = ExternalWalletIdentity(wallet: wallet)
+        let params = SignUpOrLogInPayload(auth: identity)
+
+        // Explicitly type the result from postMessage
+        let authStateResult: Any? = try await postMessage(method: "loginExternalWallet", payload: params)
+
+        // Parse the returned AuthState
+        do {
+            let authState = try parseAuthStateFromResult(authStateResult)
+            logger.debug("loginExternalWallet completed. Returned AuthState with userId: \(authState.userId)")
+        } catch let parseError {
+            logger.error("loginExternalWallet: Failed to parse AuthState result: \(parseError.localizedDescription)")
         }
+
+        self.sessionState = .activeLoggedIn
+        logger.debug("External wallet login completed for address: \(wallet.address)")
     }
 
-    /// Enum defining the possible methods for signup when the stage is .signup
-    public enum SignupMethod: String, CustomStringConvertible {
-        case passkey
-        case password
-        
-        public var description: String {
-            return self.rawValue
+    /// Logs in with an external wallet address (legacy version)
+    /// - Parameters:
+    ///   - externalAddress: The external wallet address
+    ///   - type: The type of wallet (e.g. "EVM")
+    internal func loginExternalWallet(externalAddress: String, type: String) async throws {
+        let walletType = ExternalWalletType(rawValue: type) ?? .evm
+        let wallet = ExternalWalletInfo(address: externalAddress, type: walletType)
+        try await loginExternalWallet(wallet: wallet)
+    }
+}
+
+// MARK: - Two-Factor Authentication
+extension ParaManager {
+    /// Setup two-factor authentication
+    /// - Returns: Response indicating if 2FA is already set up or needs to be configured
+    public func setup2fa() async throws -> TwoFactorSetupResponse {
+        try await ensureWebViewReady()
+        let result = try await postMessage(method: "setup2fa", payload: EmptyPayload())
+        guard let dict = result as? [String: Any] else {
+            throw ParaError.bridgeError("Invalid result format from setup2fa")
         }
+
+        if let isSetup = dict["isSetup"] as? Bool, isSetup {
+            return .alreadySetup
+        }
+
+        let uri = try decodeDictionaryResult(result, expectedType: String.self, method: "setup2fa", key: "uri")
+        return .needsSetup(uri: uri)
     }
 
-    /// Initiates the email/phone authentication flow (signup or login).
-    /// Determines if the user exists and returns the appropriate next state.
-    /// - Parameter auth: The authentication identifier (Email, Phone, etc.).
-    /// - Returns: The `AuthState` indicating the next step (.verify for new users, .login for existing users).
-    @MainActor
-    public func initiateAuthFlow(auth: Auth) async throws -> AuthState {
-        // This function essentially wraps signUpOrLogIn for clarity in the View layer.
-        // The state management (setting sessionState to .active for .verify/.login)
-        // is already handled within signUpOrLogIn.
-        logger.debug("Initiating auth flow with: \(auth.debugDescription)")
-        let authState = try await signUpOrLogIn(auth: auth)
-        logger.debug("Auth flow initiated. Resulting stage: \(authState.stage.rawValue)")
-        return authState
+    /// Enable two-factor authentication after setup
+    /// - Parameter verificationCode: The code from the user's authenticator app.
+    public func enable2fa(verificationCode: String) async throws {
+        try await ensureWebViewReady()
+        struct Enable2faArgs: Encodable {
+            let verificationCode: String
+        }
+        let payload = Enable2faArgs(verificationCode: verificationCode)
+        _ = try await postMessage(method: "enable2fa", payload: payload)
     }
+}
 
+// MARK: - High-Level Auth Workflow Methods
+extension ParaManager {
     /// Handles the login process for an existing user based on the chosen method.
     /// Assumes the `authState.stage` is `.login`.
     /// - Parameters:
@@ -531,53 +583,6 @@ extension ParaManager {
              throw ParaError.notImplemented("PasskeyKnownDevice login")
         }
         logger.info("Login successful via \(method.description). Session active.")
-    }
-    
-    /// Determines which login method to use when a user has previously registered.
-    /// This prioritizes passkeys for security when available.
-    /// 
-    /// - Parameter authState: The current authentication state
-    /// - Returns: The recommended login method to use
-    public func determinePreferredLoginMethod(authState: AuthState) -> LoginMethod? {
-        guard authState.stage == .login else {
-            logger.error("determinePreferredLoginMethod called with invalid stage: \(authState.stage.rawValue)")
-            return nil
-        }
-        
-        // Check if we have both password and passkey options available
-        let hasPasswordOption = authState.passwordUrl != nil
-        let hasPasskeyOption = authState.passkeyUrl != nil || authState.passkeyKnownDeviceUrl != nil
-        
-        // Prioritize passkeys when available as they are more secure
-        if hasPasskeyOption {
-            return .passkey
-        }
-        
-        // Fall back to password if passkey is not available
-        if hasPasswordOption {
-            return .password
-        }
-        
-        return nil
-    }
-
-    /// Handles the verification step for a new user.
-    /// Assumes the initial `authState.stage` was `.verify`.
-    /// - Parameter verificationCode: The code entered by the user.
-    /// - Returns: The `AuthState` indicating the next step (expected to be `.signup`).
-    @MainActor
-    public func handleVerificationCode(verificationCode: String) async throws -> AuthState {
-        logger.debug("Handling verification code...")
-        // verifyNewAccount internally checks state and calls the bridge
-        let newState = try await verifyNewAccount(verificationCode: verificationCode)
-        logger.debug("Verification code handled. Resulting stage: \(newState.stage.rawValue)")
-        // `verifyNewAccount` internally sets sessionState to .active if stage becomes .signup
-        guard newState.stage == .signup else {
-            // If verification succeeded but didn't result in .signup, something is wrong.
-            logger.error("Verification completed but resulted in unexpected stage: \(newState.stage.rawValue)")
-            throw ParaError.bridgeError("Verification resulted in unexpected state.")
-        }
-        return newState
     }
 
     /// Handles the signup process for a new user after verification, based on the chosen method.

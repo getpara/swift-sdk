@@ -6,26 +6,6 @@ public enum AuthMethod {
     case password
 }
 
-/// Status of the email authentication process.
-public enum EmailAuthStatus {
-    /// Authentication successful.
-    case success
-    /// User needs to verify their email.
-    case needsVerification
-    /// Error occurred during authentication.
-    case error
-}
-
-/// Status of the phone authentication process.
-public enum PhoneAuthStatus {
-    /// Authentication successful.
-    case success
-    /// User needs to verify their phone number.
-    case needsVerification
-    /// Error occurred during authentication.
-    case error
-}
-
 /// Errors that can occur during Para operations.
 public enum ParaError: Error, CustomStringConvertible {
     /// An error occurred while executing JavaScript bridge code.
