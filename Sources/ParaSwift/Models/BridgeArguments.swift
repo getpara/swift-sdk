@@ -25,7 +25,6 @@ struct GetWebChallengeArgs: Encodable {
     // Optional because it can be called without authInfo
     let email: String?
     let phone: String?
-    let countryCode: String?
 }
 
 struct VerifyNewAccountArgs: Encodable {

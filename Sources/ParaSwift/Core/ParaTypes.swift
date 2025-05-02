@@ -1,4 +1,4 @@
-import Foundation // Use Foundation instead of SwiftUI if UI elements aren't needed
+import Foundation
 
 /// Specifies the intended authentication method.
 public enum AuthMethod {
@@ -34,6 +34,8 @@ public enum ParaError: Error, CustomStringConvertible {
     case bridgeTimeoutError
     /// A general error occurred.
     case error(String)
+    /// Feature not implemented yet.
+    case notImplemented(String)
 
     public var description: String {
         switch self {
@@ -43,6 +45,8 @@ public enum ParaError: Error, CustomStringConvertible {
             return "The javascript bridge did not respond in time and the continuation has been cancelled."
         case .error(let info):
             return "An error occurred: \(info)"
+        case .notImplemented(let feature):
+            return "Feature not implemented: \(feature)"
         }
     }
 }

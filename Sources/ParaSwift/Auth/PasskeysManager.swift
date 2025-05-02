@@ -107,9 +107,13 @@ final class PasskeysManager: NSObject, ASAuthorizationControllerDelegate {
         let request = ASAuthorizationPlatformPublicKeyCredentialProvider(relyingPartyIdentifier: relyingPartyIdentifier)
             .createCredentialAssertionRequest(challenge: Data(base64URLEncoded: challenge)!)
         
-        for allowedPublicKey in allowedPublicKeys {
-            let apkData = Data(base64URLEncoded: allowedPublicKey)!
-            request.allowedCredentials.append(ASAuthorizationPlatformPublicKeyCredentialDescriptor(credentialID: apkData))
+        // Only add to allowedCredentials if we have specific keys to filter by
+        // This prevents showing all available passkeys when we want to specify particular ones
+        if !allowedPublicKeys.isEmpty {
+            for allowedPublicKey in allowedPublicKeys {
+                let apkData = Data(base64URLEncoded: allowedPublicKey)!
+                request.allowedCredentials.append(ASAuthorizationPlatformPublicKeyCredentialDescriptor(credentialID: apkData))
+            }
         }
         
         return request
@@ -131,7 +135,9 @@ final class PasskeysManager: NSObject, ASAuthorizationControllerDelegate {
     ///   - allowedPublicKeys: Array of allowed public keys
     /// - Returns: Array of authorization requests
     private func signInRequests(challenge: String, allowedPublicKeys: [String]) async -> [ASAuthorizationRequest] {
-        await [passkeyAssertionRequest(challenge: challenge, allowedPublicKeys: allowedPublicKeys), ASAuthorizationPasswordProvider().createRequest()]
+        // Only include passkey authentication request
+        // This ensures the system directly uses the passkey picker without offering password alternative
+        await [passkeyAssertionRequest(challenge: challenge, allowedPublicKeys: allowedPublicKeys)]
     }
     
     /// Handles the authorization result

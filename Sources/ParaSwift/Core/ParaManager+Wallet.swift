@@ -59,42 +59,4 @@ extension ParaManager {
         let result = try await postMessage(method: "getEmail", payload: EmptyPayload())
         return try decodeResult(result, expectedType: String.self, method: "getEmail")
     }
-
-    /// Helper method to refresh wallets with retry logic
-    internal func refreshWalletsWithRetry(maxAttempts: Int = 5, isSignup: Bool = false) async {
-        let logger: Logger = Logger(subsystem: "com.paraSwift", category: "WalletRefresh")
-
-        // For signup, wallets can take longer to be available
-        let delayBetweenAttempts: UInt64 = isSignup ? 3_000_000_000 : 1_500_000_000 // 3 seconds for signup, 1.5 for login
-
-        for attempt in 1...maxAttempts {
-            do {
-                logger.debug("Attempting to fetch wallets (attempt \(attempt)/\(maxAttempts))...")
-                let newWallets: [Wallet] = try await fetchWallets()
-
-                if !newWallets.isEmpty {
-                    logger.debug("Successfully fetched \(newWallets.count) wallets")
-                    self.wallets = newWallets
-
-                    // Ensure session state is updated
-                    self.sessionState = .activeLoggedIn
-                    return
-                } else {
-                    logger.debug("Fetched empty wallet list, retrying in \(delayBetweenAttempts/1_000_000_000) seconds...")
-
-                    // Check if we're logged in even though wallets aren't available yet
-                    if let isLoggedIn: Bool = try? await isFullyLoggedIn(), isLoggedIn {
-                        logger.debug("User is fully logged in despite no wallets yet - continuing to wait")
-                    }
-
-                    try await Task.sleep(nanoseconds: delayBetweenAttempts)
-                }
-            } catch {
-                logger.error("Error fetching wallets: \(error.localizedDescription)")
-                try? await Task.sleep(nanoseconds: delayBetweenAttempts)
-            }
-        }
-
-        logger.warning("Failed to fetch wallets after \(maxAttempts) attempts")
-    }
 }
