@@ -171,8 +171,8 @@ extension ParaManager {
             // Determine the type of auth identity
             if let email = auth["email"] as? String {
                 authIdentity = EmailIdentity(email: email)
-            } else if let phone = auth["phone"] as? String, let countryCode = auth["countryCode"] as? String {
-                authIdentity = PhoneIdentity(phone: phone, countryCode: countryCode)
+            } else if let phone = auth["phone"] as? String {
+                authIdentity = PhoneIdentity(phone: phone)
             } else if let fid = auth["fid"] as? String {
                 authIdentity = FarcasterIdentity(fid: fid)
             } else if let telegramId = auth["id"] as? String, auth["type"] as? String == "telegram" {
@@ -278,7 +278,7 @@ extension ParaManager {
             if let emailIdentity = authState.authIdentity as? EmailIdentity {
                 authInfo = EmailAuthInfo(email: emailIdentity.email)
             } else if let phoneIdentity = authState.authIdentity as? PhoneIdentity {
-                authInfo = PhoneAuthInfo(phone: phoneIdentity.phone, countryCode: phoneIdentity.countryCode)
+                authInfo = PhoneAuthInfo(phone: phoneIdentity.phone)
             } else if let walletIdentity = authState.authIdentity as? ExternalWalletIdentity {
                 // For wallet-based login, we don't need passkeys
                 let wallet = walletIdentity.wallet
@@ -305,7 +305,7 @@ extension ParaManager {
                 if let emailIdentity = authState.authIdentity as? EmailIdentity {
                     identifier = emailIdentity.email
                 } else if let phoneIdentity = authState.authIdentity as? PhoneIdentity {
-                    identifier = formatPhoneNumber(phoneNumber: phoneIdentity.phone, countryCode: phoneIdentity.countryCode)
+                    identifier = phoneIdentity.phone
                 } else {
                     identifier = authState.userId
                 }

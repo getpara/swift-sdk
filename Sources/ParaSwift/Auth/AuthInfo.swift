@@ -1,9 +1,4 @@
-//
-//  AuthInfo.swift
-//  ParaSwift
-//
-//  Created by Brian Corbin on 2/11/25.
-//
+import Foundation // Use Foundation instead of SwiftUI if UI elements aren't needed
 
 /// Protocol defining authentication information that can be encoded
 public protocol AuthInfo: Codable {}
@@ -15,6 +10,9 @@ public protocol AuthIdentity: Codable {
     
     /// The type that should be used when decoding from JSON
     static var identityType: String { get }
+    
+    /// The identifier for the identity
+    var identifier: String { get }
 }
 
 /// Authentication identity for email-based authentication
@@ -27,6 +25,9 @@ public struct EmailIdentity: AuthIdentity {
     
     /// The type that should be used when decoding from JSON
     public static var identityType: String { return "email" }
+    
+    /// The identifier for the identity (email address)
+    public var identifier: String { return email }
     
     /// Creates a new EmailIdentity instance
     /// - Parameter email: The user's email address
@@ -64,10 +65,8 @@ public struct EmailIdentity: AuthIdentity {
 
 /// Authentication identity for phone-based authentication
 public struct PhoneIdentity: AuthIdentity {
-    /// The user's phone number
+    /// The user's phone number (with country code, e.g. "+19205551111")
     public let phone: String
-    /// The country code for the phone number
-    public let countryCode: String
     
     /// The identity type
     public var type: String { return "phone" }
@@ -75,13 +74,15 @@ public struct PhoneIdentity: AuthIdentity {
     /// The type that should be used when decoding from JSON
     public static var identityType: String { return "phone" }
     
+    /// The identifier for the identity (the full phone number)
+    public var identifier: String {
+        return phone
+    }
+    
     /// Creates a new PhoneIdentity instance
-    /// - Parameters:
-    ///   - phone: The user's phone number
-    ///   - countryCode: The country code for the phone number
-    public init(phone: String, countryCode: String) {
+    /// - Parameter phone: The full phone number with country code (e.g. "+19205551111")
+    public init(phone: String) {
         self.phone = phone
-        self.countryCode = countryCode
     }
     
     /// Encodes the identity to a container
@@ -90,7 +91,6 @@ public struct PhoneIdentity: AuthIdentity {
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(phone, forKey: .phone)
-        try container.encode(countryCode, forKey: .countryCode)
         try container.encode(type, forKey: .type)
     }
     
@@ -100,7 +100,6 @@ public struct PhoneIdentity: AuthIdentity {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         phone = try container.decode(String.self, forKey: .phone)
-        countryCode = try container.decode(String.self, forKey: .countryCode)
         let decodedType = try container.decodeIfPresent(String.self, forKey: .type)
         guard decodedType == nil || decodedType == Self.identityType else {
             throw DecodingError.dataCorruptedError(forKey: .type, 
@@ -110,7 +109,7 @@ public struct PhoneIdentity: AuthIdentity {
     }
     
     private enum CodingKeys: String, CodingKey {
-        case phone, countryCode, type
+        case phone, type
     }
 }
 
@@ -124,6 +123,9 @@ public struct FarcasterIdentity: AuthIdentity {
     
     /// The type that should be used when decoding from JSON
     public static var identityType: String { return "farcaster" }
+    
+    /// The identifier for the identity (FID)
+    public var identifier: String { return fid }
     
     /// Creates a new FarcasterIdentity instance
     /// - Parameter fid: The Farcaster FID
@@ -169,6 +171,9 @@ public struct TelegramIdentity: AuthIdentity {
     
     /// The type that should be used when decoding from JSON
     public static var identityType: String { return "telegram" }
+    
+    /// The identifier for the identity (Telegram ID)
+    public var identifier: String { return id }
     
     /// Creates a new TelegramIdentity instance
     /// - Parameter id: The Telegram ID
@@ -246,6 +251,9 @@ public struct ExternalWalletIdentity: AuthIdentity {
     /// The type that should be used when decoding from JSON
     public static var identityType: String { return "externalWallet" }
     
+    /// The identifier for the identity (wallet address)
+    public var identifier: String { return wallet.address }
+    
     /// Creates a new ExternalWalletIdentity instance
     /// - Parameter wallet: Information about the external wallet
     public init(wallet: ExternalWalletInfo) {
@@ -294,18 +302,13 @@ public struct EmailAuthInfo: AuthInfo {
 
 /// Authentication information for phone-based authentication
 public struct PhoneAuthInfo: AuthInfo {
-    /// The user's phone number
+    /// The user's full phone number with country code (e.g., "+19205551111")
     let phone: String
-    /// The country code for the phone number
-    let countryCode: String
     
     /// Creates a new PhoneAuthInfo instance
-    /// - Parameters:
-    ///   - phone: The user's phone number
-    ///   - countryCode: The country code for the phone number
-    public init(phone: String, countryCode: String) {
+    /// - Parameter phone: The user's full phone number with country code
+    public init(phone: String) {
         self.phone = phone
-        self.countryCode = countryCode
     }
 }
 
@@ -313,7 +316,7 @@ public struct PhoneAuthInfo: AuthInfo {
 public enum Auth: Encodable {
     /// Email-based authentication
     case email(String)
-    /// Phone-based authentication
+    /// Phone-based authentication with full phone number including country code
     case phone(String)
     /// Farcaster-based authentication
     case farcaster(String)
@@ -324,6 +327,24 @@ public enum Auth: Encodable {
     /// Identity-based authentication
     case identity(AuthIdentity)
     
+    /// String representation for debugging
+    public var debugDescription: String {
+        switch self {
+        case .email(let value):
+            return "Email(\(value))"
+        case .phone(let phoneNumber):
+            return "Phone(\(phoneNumber))"
+        case .farcaster(let value):
+            return "Farcaster(\(value))"
+        case .telegram(let value):
+            return "Telegram(\(value))"
+        case .externalWallet(let wallet):
+            return "ExternalWallet(\(wallet.address), \(wallet.type.rawValue))"
+        case .identity(let identity):
+            return "Identity(\(identity.type), \(identity.identifier))"
+        }
+    }
+    
     /// Encodes the authentication type
     /// - Parameter encoder: The encoder to use
     /// - Throws: An error if encoding fails
@@ -332,8 +353,8 @@ public enum Auth: Encodable {
         switch self {
         case .email(let value):
             try container.encode(value, forKey: .email)
-        case .phone(let value):
-            try container.encode(value, forKey: .phone)
+        case .phone(let phoneNumber):
+            try container.encode(phoneNumber, forKey: .phone)
         case .farcaster(let value):
             try container.encode(value, forKey: .farcaster)
         case .telegram(let value):
