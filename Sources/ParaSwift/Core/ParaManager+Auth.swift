@@ -437,7 +437,7 @@ extension ParaManager {
             throw ParaError.error("Failed to construct final password URL with callback parameter")
         }
 
-        logger.debug("Presenting password authentication URL with native callback")
+        logger.debug("Presenting password authentication URL with native callback \(finalPasswordUrl.absoluteString)")
 
         // When the web portal calls window.close() after password creation/login,
         // ASWebAuthenticationSession throws a canceledLogin error, which we need to handle as success
@@ -447,7 +447,7 @@ extension ParaManager {
             // Normal callback URL completion (rare for password auth)
             logger.debug("Received callback URL from authentication session")
             
-            self.wallets = try await self.fetchWallets() // Use self here
+            self.wallets = try await self.fetchWallets()
 
             return callbackURL
         } catch {
