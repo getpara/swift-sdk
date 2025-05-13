@@ -1,40 +1,5 @@
 import Foundation
 
-/// Protocol defining authentication information that can be encoded
-public protocol AuthInfo: Codable {}
-
-/// Authentication identity for email-based authentication
-public struct EmailIdentity: Codable {
-    /// The user's email address
-    public let email: String
-    
-    /// Creates a new EmailIdentity instance
-    /// - Parameter email: The user's email address
-    public init(email: String) {
-        self.email = email
-    }
-    
-    private enum CodingKeys: String, CodingKey {
-        case email
-    }
-}
-
-/// Authentication identity for phone-based authentication
-public struct PhoneIdentity: Codable {
-    /// The user's phone number (with country code, e.g. "+19205551111")
-    public let phone: String
-    
-    /// Creates a new PhoneIdentity instance
-    /// - Parameter phone: The full phone number with country code (e.g. "+19205551111")
-    public init(phone: String) {
-        self.phone = phone
-    }
-    
-    private enum CodingKeys: String, CodingKey {
-        case phone
-    }
-}
-
 /// Wallet type for external wallet authentication
 public enum ExternalWalletType: String, Codable {
     /// Ethereum Virtual Machine wallet
@@ -63,30 +28,6 @@ public struct ExternalWalletInfo: Codable {
         self.address = address
         self.type = type
         self.provider = provider
-    }
-}
-
-/// Authentication information for email-based authentication
-public struct EmailAuthInfo: AuthInfo {
-    /// The user's email address
-    let email: String
-    
-    /// Creates a new EmailAuthInfo instance
-    /// - Parameter email: The user's email address
-    public init(email: String) {
-        self.email = email
-    }
-}
-
-/// Authentication information for phone-based authentication
-public struct PhoneAuthInfo: AuthInfo {
-    /// The user's full phone number with country code (e.g., "+19205551111")
-    let phone: String
-    
-    /// Creates a new PhoneAuthInfo instance
-    /// - Parameter phone: The user's full phone number with country code
-    public init(phone: String) {
-        self.phone = phone
     }
 }
 
@@ -142,10 +83,10 @@ public struct AuthState: Codable {
     public let stage: AuthStage
     /// The Para userId for the currently authenticating user
     public let userId: String
-    /// Email identity information if using email auth
-    public let emailIdentity: EmailIdentity?
-    /// Phone identity information if using phone auth
-    public let phoneIdentity: PhoneIdentity?
+    /// Email address if using email auth
+    public let email: String?
+    /// Phone number if using phone auth
+    public let phone: String?
     /// Display name for the authenticating user
     public let displayName: String?
     /// Profile picture URL for the authenticating user
@@ -175,8 +116,8 @@ public struct AuthState: Codable {
     /// - Parameters:
     ///   - stage: The authentication stage
     ///   - userId: The Para userId
-    ///   - emailIdentity: Optional email identity
-    ///   - phoneIdentity: Optional phone identity
+    ///   - email: Optional email address
+    ///   - phone: Optional phone number
     ///   - displayName: Optional display name
     ///   - pfpUrl: Optional profile picture URL
     ///   - username: Optional username
@@ -188,8 +129,8 @@ public struct AuthState: Codable {
     public init(
         stage: AuthStage,
         userId: String,
-        emailIdentity: EmailIdentity? = nil,
-        phoneIdentity: PhoneIdentity? = nil,
+        email: String? = nil,
+        phone: String? = nil,
         displayName: String? = nil,
         pfpUrl: String? = nil,
         username: String? = nil,
@@ -201,8 +142,8 @@ public struct AuthState: Codable {
     ) {
         self.stage = stage
         self.userId = userId
-        self.emailIdentity = emailIdentity
-        self.phoneIdentity = phoneIdentity
+        self.email = email
+        self.phone = phone
         self.displayName = displayName
         self.pfpUrl = pfpUrl
         self.username = username
@@ -213,17 +154,12 @@ public struct AuthState: Codable {
         self.biometricHints = biometricHints
     }
     
-    /// For backward compatibility with code expecting email field
-    public var email: String? {
-        return emailIdentity?.email
-    }
-    
     // MARK: - Codable implementation
     
     /// Coding keys for encoding/decoding
     private enum CodingKeys: String, CodingKey {
         case stage, userId, displayName, pfpUrl, username
-        case emailIdentity, phoneIdentity
+        case email, phone
         case passkeyUrl, passkeyId, passkeyKnownDeviceUrl, passwordUrl, biometricHints
     }
     
@@ -236,8 +172,8 @@ public struct AuthState: Codable {
         userId = try container.decode(String.self, forKey: .userId)
         
         // Decode optional fields
-        emailIdentity = try container.decodeIfPresent(EmailIdentity.self, forKey: .emailIdentity)
-        phoneIdentity = try container.decodeIfPresent(PhoneIdentity.self, forKey: .phoneIdentity)
+        email = try container.decodeIfPresent(String.self, forKey: .email)
+        phone = try container.decodeIfPresent(String.self, forKey: .phone)
         displayName = try container.decodeIfPresent(String.self, forKey: .displayName)
         pfpUrl = try container.decodeIfPresent(String.self, forKey: .pfpUrl)
         username = try container.decodeIfPresent(String.self, forKey: .username)

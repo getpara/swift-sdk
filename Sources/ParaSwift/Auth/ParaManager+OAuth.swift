@@ -161,19 +161,15 @@ extension ParaManager {
         let displayName = resultDict["displayName"] as? String
         let pfpUrl = resultDict["pfpUrl"] as? String
         let username = resultDict["username"] as? String
-        let signatureVerificationMessage = resultDict["signatureVerificationMessage"] as? String
         
-        // Extract email and phone identity from the response
-        var emailIdentity: EmailIdentity? = nil
-        var phoneIdentity: PhoneIdentity? = nil
+        // Extract email and phone directly from the response
+        var email: String? = nil
+        var phone: String? = nil
         
         if let auth = resultDict["auth"] as? [String: Any] {
-            // Determine the type of auth identity
-            if let email = auth["email"] as? String {
-                emailIdentity = EmailIdentity(email: email)
-            } else if let phone = auth["phone"] as? String {
-                phoneIdentity = PhoneIdentity(phone: phone)
-            }
+            // Get email/phone directly
+            email = auth["email"] as? String
+            phone = auth["phone"] as? String
         }
         
         // Extract biometric hints if available
@@ -183,8 +179,8 @@ extension ParaManager {
         let authState = AuthState(
             stage: stage,
             userId: userId,
-            emailIdentity: emailIdentity,
-            phoneIdentity: phoneIdentity,
+            email: email,
+            phone: phone,
             displayName: displayName,
             pfpUrl: pfpUrl,
             username: username,
@@ -241,21 +237,19 @@ extension ParaManager {
             logger.debug("Processing login stage for user ID: \(authState.userId)")
             
             // Log auth identity details
-            if let emailIdentity = authState.emailIdentity {
-                logger.debug("User email from OAuth: \(emailIdentity.email)")
-            } else if let phoneIdentity = authState.phoneIdentity {
-                logger.debug("User phone from OAuth: \(phoneIdentity.phone)")
+            if let email = authState.email {
+                logger.debug("User email from OAuth: \(email)")
+            } else if let phone = authState.phone {
+                logger.debug("User phone from OAuth: \(phone)")
             }
             
-            // Use the appropriate auth info for passkey login
-            var authInfo: AuthInfo? = nil
-            if let emailIdentity = authState.emailIdentity {
-                authInfo = EmailAuthInfo(email: emailIdentity.email)
-            } else if let phoneIdentity = authState.phoneIdentity {
-                authInfo = PhoneAuthInfo(phone: phoneIdentity.phone)
-            }
+            // Pass email and phone directly to loginWithPasskey
+            try await loginWithPasskey(
+                authorizationController: authorizationController,
+                email: authState.email,
+                phone: authState.phone
+            )
             
-            try await loginWithPasskey(authorizationController: authorizationController, authInfo: authInfo)
             logger.debug("Login successful")
             return (success: true, errorMessage: nil)
             
@@ -267,10 +261,10 @@ extension ParaManager {
                 logger.debug("Generating passkey with ID: \(passkeyId)")
                 // Use the appropriate identifier based on identity
                 let identifier: String
-                if let emailIdentity = authState.emailIdentity {
-                    identifier = emailIdentity.email
-                } else if let phoneIdentity = authState.phoneIdentity {
-                    identifier = phoneIdentity.phone
+                if let email = authState.email {
+                    identifier = email
+                } else if let phone = authState.phone {
+                    identifier = phone
                 } else {
                     identifier = authState.userId
                 }

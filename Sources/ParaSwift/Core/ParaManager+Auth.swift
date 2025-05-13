@@ -17,9 +17,9 @@ extension ParaManager {
     private func createSignUpOrLogInPayload(from auth: Auth) -> SignUpOrLogInPayload {
         switch auth {
         case .email(let emailAddress):
-            return SignUpOrLogInPayload(auth: EmailIdentity(email: emailAddress))
+            return SignUpOrLogInPayload(auth: ["email": emailAddress])
         case .phone(let phoneNumber):
-            return SignUpOrLogInPayload(auth: PhoneIdentity(phone: phoneNumber))
+            return SignUpOrLogInPayload(auth: ["phone": phoneNumber])
         }
     }
 
@@ -56,23 +56,20 @@ extension ParaManager {
             }
         }
 
-        // Extract email or phone identity
-        var emailIdentity: EmailIdentity? = nil
-        var phoneIdentity: PhoneIdentity? = nil
+        // Extract email or phone directly
+        var email: String? = nil
+        var phone: String? = nil
 
         if let auth = resultDict["auth"] as? [String: Any] {
-            if let email = auth["email"] as? String {
-                emailIdentity = EmailIdentity(email: email)
-            } else if let phone = auth["phone"] as? String {
-                phoneIdentity = PhoneIdentity(phone: phone)
-            }
+            email = auth["email"] as? String
+            phone = auth["phone"] as? String
         }
 
         return AuthState(
             stage: stage,
             userId: userId,
-            emailIdentity: emailIdentity,
-            phoneIdentity: phoneIdentity,
+            email: email,
+            phone: phone,
             displayName: displayName,
             pfpUrl: pfpUrl,
             username: username,
@@ -83,31 +80,6 @@ extension ParaManager {
             biometricHints: biometricHints
         )
     }
-
-    /// Extracts authentication information and gets a web challenge.
-    ///
-    /// - Parameter authInfo: Optional authentication information (email or phone).
-    /// - Returns: The web challenge result.
-    private func authInfoHelper(authInfo: AuthInfo?) async throws -> Any? {
-        let emailArg: String?
-        let phoneArg: String?
-
-        if let emailInfo = authInfo as? EmailAuthInfo {
-            emailArg = emailInfo.email
-            phoneArg = nil
-        } else if let phoneInfo = authInfo as? PhoneAuthInfo {
-            emailArg = nil
-            phoneArg = phoneInfo.phone
-            
-            logger.debug("Phone login with phone: \(phoneArg ?? "nil")")
-        } else {
-            emailArg = nil
-            phoneArg = nil
-        }
-
-        let payload = GetWebChallengeArgs(email: emailArg, phone: phoneArg)
-        return try await postMessage(method: "getWebChallenge", payload: payload)
-    }
 }
 
 // MARK: - Authentication Types and Methods
@@ -116,7 +88,7 @@ extension ParaManager {
     public enum LoginMethod: String, CustomStringConvertible {
         case passkey
         case password
-        case passkeyKnownDevice // If applicable in future
+        case passkeyKnownDevice
         
         public var description: String {
             return self.rawValue
@@ -153,7 +125,7 @@ extension ParaManager {
     
     /// Initiates the email/phone authentication flow (signup or login).
     /// Determines if the user exists and returns the appropriate next state.
-    /// - Parameter auth: The authentication identifier (Email, Phone, ExternalWallet, or Identity).
+    /// - Parameter auth: The authentication identifier (Email, Phone).
     /// - Returns: The `AuthState` indicating the next step (.verify for new users, .login for existing users).
     @MainActor
     public func initiateAuthFlow(auth: Auth) async throws -> AuthState {
@@ -263,10 +235,27 @@ extension ParaManager {
     ///
     /// - Parameters:
     ///   - authorizationController: The controller to handle authorization UI.
-    ///   - authInfo: Optional authentication information (email or phone).
+    ///   - email: Optional email address for authentication.
+    ///   - phone: Optional phone number for authentication.
+    /// - Note: Either email or phone can be provided, but not both. If both are nil, the user will be prompted to select a passkey.
     @MainActor
-    public func loginWithPasskey(authorizationController: AuthorizationController, authInfo: AuthInfo?) async throws {
-        let getWebChallengeResult = try await authInfoHelper(authInfo: authInfo)
+    public func loginWithPasskey(
+        authorizationController: AuthorizationController,
+        email: String? = nil,
+        phone: String? = nil
+    ) async throws {
+        if let email = email {
+            logger.debug("Passkey login with email: \(email)")
+        } else if let phone = phone {
+            logger.debug("Passkey login with phone: \(phone)")
+        } else {
+            logger.debug("Passkey login without identifier")
+        }
+        
+        // Create challenge payload
+        let payload = GetWebChallengeArgs(email: email, phone: phone)
+        let getWebChallengeResult = try await postMessage(method: "getWebChallenge", payload: payload)
+        
         let challenge = try decodeDictionaryResult(
             getWebChallengeResult,
             expectedType: String.self,
@@ -369,10 +358,7 @@ extension ParaManager {
             biometricsId: biometricsId
         )
         
-        _ = try await postMessage(
-            method: "generatePasskey",
-            payload: generateArgs
-        )
+        _ = try await postMessage(method: "generatePasskey", payload: generateArgs)
     }
 }
 
@@ -405,8 +391,6 @@ extension ParaManager {
 
         logger.debug("Presenting password authentication URL with native callback \(finalPasswordUrl.absoluteString)")
 
-        // When the web portal calls window.close() after password creation/login,
-        // ASWebAuthenticationSession throws a canceledLogin error, which we need to handle as success
         do {
             // Attempt to authenticate with the web session using the modified URL
             let callbackURL = try await webAuthenticationSession.authenticate(using: finalPasswordUrl, callbackURLScheme: deepLink)
@@ -528,21 +512,12 @@ extension ParaManager {
 
         switch method {
         case .passkey:
-            // loginWithPasskey needs AuthInfo derived from the identity
-            let authInfo: AuthInfo?
-            if let emailIdentity = authState.emailIdentity {
-                authInfo = EmailAuthInfo(email: emailIdentity.email)
-            } else if let phoneIdentity = authState.phoneIdentity {
-                authInfo = PhoneAuthInfo(phone: phoneIdentity.phone)
-            } else {
-                logger.warning("Passkey login attempted without email or phone identity")
-                authInfo = nil // Let loginWithPasskey handle nil if appropriate
-            }
-
+            // Pass email or phone directly to loginWithPasskey
             logger.debug("Calling loginWithPasskey...")
             try await loginWithPasskey(
                 authorizationController: authorizationController,
-                authInfo: authInfo // Pass derived AuthInfo
+                email: authState.email,
+                phone: authState.phone
             )
             logger.debug("loginWithPasskey successful.")
             // `loginWithPasskey` internally sets sessionState and fetches wallets.
@@ -682,10 +657,10 @@ extension ParaManager {
         
         // Get identifier from email or phone
         let identifier: String
-        if let emailIdentity = authState.emailIdentity {
-            identifier = emailIdentity.email
-        } else if let phoneIdentity = authState.phoneIdentity {
-            identifier = phoneIdentity.phone
+        if let email = authState.email {
+            identifier = email
+        } else if let phone = authState.phone {
+            identifier = phone
         } else {
             logger.error("Cannot perform signup without email or phone in AuthState.")
             throw ParaError.error("Missing user identifier for signup.")
