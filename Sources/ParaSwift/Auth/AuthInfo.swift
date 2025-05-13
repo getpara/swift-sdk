@@ -5,14 +5,18 @@ public protocol AuthInfo: Codable {}
 
 /// Protocol for authentication identity information
 public protocol AuthIdentity: Codable {
-    /// Get the identity type name
-    var type: String { get }
-    
-    /// The type that should be used when decoding from JSON
+    /// The identity type name
+    /// Used for both encoding the type field and verifying during decoding
     static var identityType: String { get }
     
     /// The identifier for the identity
     var identifier: String { get }
+}
+
+/// Default implementation for AuthIdentity
+extension AuthIdentity {
+    /// Get the identity type name (instance accessor for the static property)
+    public var type: String { return Self.identityType }
 }
 
 /// Authentication identity for email-based authentication
@@ -20,10 +24,7 @@ public struct EmailIdentity: AuthIdentity {
     /// The user's email address
     public let email: String
     
-    /// The identity type
-    public var type: String { return "email" }
-    
-    /// The type that should be used when decoding from JSON
+    /// The identity type name
     public static var identityType: String { return "email" }
     
     /// The identifier for the identity (email address)
@@ -68,10 +69,7 @@ public struct PhoneIdentity: AuthIdentity {
     /// The user's phone number (with country code, e.g. "+19205551111")
     public let phone: String
     
-    /// The identity type
-    public var type: String { return "phone" }
-    
-    /// The type that should be used when decoding from JSON
+    /// The identity type name
     public static var identityType: String { return "phone" }
     
     /// The identifier for the identity (the full phone number)
@@ -118,10 +116,7 @@ public struct FarcasterIdentity: AuthIdentity {
     /// The Farcaster FID
     public let fid: String
     
-    /// The identity type
-    public var type: String { return "farcaster" }
-    
-    /// The type that should be used when decoding from JSON
+    /// The identity type name
     public static var identityType: String { return "farcaster" }
     
     /// The identifier for the identity (FID)
@@ -166,10 +161,7 @@ public struct TelegramIdentity: AuthIdentity {
     /// The Telegram ID
     public let id: String
     
-    /// The identity type
-    public var type: String { return "telegram" }
-    
-    /// The type that should be used when decoding from JSON
+    /// The identity type name
     public static var identityType: String { return "telegram" }
     
     /// The identifier for the identity (Telegram ID)
@@ -245,10 +237,7 @@ public struct ExternalWalletIdentity: AuthIdentity {
     /// Information about the external wallet
     public let wallet: ExternalWalletInfo
     
-    /// The identity type
-    public var type: String { return "externalWallet" }
-    
-    /// The type that should be used when decoding from JSON
+    /// The identity type name
     public static var identityType: String { return "externalWallet" }
     
     /// The identifier for the identity (wallet address)
