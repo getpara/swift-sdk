@@ -1,5 +1,6 @@
 import Foundation
 import os
+import PhoneNumberKit
 
 /// Utility class containing formatting helpers and common operations
 public struct ParaFormatting {
@@ -7,17 +8,50 @@ public struct ParaFormatting {
     /// Formats a phone number into the international format required by Para.
     ///
     /// - Parameters:
-    ///   - phoneNumber: The national phone number (without country code).
-    ///   - countryCode: The country code (without the plus sign).
-    /// - Returns: Formatted phone number in international format (+${countryCode}${phoneNumber}).
+    ///   - phoneNumber: The phone number to format.
+    ///   - countryCode: Optional country code for the phone number.
+    ///   - forDisplay: Whether to format the number for display (with spaces and formatting) or for API (digits only).
+    /// - Returns: Formatted phone number in international format, or nil if the number is invalid.
     ///
-    /// - Note: This method is provided as a convenience for formatting phone numbers correctly.
+    /// - Note: This method uses PhoneNumberKit to validate and format phone numbers correctly.
     ///         All Para authentication methods expect phone numbers in international format.
     ///         Example: formatPhoneNumber(phoneNumber: "5551234", countryCode: "1") returns "+15551234".
-    public static func formatPhoneNumber(phoneNumber: String, countryCode: String) -> String {
-        // Normalize the phone number input by removing whitespace
-        let normalizedPhoneNumber = phoneNumber.filter { !$0.isWhitespace }
-        return "+\(countryCode)\(normalizedPhoneNumber)"
+    public static func formatPhoneNumber(
+        phoneNumber: String,
+        countryCode: String? = nil,
+        forDisplay: Bool = false
+    ) -> String? {
+        let phoneNumberKit = PhoneNumberUtility()
+        
+        // Sanitize the phone number by removing non-digit characters
+        let sanitizedNumber = phoneNumber.replacingOccurrences(of: "[^0-9]", with: "", options: .regularExpression)
+        
+        do {
+            let parsedNumber: PhoneNumber
+            
+            if let countryCode = countryCode {
+                // Remove + from country code if present
+                let cleanCountryCode = countryCode.hasPrefix("+") ? String(countryCode.dropFirst()) : countryCode
+                
+                // Parse with provided country code as the default calling code
+                parsedNumber = try phoneNumberKit.parse(sanitizedNumber, withRegion: cleanCountryCode, ignoreType: true)
+            } else {
+                // Add + to the number if not present and parse
+                let numberWithPlus = sanitizedNumber.hasPrefix("+") ? sanitizedNumber : "+\(sanitizedNumber)"
+                parsedNumber = try phoneNumberKit.parse(numberWithPlus, ignoreType: true)
+            }
+            
+            // Format the phone number according to the forDisplay parameter
+            if forDisplay {
+                return phoneNumberKit.format(parsedNumber, toType: .international)
+            } else {
+                // Format for API: remove all non-digit characters except the leading +
+                let formattedNumber = phoneNumberKit.format(parsedNumber, toType: .international)
+                return formattedNumber.replacingOccurrences(of: "[^\\d+]", with: "", options: .regularExpression)
+            }
+        } catch {
+            return nil
+        }
     }
 }
 
