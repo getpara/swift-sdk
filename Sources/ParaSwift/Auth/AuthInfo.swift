@@ -111,95 +111,6 @@ public struct PhoneIdentity: AuthIdentity {
     }
 }
 
-/// Authentication identity for Farcaster-based authentication
-public struct FarcasterIdentity: AuthIdentity {
-    /// The Farcaster FID
-    public let fid: String
-    
-    /// The identity type name
-    public static var identityType: String { return "farcaster" }
-    
-    /// The identifier for the identity (FID)
-    public var identifier: String { return fid }
-    
-    /// Creates a new FarcasterIdentity instance
-    /// - Parameter fid: The Farcaster FID
-    public init(fid: String) {
-        self.fid = fid
-    }
-    
-    /// Encodes the identity to a container
-    /// - Parameter encoder: The encoder to use
-    /// - Throws: An error if encoding fails
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(fid, forKey: .fid)
-        try container.encode(type, forKey: .type)
-    }
-    
-    /// Initializes from a decoder
-    /// - Parameter decoder: The decoder
-    /// - Throws: An error if decoding fails
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        fid = try container.decode(String.self, forKey: .fid)
-        let decodedType = try container.decodeIfPresent(String.self, forKey: .type)
-        guard decodedType == nil || decodedType == Self.identityType else {
-            throw DecodingError.dataCorruptedError(forKey: .type, 
-                                                   in: container, 
-                                                   debugDescription: "Type mismatch: expected \(Self.identityType), got \(decodedType ?? "nil")")
-        }
-    }
-    
-    private enum CodingKeys: String, CodingKey {
-        case fid, type
-    }
-}
-
-/// Authentication identity for Telegram-based authentication
-public struct TelegramIdentity: AuthIdentity {
-    /// The Telegram ID
-    public let id: String
-    
-    /// The identity type name
-    public static var identityType: String { return "telegram" }
-    
-    /// The identifier for the identity (Telegram ID)
-    public var identifier: String { return id }
-    
-    /// Creates a new TelegramIdentity instance
-    /// - Parameter id: The Telegram ID
-    public init(id: String) {
-        self.id = id
-    }
-    
-    /// Encodes the identity to a container
-    /// - Parameter encoder: The encoder to use
-    /// - Throws: An error if encoding fails
-    public func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(id, forKey: .id)
-        try container.encode(type, forKey: .type)
-    }
-    
-    /// Initializes from a decoder
-    /// - Parameter decoder: The decoder
-    /// - Throws: An error if decoding fails
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decode(String.self, forKey: .id)
-        let decodedType = try container.decodeIfPresent(String.self, forKey: .type)
-        guard decodedType == nil || decodedType == Self.identityType else {
-            throw DecodingError.dataCorruptedError(forKey: .type, 
-                                                   in: container, 
-                                                   debugDescription: "Type mismatch: expected \(Self.identityType), got \(decodedType ?? "nil")")
-        }
-    }
-    
-    private enum CodingKeys: String, CodingKey {
-        case id, type
-    }
-}
 
 /// Wallet type for external wallet authentication
 public enum ExternalWalletType: String, Codable {
@@ -307,10 +218,6 @@ public enum Auth: Encodable {
     case email(String)
     /// Phone-based authentication with full phone number including country code
     case phone(String)
-    /// Farcaster-based authentication
-    case farcaster(String)
-    /// Telegram-based authentication
-    case telegram(String)
     /// External wallet-based authentication
     case externalWallet(ExternalWalletInfo)
     /// Identity-based authentication
@@ -323,10 +230,6 @@ public enum Auth: Encodable {
             return "Email(\(value))"
         case .phone(let phoneNumber):
             return "Phone(\(phoneNumber))"
-        case .farcaster(let value):
-            return "Farcaster(\(value))"
-        case .telegram(let value):
-            return "Telegram(\(value))"
         case .externalWallet(let wallet):
             return "ExternalWallet(\(wallet.address), \(wallet.type.rawValue))"
         case .identity(let identity):
@@ -344,10 +247,6 @@ public enum Auth: Encodable {
             try container.encode(value, forKey: .email)
         case .phone(let phoneNumber):
             try container.encode(phoneNumber, forKey: .phone)
-        case .farcaster(let value):
-            try container.encode(value, forKey: .farcaster)
-        case .telegram(let value):
-            try container.encode(value, forKey: .telegram)
         case .externalWallet(let wallet):
             try container.encode(wallet, forKey: .externalWallet)
         case .identity(let identity):
@@ -357,7 +256,7 @@ public enum Auth: Encodable {
     
     /// Coding keys for the Auth enum
     private enum CodingKeys: String, CodingKey {
-        case email, phone, farcaster, telegram, externalWallet
+        case email, phone, externalWallet
     }
 }
 

@@ -173,10 +173,6 @@ extension ParaManager {
                 authIdentity = EmailIdentity(email: email)
             } else if let phone = auth["phone"] as? String {
                 authIdentity = PhoneIdentity(phone: phone)
-            } else if let fid = auth["fid"] as? String {
-                authIdentity = FarcasterIdentity(fid: fid)
-            } else if let telegramId = auth["id"] as? String, auth["type"] as? String == "telegram" {
-                authIdentity = TelegramIdentity(id: telegramId)
             } else if let wallet = auth["wallet"] as? [String: Any] {
                 if let address = wallet["address"] as? String,
                    let typeString = wallet["type"] as? String,

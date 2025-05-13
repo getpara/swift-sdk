@@ -20,10 +20,6 @@ extension ParaManager {
             return SignUpOrLogInPayload(auth: EmailIdentity(email: emailAddress))
         case .phone(let phoneNumber):
             return SignUpOrLogInPayload(auth: PhoneIdentity(phone: phoneNumber))
-        case .farcaster(let fid):
-            return SignUpOrLogInPayload(auth: FarcasterIdentity(fid: fid))
-        case .telegram(let id):
-            return SignUpOrLogInPayload(auth: TelegramIdentity(id: id))
         case .externalWallet(let wallet):
             return SignUpOrLogInPayload(auth: ExternalWalletIdentity(wallet: wallet))
         case .identity(let identity):
@@ -75,10 +71,6 @@ extension ParaManager {
                 authIdentity = EmailIdentity(email: email)
             } else if let phone = auth["phone"] as? String {
                 authIdentity = PhoneIdentity(phone: phone)
-            } else if let fid = auth["fid"] as? String {
-                authIdentity = FarcasterIdentity(fid: fid)
-            } else if let telegramId = auth["id"] as? String, auth["type"] as? String == "telegram" {
-                authIdentity = TelegramIdentity(id: telegramId)
             } else if let wallet = auth["wallet"] as? [String: Any] {
                 if let address = wallet["address"] as? String,
                    let typeString = wallet["type"] as? String,
@@ -187,7 +179,7 @@ extension ParaManager {
     
     /// Initiates the email/phone authentication flow (signup or login).
     /// Determines if the user exists and returns the appropriate next state.
-    /// - Parameter auth: The authentication identifier (Email, Phone, etc.).
+    /// - Parameter auth: The authentication identifier (Email, Phone, ExternalWallet, or Identity).
     /// - Returns: The `AuthState` indicating the next step (.verify for new users, .login for existing users).
     @MainActor
     public func initiateAuthFlow(auth: Auth) async throws -> AuthState {
