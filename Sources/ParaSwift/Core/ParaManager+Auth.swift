@@ -20,10 +20,6 @@ extension ParaManager {
             return SignUpOrLogInPayload(auth: EmailIdentity(email: emailAddress))
         case .phone(let phoneNumber):
             return SignUpOrLogInPayload(auth: PhoneIdentity(phone: phoneNumber))
-        case .externalWallet(let wallet):
-            return SignUpOrLogInPayload(auth: ExternalWalletIdentity(wallet: wallet))
-        case .identity(let identity):
-            return SignUpOrLogInPayload(auth: identity)
         }
     }
 
@@ -45,7 +41,6 @@ extension ParaManager {
         let displayName = resultDict["displayName"] as? String
         let pfpUrl = resultDict["pfpUrl"] as? String
         let username = resultDict["username"] as? String
-        let signatureVerificationMessage = resultDict["signatureVerificationMessage"] as? String
 
         // Extract biometric hints if available
         var biometricHints: [AuthState.BiometricHint]?
@@ -61,47 +56,26 @@ extension ParaManager {
             }
         }
 
-        // Extract auth identity and external wallet if available
-        var authIdentity: AuthIdentity? = nil
-        var externalWalletInfo: ExternalWalletInfo? = nil
+        // Extract email or phone identity
+        var emailIdentity: EmailIdentity? = nil
+        var phoneIdentity: PhoneIdentity? = nil
 
         if let auth = resultDict["auth"] as? [String: Any] {
-            // Determine the type of auth identity
             if let email = auth["email"] as? String {
-                authIdentity = EmailIdentity(email: email)
+                emailIdentity = EmailIdentity(email: email)
             } else if let phone = auth["phone"] as? String {
-                authIdentity = PhoneIdentity(phone: phone)
-            } else if let wallet = auth["wallet"] as? [String: Any] {
-                if let address = wallet["address"] as? String,
-                   let typeString = wallet["type"] as? String,
-                   let type = ExternalWalletType(rawValue: typeString) {
-                    let provider = wallet["provider"] as? String
-                    let walletInfo = ExternalWalletInfo(address: address, type: type, provider: provider)
-                    authIdentity = ExternalWalletIdentity(wallet: walletInfo)
-                    externalWalletInfo = walletInfo
-                }
-            }
-        } else if let externalWallet = resultDict["externalWallet"] as? [String: Any] {
-            // Handle direct externalWallet in the result
-            if let address = externalWallet["address"] as? String,
-               let typeString = externalWallet["type"] as? String,
-               let type = ExternalWalletType(rawValue: typeString) {
-                let provider = externalWallet["provider"] as? String
-                let walletInfo = ExternalWalletInfo(address: address, type: type, provider: provider)
-                authIdentity = ExternalWalletIdentity(wallet: walletInfo)
-                externalWalletInfo = walletInfo
+                phoneIdentity = PhoneIdentity(phone: phone)
             }
         }
 
         return AuthState(
             stage: stage,
             userId: userId,
-            authIdentity: authIdentity,
+            emailIdentity: emailIdentity,
+            phoneIdentity: phoneIdentity,
             displayName: displayName,
             pfpUrl: pfpUrl,
             username: username,
-            externalWalletInfo: externalWalletInfo,
-            signatureVerificationMessage: signatureVerificationMessage,
             passkeyUrl: passkeyUrl,
             passkeyId: passkeyId,
             passkeyKnownDeviceUrl: passkeyKnownDeviceUrl,
@@ -449,38 +423,48 @@ extension ParaManager {
     }
 }
 
+
 // MARK: - External Wallet Authentication
 extension ParaManager {
     /// Logs in using an external wallet
     /// - Parameters:
     ///   - wallet: Information about the external wallet
-    internal func loginExternalWallet(wallet: ExternalWalletInfo) async throws {
+    public func loginExternalWallet(wallet: ExternalWalletInfo) async throws {
         try await ensureWebViewReady()
 
-        // Create proper Encodable payload using ExternalWalletIdentity
-        let identity = ExternalWalletIdentity(wallet: wallet)
-        let params = SignUpOrLogInPayload(auth: identity)
+        // Create a payload with just the wallet info (no identity wrapper needed)
+        struct WalletLoginPayload: Encodable {
+            let address: String
+            let type: String
+            let provider: String?
+        }
+        
+        let params = WalletLoginPayload(
+            address: wallet.address,
+            type: wallet.type.rawValue,
+            provider: wallet.provider
+        )
 
-        // Explicitly type the result from postMessage
-        let authStateResult: Any? = try await postMessage(method: "loginExternalWallet", payload: params)
+        // Call the loginExternalWallet method
+        let authStateResult = try await postMessage(method: "loginExternalWallet", payload: params)
 
-        // Parse the returned AuthState
+        // Process the result
         do {
-            let authState = try parseAuthStateFromResult(authStateResult)
-            logger.debug("loginExternalWallet completed. Returned AuthState with userId: \(authState.userId)")
+            let _ = try parseAuthStateFromResult(authStateResult)
+            logger.debug("loginExternalWallet completed for address: \(wallet.address)")
         } catch let parseError {
-            logger.error("loginExternalWallet: Failed to parse AuthState result: \(parseError.localizedDescription)")
+            logger.error("loginExternalWallet: Failed to parse result: \(parseError.localizedDescription)")
+            throw parseError
         }
 
         self.sessionState = .activeLoggedIn
-        logger.debug("External wallet login completed for address: \(wallet.address)")
     }
 
     /// Logs in with an external wallet address (legacy version)
     /// - Parameters:
     ///   - externalAddress: The external wallet address
     ///   - type: The type of wallet (e.g. "EVM")
-    internal func loginExternalWallet(externalAddress: String, type: String) async throws {
+    public func loginExternalWallet(externalAddress: String, type: String) async throws {
         let walletType = ExternalWalletType(rawValue: type) ?? .evm
         let wallet = ExternalWalletInfo(address: externalAddress, type: walletType)
         try await loginExternalWallet(wallet: wallet)
@@ -544,19 +528,14 @@ extension ParaManager {
 
         switch method {
         case .passkey:
-            guard let authIdentity = authState.authIdentity else {
-                throw ParaError.error("Cannot perform passkey login without original auth identity.")
-            }
-            
             // loginWithPasskey needs AuthInfo derived from the identity
             let authInfo: AuthInfo?
-            if let emailIdentity = authIdentity as? EmailIdentity {
+            if let emailIdentity = authState.emailIdentity {
                 authInfo = EmailAuthInfo(email: emailIdentity.email)
-            } else if let phoneIdentity = authIdentity as? PhoneIdentity {
+            } else if let phoneIdentity = authState.phoneIdentity {
                 authInfo = PhoneAuthInfo(phone: phoneIdentity.phone)
             } else {
-                // Should not happen if signUpOrLogIn returned .login for email/phone
-                logger.warning("Passkey login attempted with unexpected identity type")
+                logger.warning("Passkey login attempted without email or phone identity")
                 authInfo = nil // Let loginWithPasskey handle nil if appropriate
             }
 
@@ -701,8 +680,14 @@ extension ParaManager {
             throw ParaError.error("Invalid application state: Expected signup stage.")
         }
         
-        guard let identifier = authState.authIdentity?.identifier else {
-            logger.error("Cannot perform signup without user identifier in AuthState.")
+        // Get identifier from email or phone
+        let identifier: String
+        if let emailIdentity = authState.emailIdentity {
+            identifier = emailIdentity.email
+        } else if let phoneIdentity = authState.phoneIdentity {
+            identifier = phoneIdentity.phone
+        } else {
+            logger.error("Cannot perform signup without email or phone in AuthState.")
             throw ParaError.error("Missing user identifier for signup.")
         }
         
