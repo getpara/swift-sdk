@@ -16,39 +16,13 @@ public struct ParaFormatting {
     /// - Note: This method uses PhoneNumberKit to validate and format phone numbers correctly.
     ///         All Para authentication methods expect phone numbers in international format.
     ///         Example: formatPhoneNumber(phoneNumber: "5551234", countryCode: "1") returns "+15551234".
-    public static func formatPhoneNumber(
-        phoneNumber: String,
-        countryCode: String? = nil,
-        forDisplay: Bool = false
-    ) -> String? {
+    public static func formatPhoneNumber(phoneNumber: String, countryCode: String? = nil, forDisplay: Bool = false) -> String? {
         let phoneNumberKit = PhoneNumberUtility()
-        
-        // Sanitize the phone number by removing non-digit characters
-        let sanitizedNumber = phoneNumber.replacingOccurrences(of: "[^0-9]", with: "", options: .regularExpression)
+        let phoneString = countryCode ?? "" + phoneNumber
         
         do {
-            let parsedNumber: PhoneNumber
-            
-            if let countryCode = countryCode {
-                // Remove + from country code if present
-                let cleanCountryCode = countryCode.hasPrefix("+") ? String(countryCode.dropFirst()) : countryCode
-                
-                // Parse with provided country code as the default calling code
-                parsedNumber = try phoneNumberKit.parse(sanitizedNumber, withRegion: cleanCountryCode, ignoreType: true)
-            } else {
-                // Add + to the number if not present and parse
-                let numberWithPlus = sanitizedNumber.hasPrefix("+") ? sanitizedNumber : "+\(sanitizedNumber)"
-                parsedNumber = try phoneNumberKit.parse(numberWithPlus, ignoreType: true)
-            }
-            
-            // Format the phone number according to the forDisplay parameter
-            if forDisplay {
-                return phoneNumberKit.format(parsedNumber, toType: .international)
-            } else {
-                // Format for API: remove all non-digit characters except the leading +
-                let formattedNumber = phoneNumberKit.format(parsedNumber, toType: .international)
-                return formattedNumber.replacingOccurrences(of: "[^\\d+]", with: "", options: .regularExpression)
-            }
+            let phoneNumber = try phoneNumberKit.parse(phoneString)
+            return phoneNumberKit.format(phoneNumber, toType: .e164)
         } catch {
             return nil
         }
