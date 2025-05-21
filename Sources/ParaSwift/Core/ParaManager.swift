@@ -194,4 +194,45 @@ public class ParaManager: NSObject, ObservableObject {
         wallets = []
         self.sessionState = .inactive
     }
+    
+    /// Gets the current user's persisted authentication details.
+    ///
+    /// - Returns: The current user's authentication state, or nil if no user is authenticated.
+    /// - Note: The 'stage' will be set to 'login' for active sessions as this method retrieves
+    ///         details from an already established session.
+    public func getCurrentUserAuthDetails() async throws -> AuthState? {
+        try await ensureWebViewReady()
+        
+        let result = try await postMessage(method: "getCurrentSessionDetails", payload: EmptyPayload())
+        
+        guard let resultDict = result as? [String: Any] else {
+            return nil
+        }
+        
+        guard let authInfoDict = resultDict["authInfo"] as? [String: Any],
+              let userId = resultDict["userId"] as? String else {
+            logger.debug("No authenticated session found")
+            return nil
+        }
+        
+        // Extract auth details from authInfoDict
+        var email: String?
+        var phone: String?
+        
+        if let auth = authInfoDict["auth"] as? [String: Any] {
+            email = auth["email"] as? String
+            phone = auth["phone"] as? String
+        }
+        
+        // Create a synthetic AuthState with login stage
+        return AuthState(
+            stage: .login,
+            userId: userId,
+            email: email,
+            phone: phone,
+            displayName: authInfoDict["displayName"] as? String,
+            pfpUrl: authInfoDict["pfpUrl"] as? String,
+            username: authInfoDict["username"] as? String
+        )
+    }
 }
