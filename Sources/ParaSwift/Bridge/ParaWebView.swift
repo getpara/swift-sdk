@@ -157,6 +157,7 @@ public class ParaWebView: NSObject, ObservableObject {
         
         var finalArgs: [String: Any] = args
 
+        // WebAuthn/Passkeys support requires iOS 16.0+
         if #available(iOS 16.0, *) {
             finalArgs["isPasskeySupported"] = true
         } else {
