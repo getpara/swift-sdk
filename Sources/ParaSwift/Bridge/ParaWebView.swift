@@ -155,7 +155,16 @@ public class ParaWebView: NSObject, ObservableObject {
             "package": Self.packageVersion
         ]
         
-        guard let jsonData = try? JSONSerialization.data(withJSONObject: args, options: []),
+        var finalArgs: [String: Any] = args
+
+        // WebAuthn/Passkeys support requires iOS 16.0+
+        if #available(iOS 16.0, *) {
+            finalArgs["isPasskeySupported"] = true
+        } else {
+            finalArgs["isPasskeySupported"] = false
+        }
+        
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: finalArgs, options: []),
               let jsonString = String(data: jsonData, encoding: .utf8) else {
             lastError = ParaWebViewError.invalidArguments("Failed to encode init arguments")
             return
