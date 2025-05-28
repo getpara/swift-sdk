@@ -68,13 +68,25 @@ struct EthersSendTransactionArgs: Encodable {
      let b64EncodedTx: String
 }
 
+// Solana bridge arguments
+struct SolanaSignerInitArgs: Encodable {
+    let walletId: String
+    let rpcUrl: String
+}
+
+struct SolanaSignTransactionArgs: Encodable {
+    let b64EncodedTx: String
+}
+
+struct SolanaSignVersionedTransactionArgs: Encodable {
+    let b64EncodedTx: String
+}
+
+struct SolanaSendTransactionArgs: Encodable {
+    let b64EncodedTx: String
+}
+
 struct DistributeNewWalletShareArgs: Encodable {
     let walletId: String
     let userShare: String
 }
-
-// TODO: Add any other structs needed for methods like setEmail, cosmJs*, solana* based on the bridge types.
-// For example:
-// struct SetEmailArgs: Encodable {
-//     let email: String
-// } 
