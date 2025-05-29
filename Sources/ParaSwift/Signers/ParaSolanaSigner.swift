@@ -54,7 +54,6 @@ public enum ParaSolanaSignerError: Error, LocalizedError {
 public class ParaSolanaSigner: ObservableObject {
     private let paraManager: ParaManager
     private let rpcUrl: String
-    public let apiClient: SolanaSwift.JSONRPCAPIClient
     private var walletId: String?
     
     /// Initialize a new ParaSolanaSigner
@@ -65,20 +64,6 @@ public class ParaSolanaSigner: ObservableObject {
     public init(paraManager: ParaManager, rpcUrl: String, walletId: String? = nil) throws {
         self.paraManager = paraManager
         self.rpcUrl = rpcUrl
-        
-        // Create API client from RPC URL
-        guard let url = URL(string: rpcUrl) else {
-            throw ParaSolanaSignerError.networkError(underlyingError: nil)
-        }
-        
-        // Create API client from RPC URL
-        let network: Network = url.host?.contains("devnet") == true ? .devnet : .mainnetBeta
-        self.apiClient = JSONRPCAPIClient(
-            endpoint: APIEndPoint(
-                address: url.absoluteString,
-                network: network
-            )
-        )
         
         if let walletId = walletId {
             Task {
@@ -123,13 +108,35 @@ public class ParaSolanaSigner: ObservableObject {
     
     // MARK: - Public Methods
     
-    /// Get the SOL balance for this wallet
+    /// Get the SOL balance for this wallet via bridge
     /// - Returns: Balance in lamports
     /// - Throws: ParaSolanaSignerError if network request fails
     public func getBalance() async throws -> UInt64 {
+        guard self.walletId != nil else {
+            throw ParaSolanaSignerError.missingWalletId
+        }
+        
+        // Get the wallet address
         let publicKey = try await getPublicKey()
+        let address = publicKey.base58EncodedString
+        
         do {
-            return try await apiClient.getBalance(account: publicKey.base58EncodedString, commitment: nil)
+            // Pass address to the bridge (not walletId)
+            let args = ["address": address]
+            let result = try await paraManager.postMessage(method: "solanaWeb3GetBalance", payload: args)
+            
+            // Bridge returns balance as string
+            guard let balanceString = result as? String,
+                  let balance = UInt64(balanceString) else {
+                throw ParaSolanaSignerError.bridgeError("Invalid balance response from bridge")
+            }
+            return balance
+        } catch let error as ParaWebViewError {
+            // Check if the method is not implemented
+            if error.localizedDescription.contains("not implemented") {
+                throw ParaSolanaSignerError.bridgeError("Solana balance fetching is not yet supported in the bridge")
+            }
+            throw ParaSolanaSignerError.networkError(underlyingError: error)
         } catch {
             throw ParaSolanaSignerError.networkError(underlyingError: error)
         }
@@ -183,14 +190,22 @@ public class ParaSolanaSigner: ObservableObject {
             
             // Call bridge method to sign
             let args = SolanaSignTransactionArgs(b64EncodedTx: b64EncodedTx)
-            let result = try await paraManager.postMessage(method: "solanaWeb3SignTransaction", payload: args)
             
-            // Bridge returns base64 encoded signed transaction
-            guard let signedTxBase64 = result as? String else {
-                throw ParaSolanaSignerError.bridgeError("Invalid response from bridge")
+            do {
+                let result = try await paraManager.postMessage(method: "solanaWeb3SignTransaction", payload: args)
+                
+                // Bridge returns base64 encoded signed transaction
+                guard let signedTxBase64 = result as? String else {
+                    throw ParaSolanaSignerError.bridgeError("Invalid response from bridge")
+                }
+                
+                return signedTxBase64
+            } catch let error as ParaWebViewError {
+                if error.localizedDescription.contains("not implemented") {
+                    throw ParaSolanaSignerError.bridgeError("Solana transaction signing is not yet supported in the bridge")
+                }
+                throw error
             }
-            
-            return signedTxBase64
         } catch let error as ParaSolanaSignerError {
             throw error
         } catch {
@@ -217,14 +232,22 @@ public class ParaSolanaSigner: ObservableObject {
             
             // Call bridge method to send (signs and sends in one operation)
             let args = SolanaSendTransactionArgs(b64EncodedTx: b64EncodedTx)
-            let result = try await paraManager.postMessage(method: "solanaWeb3SendTransaction", payload: args)
             
-            // Bridge returns transaction signature
-            guard let signature = result as? String else {
-                throw ParaSolanaSignerError.bridgeError("Invalid response from bridge")
+            do {
+                let result = try await paraManager.postMessage(method: "solanaWeb3SendTransaction", payload: args)
+                
+                // Bridge returns transaction signature
+                guard let signature = result as? String else {
+                    throw ParaSolanaSignerError.bridgeError("Invalid response from bridge")
+                }
+                
+                return signature
+            } catch let error as ParaWebViewError {
+                if error.localizedDescription.contains("not implemented") {
+                    throw ParaSolanaSignerError.bridgeError("Solana transaction sending is not yet supported in the bridge")
+                }
+                throw error
             }
-            
-            return signature
         } catch let error as ParaSolanaSignerError {
             throw error
         } catch {
@@ -261,12 +284,26 @@ public class ParaSolanaSigner: ObservableObject {
                 solanaTransaction.feePayer = publicKey
             }
             
-            // Set recent blockhash if provided, otherwise fetch it
+            // Set recent blockhash if provided, otherwise fetch it via bridge
             if let blockhash = transaction.recentBlockhash {
                 solanaTransaction.recentBlockhash = blockhash
             } else {
-                let recentBlockhash = try await apiClient.getRecentBlockhash(commitment: nil)
-                solanaTransaction.recentBlockhash = recentBlockhash
+                do {
+                    // Bridge doesn't expect any parameters for getRecentBlockhash
+                    let result = try await paraManager.postMessage(method: "solanaWeb3GetRecentBlockhash", payload: [String: String]())
+                    
+                    // Bridge returns an object with blockhash and lastValidBlockHeight
+                    guard let blockhashResult = result as? [String: Any],
+                          let blockhash = blockhashResult["blockhash"] as? String else {
+                        throw ParaSolanaSignerError.bridgeError("Invalid blockhash response from bridge")
+                    }
+                    solanaTransaction.recentBlockhash = blockhash
+                } catch let error as ParaWebViewError {
+                    if error.localizedDescription.contains("not implemented") {
+                        throw ParaSolanaSignerError.bridgeError("Solana blockhash fetching is not yet supported in the bridge")
+                    }
+                    throw error
+                }
             }
             
             return solanaTransaction
