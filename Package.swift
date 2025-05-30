@@ -15,12 +15,17 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/attaswift/BigInt.git", .upToNextMinor(from: "5.4.0")),
         .package(url: "https://github.com/marmelroy/PhoneNumberKit", from: "4.0.0"),
+        .package(url: "https://github.com/p2p-org/solana-swift", from: "5.0.0"),
     ],
     targets: [
         // Targets are the basic building blocks of a package, defining a module or a test suite.
         // Targets can depend on other targets in this package and products from dependencies.
         .target(
             name: "ParaSwift",
-            dependencies: ["BigInt", "PhoneNumberKit"]),
+            dependencies: [
+                "BigInt", 
+                "PhoneNumberKit",
+                .product(name: "SolanaSwift", package: "solana-swift")
+            ]),
     ]
 )

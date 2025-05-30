@@ -60,6 +60,41 @@ public class ParaWebView: NSObject, ObservableObject {
         super.init()
         
         userContentController.add(LeakAvoider(delegate: self), name: "callback")
+        
+        // Add console logging support
+        let consoleScript = """
+        console.originalLog = console.log;
+        console.originalError = console.error;
+        console.originalWarn = console.warn;
+        
+        console.log = function() {
+            console.originalLog.apply(console, arguments);
+            window.webkit.messageHandlers.console?.postMessage({level: 'log', message: Array.from(arguments).join(' ')});
+        };
+        
+        console.error = function() {
+            console.originalError.apply(console, arguments);
+            window.webkit.messageHandlers.console?.postMessage({level: 'error', message: Array.from(arguments).join(' ')});
+        };
+        
+        console.warn = function() {
+            console.originalWarn.apply(console, arguments);
+            window.webkit.messageHandlers.console?.postMessage({level: 'warn', message: Array.from(arguments).join(' ')});
+        };
+        
+        window.addEventListener('error', function(e) {
+            console.error('JavaScript Error:', e.message, 'at', e.filename + ':' + e.lineno);
+        });
+        
+        window.addEventListener('unhandledrejection', function(e) {
+            console.error('Unhandled Promise Rejection:', e.reason);
+        });
+        """
+        
+        let consoleUserScript = WKUserScript(source: consoleScript, injectionTime: .atDocumentStart, forMainFrameOnly: false)
+        userContentController.addUserScript(consoleUserScript)
+        userContentController.add(LeakAvoider(delegate: self), name: "console")
+        
         self.webView.navigationDelegate = self
         
         loadBridge()
@@ -98,7 +133,7 @@ public class ParaWebView: NSObject, ObservableObject {
             }
             
             let message: [String: Any] = [
-                "messageType": "Capsule#invokeMethod",
+                "messageType": "Para#invokeMethod",
                 "methodName": method,
                 "arguments": encodedPayload,
                 "requestId": requestId
@@ -142,12 +177,15 @@ public class ParaWebView: NSObject, ObservableObject {
     
     /// Loads the JavaScript bridge into the WebView
     private func loadBridge() {
+        logger.info("Loading bridge from URL: \(self.environment.jsBridgeUrl.absoluteString)")
         let request = URLRequest(url: environment.jsBridgeUrl)
         webView.load(request)
     }
     
     /// Initializes Para with the current environment and API key
     private func initPara() {
+        logger.info("Initializing Para with environment: \(self.environment.name), apiKey: \(String(self.apiKey.prefix(8)))...")
+        
         let args: [String: String] = [
             "environment": environment.name,
             "apiKey": apiKey,
@@ -166,20 +204,27 @@ public class ParaWebView: NSObject, ObservableObject {
         
         guard let jsonData = try? JSONSerialization.data(withJSONObject: finalArgs, options: []),
               let jsonString = String(data: jsonData, encoding: .utf8) else {
+            logger.error("Failed to encode init arguments")
             lastError = ParaWebViewError.invalidArguments("Failed to encode init arguments")
             return
         }
         
         let script = """
+        console.log('Para Swift SDK: Sending init message');
         window.postMessage({
-          messageType: 'Capsule#init',
+          messageType: 'Para#init',
           arguments: \(jsonString)
         });
         """
         
-        webView.evaluateJavaScript(script) { [weak self] _, error in
+        logger.debug("Executing init script: \(script)")
+        
+        webView.evaluateJavaScript(script) { [weak self] result, error in
             if let error = error {
+                self?.logger.error("JavaScript init failed: \(error.localizedDescription)")
                 self?.lastError = error
+            } else {
+                self?.logger.debug("JavaScript init executed successfully")
             }
         }
     }
@@ -193,7 +238,7 @@ public class ParaWebView: NSObject, ObservableObject {
             return
         }
         
-        if method == "Capsule#init" && response["requestId"] == nil {
+        if method == "Para#init" && response["requestId"] == nil {
             logger.debug("Para initialization completed")
             self.isParaInitialized = true
             self.isReady = true
@@ -244,19 +289,41 @@ struct EmptyPayload: Encodable {}
 
 /// Extension implementing WKNavigationDelegate for ParaWebView
 extension ParaWebView: WKNavigationDelegate {
+    /// Called when navigation starts
+    public func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        logger.info("WebView started loading: \(webView.url?.absoluteString ?? "unknown")")
+    }
+    
+    /// Called when content starts arriving
+    public func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        logger.debug("WebView committed navigation")
+    }
+    
     /// Called when the WebView finishes loading
     public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        logger.info("WebView finished loading: \(webView.url?.absoluteString ?? "unknown")")
+        logger.info("Initializing Para...")
         initPara()
     }
     
     /// Called when the WebView fails to load
     public func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        logger.error("WebView failed to load: \(error.localizedDescription)")
+        logger.error("Failed URL: \(webView.url?.absoluteString ?? "unknown")")
         initializationError = error
     }
     
     /// Called when the WebView fails to load provisionally
     public func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        logger.error("WebView failed provisional navigation: \(error.localizedDescription)")
+        logger.error("Failed URL: \(self.environment.jsBridgeUrl.absoluteString)")
         initializationError = error
+    }
+    
+    /// Called to handle navigation policy decisions
+    public func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        logger.debug("Navigation policy decision for: \(navigationAction.request.url?.absoluteString ?? "unknown")")
+        decisionHandler(.allow)
     }
 }
 
@@ -264,8 +331,29 @@ extension ParaWebView: WKNavigationDelegate {
 extension ParaWebView: WKScriptMessageHandler {
     /// Handles messages received from JavaScript
     public func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard message.name == "callback" else { return }
+        if message.name == "console" {
+            if let consoleData = message.body as? [String: Any],
+               let level = consoleData["level"] as? String,
+               let consoleMessage = consoleData["message"] as? String {
+                switch level {
+                case "error":
+                    logger.error("[JS Console] \(consoleMessage)")
+                case "warn":
+                    logger.warning("[JS Console] \(consoleMessage)")
+                default:
+                    logger.debug("[JS Console] \(consoleMessage)")
+                }
+            }
+            return
+        }
+        
+        guard message.name == "callback" else { 
+            logger.warning("Received unknown message handler: \(message.name)")
+            return 
+        }
+        
         guard let resp = message.body as? [String: Any] else {
+            logger.error("Invalid JS callback payload: \(String(describing: message.body))")
             lastError = ParaWebViewError.bridgeError("Invalid JS callback payload")
             return
         }
