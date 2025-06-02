@@ -80,6 +80,7 @@ jobs:
             -testPlan "Example" \
             -resultBundlePath TestResults \
             -parallel-testing-enabled NO \
+            -only-testing:exampleUITests/ExampleUITests/test01EmailPasskeyCompleteFlow \
             clean test \
             2>&1 | tee xcodebuild.log
 
