@@ -35,7 +35,7 @@ jobs:
           repository: getpara/examples-hub
           token: ${{ secrets.GITHUB_TOKEN }}
           path: examples-hub
-          ref: 2.0.0-alpha
+          ref: fix-ui-tests-env-vars
 
       - name: Update swift-sdk branch in project.pbxproj
         if: ${{ github.event_name == 'pull_request' }}
