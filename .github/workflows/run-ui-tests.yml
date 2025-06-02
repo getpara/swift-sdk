@@ -23,7 +23,7 @@ jobs:
       - name: Set up Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: '16.2'
+          xcode-version: '16.4'
 
       - name: Verify Xcode version
         run: xcodebuild -version
@@ -34,7 +34,7 @@ jobs:
           repository: getpara/examples-hub
           token: ${{ secrets.GITHUB_TOKEN }}
           path: examples-hub
-          ref: main
+          ref: 2.0.0-alpha
 
       - name: Update swift-sdk branch in project.pbxproj
         if: ${{ github.event_name == 'pull_request' }}
