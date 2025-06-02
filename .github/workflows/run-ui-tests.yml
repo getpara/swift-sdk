@@ -52,24 +52,14 @@ jobs:
         run: |
           xcodebuild -resolvePackageDependencies
 
-      - name: Debug Environment Variables
+      - name: Verify Environment Variables
         working-directory: examples-hub/mobile/with-swift
         env:
           PARA_API_KEY: ${{ secrets.PARA_API_KEY }}
-          PARA_API_KEY_TEST: ${{ secrets.PARA_API_KEY }}
           PARA_ENVIRONMENT: ${{ secrets.PARA_ENVIRONMENT }}
         run: |
-          echo "=== Environment Variable Debug Info ==="
-          echo "PARA_API_KEY length: ${#PARA_API_KEY}"
-          echo "PARA_API_KEY (first 8 chars): ${PARA_API_KEY:0:8}..."
-          echo "PARA_API_KEY_TEST length: ${#PARA_API_KEY_TEST}"
-          echo "PARA_API_KEY_TEST (first 8 chars): ${PARA_API_KEY_TEST:0:8}..."
-          echo "PARA_ENVIRONMENT: $PARA_ENVIRONMENT"
-          echo "Available environment vars containing PARA:"
-          env | grep PARA || echo "No PARA variables found"
-          echo "Raw secret reference test:"
-          echo "Direct: ${{ secrets.PARA_API_KEY }}" | wc -c
-          echo "==========================================="
+          echo "✓ PARA_API_KEY configured (length: ${#PARA_API_KEY})"
+          echo "✓ PARA_ENVIRONMENT: $PARA_ENVIRONMENT"
 
       - name: Run UI Tests on Simulator
         id: run-tests
@@ -86,19 +76,22 @@ jobs:
             -resultBundlePath TestResults \
             -parallel-testing-enabled NO \
             -only-testing:exampleUITests/ExampleUITests/test01EmailPasskeyCompleteFlow \
+            -quiet \
             clean test \
             2>&1 | tee xcodebuild.log
 
-      # This step always runs to list files, even if the tests fail.
-      - name: List generated files (for debugging)
-        if: ${{ always() }}
+      # Extract key failure information from logs
+      - name: Show Test Failure Summary
+        if: ${{ failure() }}
         working-directory: examples-hub/mobile/with-swift
         run: |
-          echo "Listing top-level files in with-swift directory:"
-          ls -al
-          echo "Listing contents of TestResults or TestResults.xcresult if they exist:"
-          ls -al TestResults || true
-          ls -al TestResults.xcresult || true
+          echo "=== TEST FAILURE SUMMARY ==="
+          echo "Last 50 lines of build log:"
+          tail -50 xcodebuild.log || echo "No build log found"
+          echo ""
+          echo "Searching for test failures:"
+          grep -i "test.*failed\|error\|assertion" xcodebuild.log | tail -10 || echo "No specific test failures found"
+          echo "=========================="
 
       # Upload the raw xcodebuild.log
       - name: Upload Xcode build log
