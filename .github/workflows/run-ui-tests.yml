@@ -56,14 +56,19 @@ jobs:
         working-directory: examples-hub/mobile/with-swift
         env:
           PARA_API_KEY: ${{ secrets.PARA_API_KEY }}
+          PARA_API_KEY_TEST: ${{ secrets.PARA_API_KEY }}
           PARA_ENVIRONMENT: ${{ secrets.PARA_ENVIRONMENT }}
         run: |
           echo "=== Environment Variable Debug Info ==="
           echo "PARA_API_KEY length: ${#PARA_API_KEY}"
           echo "PARA_API_KEY (first 8 chars): ${PARA_API_KEY:0:8}..."
+          echo "PARA_API_KEY_TEST length: ${#PARA_API_KEY_TEST}"
+          echo "PARA_API_KEY_TEST (first 8 chars): ${PARA_API_KEY_TEST:0:8}..."
           echo "PARA_ENVIRONMENT: $PARA_ENVIRONMENT"
           echo "Available environment vars containing PARA:"
           env | grep PARA || echo "No PARA variables found"
+          echo "Raw secret reference test:"
+          echo "Direct: ${{ secrets.PARA_API_KEY }}" | wc -c
           echo "==========================================="
 
       - name: Run UI Tests on Simulator
