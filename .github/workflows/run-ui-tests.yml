@@ -52,6 +52,20 @@ jobs:
         run: |
           xcodebuild -resolvePackageDependencies
 
+      - name: Debug Environment Variables
+        working-directory: examples-hub/mobile/with-swift
+        env:
+          PARA_API_KEY: ${{ secrets.PARA_API_KEY }}
+          PARA_ENVIRONMENT: ${{ secrets.PARA_ENVIRONMENT }}
+        run: |
+          echo "=== Environment Variable Debug Info ==="
+          echo "PARA_API_KEY length: ${#PARA_API_KEY}"
+          echo "PARA_API_KEY (first 8 chars): ${PARA_API_KEY:0:8}..."
+          echo "PARA_ENVIRONMENT: $PARA_ENVIRONMENT"
+          echo "Available environment vars containing PARA:"
+          env | grep PARA || echo "No PARA variables found"
+          echo "==========================================="
+
       - name: Run UI Tests on Simulator
         id: run-tests
         working-directory: examples-hub/mobile/with-swift
@@ -65,6 +79,7 @@ jobs:
             -destination 'platform=iOS Simulator,OS=latest,name=iPhone 16 Pro' \
             -testPlan "Example" \
             -resultBundlePath TestResults \
+            -parallel-testing-enabled NO \
             clean test \
             2>&1 | tee xcodebuild.log
 
