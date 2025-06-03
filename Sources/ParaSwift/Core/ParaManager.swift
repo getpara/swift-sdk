@@ -54,7 +54,7 @@ public class ParaManager: NSObject, ObservableObject {
         self.paraWebView = ParaWebView(environment: environment, apiKey: apiKey)
         self.deepLink = deepLink ?? Bundle.main.bundleIdentifier!
         super.init()
-        Task {
+        Task { @MainActor in
             await waitForParaReady()
         }
     }
@@ -68,25 +68,45 @@ public class ParaManager: NSObject, ObservableObject {
         
         while !paraWebView.isReady && paraWebView.initializationError == nil && paraWebView.lastError == nil {
             if Date().timeIntervalSince(startTime) > maxWaitDuration {
-                sessionState = .inactive
+                await MainActor.run {
+                    self.objectWillChange.send()
+                    self.sessionState = .inactive
+                }
                 return
             }
             try? await Task.sleep(nanoseconds: 100_000_000)
         }
 
         if paraWebView.initializationError != nil || paraWebView.lastError != nil {
-            sessionState = .inactive
+            await MainActor.run {
+                self.objectWillChange.send()
+                self.sessionState = .inactive
+            }
             return
         }
 
         if let active = try? await isSessionActive(), active {
             if let loggedIn = try? await isFullyLoggedIn(), loggedIn {
-                sessionState = .activeLoggedIn
+                logger.info("Session is active and user is fully logged in")
+                await MainActor.run {
+                    self.objectWillChange.send()
+                    self.sessionState = .activeLoggedIn
+                }
             } else {
-                sessionState = .active
+                logger.info("Session is active but user is not fully logged in")
+                await MainActor.run {
+                    self.objectWillChange.send()
+                    self.sessionState = .active
+                }
             }
         } else {
-            sessionState = .inactive
+            logger.info("Session is not active")
+            await MainActor.run {
+                logger.info("Setting sessionState to .inactive")
+                self.objectWillChange.send()
+                self.sessionState = .inactive
+                logger.info("sessionState set to: \(String(describing: self.sessionState))")
+            }
         }
     }
     
@@ -155,6 +175,11 @@ public class ParaManager: NSObject, ObservableObject {
     }
     
     // MARK: - Core Session Methods
+    
+    /// Manually check and update session state
+    public func checkSessionState() async {
+        await waitForParaReady()
+    }
     
     /// Check if the user is fully logged in
     /// - Returns: True if the user is fully logged in
