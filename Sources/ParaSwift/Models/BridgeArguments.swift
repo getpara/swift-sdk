@@ -90,3 +90,20 @@ struct DistributeNewWalletShareArgs: Encodable {
     let walletId: String
     let userShare: String
 }
+
+// Cosmos bridge arguments
+struct CosmosSignerInitArgs: Encodable {
+    let walletId: String
+    let prefix: String
+    let messageSigningTimeoutMs: Int?
+}
+
+struct CosmosSignDirectArgs: Encodable {
+    let signerAddress: String
+    let signDocBase64: String
+}
+
+struct CosmosSignAminoArgs: Encodable {
+    let signerAddress: String
+    let signDocBase64: String
+}
