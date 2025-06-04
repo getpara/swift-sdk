@@ -98,23 +98,3 @@ struct CosmosSignerInitArgs: Encodable {
     let messageSigningTimeoutMs: Int?
 }
 
-struct CosmosSignDirectArgs: Encodable {
-    let signerAddress: String
-    let signDocBase64: String
-}
-
-struct CosmosSignAminoArgs: Encodable {
-    let signerAddress: String
-    let signDocBase64: String
-}
-
-struct CosmosSignTransactionArgs: Encodable {
-    let walletId: String
-    let chainId: String
-    let rpcUrl: String
-    let messages: String  // JSON string of messages
-    let fee: String       // JSON string of fee 
-    let memo: String
-    let signingMethod: String
-}
-

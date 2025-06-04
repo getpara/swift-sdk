@@ -7,6 +7,12 @@
 
 import Foundation
 
+/// Signing method for Cosmos transactions
+public enum CosmosSigningMethod: String {
+    case amino = "amino"    // Standard signing method (default)
+    case proto = "proto"    // Modern Proto/Direct signing
+}
+
 /// Errors specific to ParaCosmosSigner operations
 public enum ParaCosmosSignerError: Error, LocalizedError {
     /// Invalid wallet type - expected Cosmos wallet
@@ -75,56 +81,23 @@ public class ParaCosmosSigner: ObservableObject {
     /// The chain this signer is configured for
     public let chain: CosmosChain?
     
-    /// Initialize a new ParaCosmosSigner with a specific chain
+    /// Initialize a new ParaCosmosSigner
     /// - Parameters:
     ///   - paraManager: The ParaManager instance for bridge operations
-    ///   - chain: The Cosmos chain to use
     ///   - rpcUrl: The RPC endpoint URL for the Cosmos chain
     ///   - walletId: Optional specific wallet ID to use
-    ///   - messageSigningTimeoutMs: Optional timeout for signing operations
     public init(
         paraManager: ParaManager,
-        chain: CosmosChain,
         rpcUrl: String = "https://rpc.cosmos.directory:443/cosmoshub",
-        walletId: String? = nil,
-        messageSigningTimeoutMs: Int? = nil
+        walletId: String? = nil
     ) throws {
         self.paraManager = paraManager
-        self.prefix = chain.prefix
-        self.chain = chain
         self.rpcUrl = rpcUrl
-        self.messageSigningTimeoutMs = messageSigningTimeoutMs
         
-        if let walletId = walletId {
-            Task {
-                try await selectWallet(walletId: walletId)
-            }
-        }
-    }
-    
-    /// Initialize a new ParaCosmosSigner with a custom prefix
-    /// - Parameters:
-    ///   - paraManager: The ParaManager instance for bridge operations
-    ///   - prefix: Custom chain prefix (e.g., "cosmos", "osmo")
-    ///   - rpcUrl: The RPC endpoint URL for the Cosmos chain
-    ///   - walletId: Optional specific wallet ID to use
-    ///   - messageSigningTimeoutMs: Optional timeout for signing operations
-    public init(
-        paraManager: ParaManager,
-        prefix: String,
-        rpcUrl: String = "https://rpc.cosmos.directory:443/cosmoshub",
-        walletId: String? = nil,
-        messageSigningTimeoutMs: Int? = nil
-    ) throws {
-        guard !prefix.isEmpty else {
-            throw ParaCosmosSignerError.invalidPrefix("Prefix cannot be empty")
-        }
-        
-        self.paraManager = paraManager
-        self.prefix = prefix
-        self.chain = CosmosChain(rawValue: prefix)
-        self.rpcUrl = rpcUrl
-        self.messageSigningTimeoutMs = messageSigningTimeoutMs
+        // Default to cosmos chain
+        self.prefix = "cosmos"
+        self.chain = .cosmos
+        self.messageSigningTimeoutMs = nil
         
         if let walletId = walletId {
             Task {
@@ -207,73 +180,6 @@ public class ParaCosmosSigner: ObservableObject {
         }
     }
     
-    /// Sign a Cosmos transaction using the specified method
-    /// - Parameters:
-    ///   - transaction: The CosmosTransaction to sign
-    ///   - method: The signing method to use (defaults to transaction's preferred method)
-    /// - Returns: The signed transaction response
-    /// - Throws: ParaCosmosSignerError if signing fails
-    public func signTransaction(
-        _ transaction: CosmosTransaction,
-        method: CosmosSigningMethod? = nil
-    ) async throws -> CosmosSignResponse {
-        guard let walletId = self.walletId else {
-            throw ParaCosmosSignerError.missingWalletId
-        }
-        
-        let signingMethod = method ?? transaction.signingMethod
-        
-        do {
-            // Use simple string dictionary like other signers do
-            let messagesArray = transaction.messages.map { msg in
-                ["typeUrl": msg.typeUrl, "value": msg.value]
-            }
-            let feeDict: [String: Any] = [
-                "amount": transaction.fee.amount.map { coin in
-                    ["denom": coin.denom, "amount": coin.amount]
-                },
-                "gas": transaction.fee.gas
-            ]
-            
-            let messagesData = try JSONSerialization.data(withJSONObject: messagesArray)
-            let feeData = try JSONSerialization.data(withJSONObject: feeDict)
-            
-            guard let messagesJson = String(data: messagesData, encoding: .utf8),
-                  let feeJson = String(data: feeData, encoding: .utf8) else {
-                throw ParaCosmosSignerError.bridgeError("Failed to encode messages or fee as JSON")
-            }
-            
-            // Use simple string dictionary like other working signers
-            let args = [
-                "walletId": walletId,
-                "chainId": "cosmoshub-4",
-                "rpcUrl": rpcUrl,
-                "messages": messagesJson,
-                "fee": feeJson,
-                "memo": transaction.memo ?? "",
-                "signingMethod": signingMethod.rawValue
-            ]
-            
-            let result = try await paraManager.postMessage(
-                method: "cosmJsSignTransaction",
-                payload: args
-            )
-            
-            // Parse the response
-            guard let responseDict = result as? [String: Any] else {
-                throw ParaCosmosSignerError.bridgeError("Invalid response format from bridge")
-            }
-            
-            return try parseSignResponse(responseDict, signingMethod: signingMethod)
-            
-        } catch let error as ParaWebViewError {
-            throw ParaCosmosSignerError.signingFailed(underlyingError: error)
-        } catch let error as ParaCosmosSignerError {
-            throw error
-        } catch {
-            throw ParaCosmosSignerError.signingFailed(underlyingError: error)
-        }
-    }
     
     /// Sign arbitrary message (for demo/testing purposes)
     /// - Parameter message: The message to sign
@@ -303,43 +209,97 @@ public class ParaCosmosSigner: ObservableObject {
         }
     }
     
-    /// Create a transfer transaction for this chain
-    /// - Parameters:
-    ///   - toAddress: Recipient address
-    ///   - amount: Amount to send
-    ///   - denom: Token denomination (defaults to chain's default)
-    ///   - memo: Optional memo
-    ///   - signingMethod: Signing method (defaults to amino)
-    /// - Returns: A configured CosmosTransaction
-    /// - Throws: CosmosTransactionError if parameters are invalid
-    public func createTransferTransaction(
-        toAddress: String,
-        amount: String,
-        denom: String? = nil,
-        memo: String? = nil,
-        signingMethod: CosmosSigningMethod = .amino
-    ) async throws -> CosmosTransaction {
-        let fromAddress = try await getAddress()
-        let tokenDenom = denom ?? chain?.defaultDenom ?? "uatom"
-        
-        return try CosmosTransaction.transfer(
-            fromAddress: fromAddress,
-            toAddress: toAddress,
-            amount: amount,
-            denom: tokenDenom,
-            memo: memo,
-            signingMethod: signingMethod
-        )
-    }
     
-    /// High-level transfer method
+    /// Sign a Cosmos transaction
     /// - Parameters:
     ///   - to: Recipient address
     ///   - amount: Amount to send in the smallest unit
     ///   - denom: Token denomination (defaults to chain's default)
     ///   - memo: Optional memo
     ///   - signingMethod: Signing method (defaults to amino)
-    /// - Returns: The signed transaction response
+    /// - Returns: A dictionary containing the signed transaction data
+    /// - Throws: ParaCosmosSignerError if signing fails
+    public func signTransaction(
+        to recipient: String,
+        amount: String,
+        denom: String? = nil,
+        memo: String? = nil,
+        signingMethod: CosmosSigningMethod = .amino
+    ) async throws -> [String: Any] {
+        guard let walletId = self.walletId else {
+            throw ParaCosmosSignerError.missingWalletId
+        }
+        
+        let fromAddress = try await getAddress()
+        let tokenDenom = denom ?? chain?.defaultDenom ?? "uatom"
+        
+        // Validate recipient address
+        guard isValidBech32Address(recipient) else {
+            throw ParaCosmosSignerError.invalidTransaction("Invalid recipient address: \(recipient)")
+        }
+        
+        // Create the message structure that the bridge expects
+        let message: [String: Any] = [
+            "typeUrl": "/cosmos.bank.v1beta1.MsgSend",
+            "value": [
+                "from_address": fromAddress,
+                "to_address": recipient,
+                "amount": [["denom": tokenDenom, "amount": amount]]
+            ]
+        ]
+        
+        let fee: [String: Any] = [
+            "amount": [["denom": tokenDenom, "amount": "5000"]],
+            "gas": "200000"
+        ]
+        
+        do {
+            let messagesData = try JSONSerialization.data(withJSONObject: [message])
+            let feeData = try JSONSerialization.data(withJSONObject: fee)
+            
+            guard let messagesJson = String(data: messagesData, encoding: .utf8),
+                  let feeJson = String(data: feeData, encoding: .utf8) else {
+                throw ParaCosmosSignerError.bridgeError("Failed to encode messages or fee as JSON")
+            }
+            
+            let args = [
+                "walletId": walletId,
+                "chainId": "cosmoshub-4",
+                "rpcUrl": rpcUrl,
+                "messages": messagesJson,
+                "fee": feeJson,
+                "memo": memo ?? "",
+                "signingMethod": signingMethod.rawValue
+            ]
+            
+            let result = try await paraManager.postMessage(
+                method: "cosmJsSignTransaction",
+                payload: args
+            )
+            
+            guard let responseDict = result as? [String: Any] else {
+                throw ParaCosmosSignerError.bridgeError("Invalid response format from bridge")
+            }
+            
+            return responseDict
+            
+        } catch let error as ParaWebViewError {
+            throw ParaCosmosSignerError.signingFailed(underlyingError: error)
+        } catch let error as ParaCosmosSignerError {
+            throw error
+        } catch {
+            throw ParaCosmosSignerError.signingFailed(underlyingError: error)
+        }
+    }
+
+    /// High-level transfer method that signs and sends a transaction
+    /// - Parameters:
+    ///   - to: Recipient address
+    ///   - amount: Amount to send in the smallest unit
+    ///   - denom: Token denomination (defaults to chain's default)
+    ///   - memo: Optional memo
+    ///   - signingMethod: Signing method (defaults to amino)
+    /// - Returns: A dictionary containing the signing result
     /// - Throws: ParaCosmosSignerError if operation fails
     public func sendTokens(
         to recipient: String,
@@ -347,52 +307,38 @@ public class ParaCosmosSigner: ObservableObject {
         denom: String? = nil,
         memo: String? = nil,
         signingMethod: CosmosSigningMethod = .amino
-    ) async throws -> CosmosSignResponse {
-        let fromAddress = try await getAddress()
-        let tokenDenom = denom ?? chain?.defaultDenom ?? "uatom"
-        
-        let transaction = try CosmosTransaction(
-            messages: [
-                try CosmosMessage.send(
-                    fromAddress: fromAddress,
-                    toAddress: recipient,
-                    amount: [CosmosCoin(denom: tokenDenom, amount: amount)]
-                )
-            ],
-            fee: try CosmosFee(denom: tokenDenom, amount: "5000", gas: "200000"),
+    ) async throws -> [String: Any] {
+        // For now, sendTokens just calls signTransaction since the bridge doesn't have broadcast functionality yet
+        // In the future, this could sign + broadcast the transaction to the network
+        return try await signTransaction(
+            to: recipient,
+            amount: amount,
+            denom: denom,
             memo: memo,
             signingMethod: signingMethod
         )
-        
-        return try await signTransaction(transaction)
     }
     
     // MARK: - Private Helpers
     
-    /// Parse the sign response from the bridge
-    private func parseSignResponse(
-        _ responseDict: [String: Any],
-        signingMethod: CosmosSigningMethod
-    ) throws -> CosmosSignResponse {
-        // Extract signature information - both Amino and Proto responses have similar structure
-        guard let signature = responseDict["signature"] as? [String: Any],
-              let sig = signature["signature"] as? String else {
-            throw ParaCosmosSignerError.bridgeError("Missing signature in response")
+    /// Basic Bech32 address validation
+    /// Validates format: hrp + separator + data (32-90 chars total)
+    private func isValidBech32Address(_ address: String) -> Bool {
+        let parts = address.components(separatedBy: "1")
+        guard parts.count == 2 else { return false }
+        
+        let hrp = parts[0]
+        let data = parts[1]
+        
+        // Basic validation: reasonable length and charset
+        guard hrp.count >= 1 && hrp.count <= 10,
+              data.count >= 6 && data.count <= 87,
+              address.count >= 8 && address.count <= 90 else {
+            return false
         }
         
-        // Extract pubkey if available (optional since bridge handles this)
-        var pubKey: CosmosPubKey?
-        if let pubKeyDict = signature["pub_key"] as? [String: Any],
-           let pubKeyType = pubKeyDict["type"] as? String,
-           let pubKeyValue = pubKeyDict["value"] as? String {
-            pubKey = CosmosPubKey(type: pubKeyType, value: pubKeyValue)
-        }
-        
-        let cosmosSignature = CosmosSignature(pubKey: pubKey, signature: sig)
-        
-        // Extract signed document
-        let signedDoc = responseDict["signed"] as? [String: Any] ?? [:]
-        
-        return CosmosSignResponse(signature: cosmosSignature, signedDoc: signedDoc)
+        // Bech32 charset validation (simplified)
+        let bech32Charset = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+        return data.lowercased().allSatisfy { bech32Charset.contains($0) }
     }
 }
