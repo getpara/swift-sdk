@@ -19,7 +19,7 @@ struct MetaMaskResponseData<T: Codable>: Codable {
         let code: Int
         let message: String
     }
-    
+
     /// Optional error message from MetaMask
     let error: ErrorResponse?
     /// Optional successful result from MetaMask
@@ -35,5 +35,6 @@ struct ConnectResponse: Codable {
         /// Array of connected account addresses
         let accounts: [String]
     }
+
     let data: Data
-} 
+}

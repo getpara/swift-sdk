@@ -1,6 +1,6 @@
 //
-//  File.swift
-//  
+//  Wallet.swift
+//
 //
 //  Created by Brian Corbin on 6/4/24.
 //
@@ -47,7 +47,7 @@ public struct Wallet {
     public let createdAt: Date?
     /// Name of the wallet
     public let name: String?
-    
+
     /// Creates a new wallet with basic information
     /// - Parameters:
     ///   - id: Unique identifier for the wallet
@@ -56,21 +56,21 @@ public struct Wallet {
     ///   - publicKey: Public key of the wallet
     public init(id: String, signer: String?, address: String?, publicKey: String?) {
         self.id = id
-        self.userId = nil
-        self.type = nil
-        self.pregenIdentifier = nil
-        self.pregenIdentifierType = nil
-        self.keyGenComplete = nil
-        self.updatedAt = nil
-        self.partnerId = nil
+        userId = nil
+        type = nil
+        pregenIdentifier = nil
+        pregenIdentifierType = nil
+        keyGenComplete = nil
+        updatedAt = nil
+        partnerId = nil
         self.signer = signer
         self.address = address
-        self.scheme = nil
+        scheme = nil
         self.publicKey = publicKey
-        self.createdAt = nil
-        self.name = nil
+        createdAt = nil
+        name = nil
     }
-    
+
     /// Creates a wallet from a dictionary of values
     /// - Parameter result: Dictionary containing wallet information
     public init(result: [String: Any]) {
@@ -78,7 +78,7 @@ public struct Wallet {
         dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZ"
         id = result["id"]! as! String
         userId = result["userId"] as? String
-        
+
         let typeString = result["type"] as? String
         type = typeString.flatMap(WalletType.init)
         pregenIdentifier = result["pregenIdentifier"] as? String

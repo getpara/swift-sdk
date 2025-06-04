@@ -1,14 +1,14 @@
 /*
-See the LICENSE.txt file for this sample's licensing information.
+ See the LICENSE.txt file for this sample's licensing information.
 
-Abstract:
-PasskeysManager handles passkey-based authentication using Apple's AuthenticationServices framework.
-*/
+ Abstract:
+ PasskeysManager handles passkey-based authentication using Apple's AuthenticationServices framework.
+ */
 
 import AuthenticationServices
-import SwiftUI
 import Combine
 import os
+import SwiftUI
 
 /// Errors that can occur during authorization handling
 public enum AuthorizationHandlingError: Error {
@@ -20,32 +20,31 @@ public enum AuthorizationHandlingError: Error {
 
 extension AuthorizationHandlingError: LocalizedError {
     public var errorDescription: String? {
-            switch self {
-            case .unknownAuthorizationResult:
-                return NSLocalizedString("Received an unknown authorization result.",
-                                         comment: "Human readable description of receiving an unknown authorization result.")
-            case .otherError:
-                return NSLocalizedString("Encountered an error handling the authorization result.",
-                                         comment: "Human readable description of an unknown error while handling the authorization result.")
-            }
+        switch self {
+        case .unknownAuthorizationResult:
+            NSLocalizedString("Received an unknown authorization result.",
+                              comment: "Human readable description of receiving an unknown authorization result.")
+        case .otherError:
+            NSLocalizedString("Encountered an error handling the authorization result.",
+                              comment: "Human readable description of an unknown error while handling the authorization result.")
         }
+    }
 }
 
 /// Manages passkey-based authentication using Apple's AuthenticationServices framework
 final class PasskeysManager: NSObject, ASAuthorizationControllerDelegate {
-    
     /// The relying party identifier for passkey authentication
     public var relyingPartyIdentifier: String
-    
+
     /// The presentation context provider for authorization requests
     public weak var presentationContextProvider: ASAuthorizationControllerPresentationContextProviding?
-    
+
     /// Creates a new PasskeysManager instance
     /// - Parameter relyingPartyIdentifier: The relying party identifier for passkey authentication
     public init(relyingPartyIdentifier: String) {
         self.relyingPartyIdentifier = relyingPartyIdentifier
     }
-    
+
     /// Signs into a passkey account
     /// - Parameters:
     ///   - authorizationController: The authorization controller to use
@@ -56,12 +55,13 @@ final class PasskeysManager: NSObject, ASAuthorizationControllerDelegate {
     public func signIntoPasskeyAccount(authorizationController: AuthorizationController,
                                        challenge: String,
                                        allowedPublicKeys: [String],
-                                       options: ASAuthorizationController.RequestOptions = []) async throws -> ASAuthorizationPlatformPublicKeyCredentialAssertion {
+                                       options: ASAuthorizationController.RequestOptions = []) async throws -> ASAuthorizationPlatformPublicKeyCredentialAssertion
+    {
         let authorizationResult = try await authorizationController.performRequests(
             signInRequests(challenge: challenge, allowedPublicKeys: allowedPublicKeys),
-                options: options
+            options: options,
         )
-        
+
         switch authorizationResult {
         case let .passkeyAssertion(passkeyAssertion):
             return passkeyAssertion
@@ -69,7 +69,7 @@ final class PasskeysManager: NSObject, ASAuthorizationControllerDelegate {
             throw AuthorizationHandlingError.unknownAuthorizationResult(authorizationResult)
         }
     }
-    
+
     /// Creates a new passkey account
     /// - Parameters:
     ///   - authorizationController: The authorization controller to use
@@ -78,12 +78,13 @@ final class PasskeysManager: NSObject, ASAuthorizationControllerDelegate {
     ///   - options: Optional authorization request options
     /// - Returns: A passkey registration for the new account
     public func createPasskeyAccount(authorizationController: AuthorizationController, username: String, userHandle: Data,
-                                     options: ASAuthorizationController.RequestOptions = []) async throws -> ASAuthorizationPlatformPublicKeyCredentialRegistration {
+                                     options: ASAuthorizationController.RequestOptions = []) async throws -> ASAuthorizationPlatformPublicKeyCredentialRegistration
+    {
         let authorizationResult = try await authorizationController.performRequests(
-                [passkeyRegistrationRequest(username: username, userHandle: userHandle)],
-                options: options
+            [passkeyRegistrationRequest(username: username, userHandle: userHandle)],
+            options: options,
         )
-        
+
         switch authorizationResult {
         case let .passkeyRegistration(passkeyRegistration):
             return passkeyRegistration
@@ -91,7 +92,7 @@ final class PasskeysManager: NSObject, ASAuthorizationControllerDelegate {
             throw AuthorizationHandlingError.unknownAuthorizationResult(authorizationResult)
         }
     }
-    
+
     /// Generates a passkey challenge
     /// - Returns: The challenge data
     private func passkeyChallenge() async -> Data {
@@ -106,7 +107,7 @@ final class PasskeysManager: NSObject, ASAuthorizationControllerDelegate {
     private func passkeyAssertionRequest(challenge: String, allowedPublicKeys: [String]) async -> ASAuthorizationRequest {
         let request = ASAuthorizationPlatformPublicKeyCredentialProvider(relyingPartyIdentifier: relyingPartyIdentifier)
             .createCredentialAssertionRequest(challenge: Data(base64URLEncoded: challenge)!)
-        
+
         // Only add to allowedCredentials if we have specific keys to filter by
         // This prevents showing all available passkeys when we want to specify particular ones
         if !allowedPublicKeys.isEmpty {
@@ -115,7 +116,7 @@ final class PasskeysManager: NSObject, ASAuthorizationControllerDelegate {
                 request.allowedCredentials.append(ASAuthorizationPlatformPublicKeyCredentialDescriptor(credentialID: apkData))
             }
         }
-        
+
         return request
     }
 
@@ -126,7 +127,7 @@ final class PasskeysManager: NSObject, ASAuthorizationControllerDelegate {
     /// - Returns: An authorization request for passkey registration
     private func passkeyRegistrationRequest(username: String, userHandle: Data) async -> ASAuthorizationRequest {
         await ASAuthorizationPlatformPublicKeyCredentialProvider(relyingPartyIdentifier: relyingPartyIdentifier)
-           .createCredentialRegistrationRequest(challenge: passkeyChallenge(), name: username, userID: userHandle)
+            .createCredentialRegistrationRequest(challenge: passkeyChallenge(), name: username, userID: userHandle)
     }
 
     /// Creates sign-in requests for passkey authentication
@@ -139,12 +140,12 @@ final class PasskeysManager: NSObject, ASAuthorizationControllerDelegate {
         // This ensures the system directly uses the passkey picker without offering password alternative
         await [passkeyAssertionRequest(challenge: challenge, allowedPublicKeys: allowedPublicKeys)]
     }
-    
+
     /// Handles the authorization result
     /// - Parameters:
     ///   - authorizationResult: The result of the authorization request
     ///   - username: Optional username for logging
-    private func handleAuthorizationResult(_ authorizationResult: ASAuthorizationResult, username: String? = nil) async throws {
+    private func handleAuthorizationResult(_ authorizationResult: ASAuthorizationResult, username _: String? = nil) async throws {
         switch authorizationResult {
         case let .passkeyAssertion(passkeyAssertion):
             // The login was successful.

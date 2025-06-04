@@ -10,7 +10,8 @@ let package = Package(
         // Products define the executables and libraries a package produces, making them visible to other packages.
         .library(
             name: "ParaSwift",
-            targets: ["ParaSwift"]),
+            targets: ["ParaSwift"],
+        ),
     ],
     dependencies: [
         .package(url: "https://github.com/attaswift/BigInt.git", .upToNextMinor(from: "5.4.0")),
@@ -23,9 +24,10 @@ let package = Package(
         .target(
             name: "ParaSwift",
             dependencies: [
-                "BigInt", 
+                "BigInt",
                 "PhoneNumberKit",
-                .product(name: "SolanaSwift", package: "solana-swift")
-            ]),
-    ]
+                .product(name: "SolanaSwift", package: "solana-swift"),
+            ],
+        ),
+    ],
 )

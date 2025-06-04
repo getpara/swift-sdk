@@ -2,23 +2,23 @@ import Foundation
 
 struct GeneratePasskeyArgs: Encodable {
     let attestationObject: String // Base64 encoded
-    let clientDataJson: String    // Base64 encoded
+    let clientDataJson: String // Base64 encoded
     let credentialsId: String
-    let userHandle: String        // Base64 encoded
+    let userHandle: String // Base64 encoded
     let biometricsId: String
 }
 
 struct VerifyWebChallengeArgs: Encodable {
     let publicKey: String
     let authenticatorData: String // Base64 encoded
-    let clientDataJSON: String    // Base64 encoded
-    let signature: String         // Base64 encoded
+    let clientDataJSON: String // Base64 encoded
+    let signature: String // Base64 encoded
 }
 
 struct LoginWithPasskeyArgs: Encodable {
     let userId: String
     let credentialsId: String
-    let userHandle: String        // Base64 encoded
+    let userHandle: String // Base64 encoded
 }
 
 struct GetWebChallengeArgs: Encodable {
@@ -44,10 +44,10 @@ struct SignMessageArgs: Encodable {
 }
 
 struct SignTransactionArgs: Encodable {
-     let walletId: String
-     let rlpEncodedTxBase64: String
-     let chainId: String
-     let timeoutMs: Int?
+    let walletId: String
+    let rlpEncodedTxBase64: String
+    let chainId: String
+    let timeoutMs: Int?
 }
 
 // For Signers
@@ -65,7 +65,7 @@ struct EthersSignTransactionArgs: Encodable {
 }
 
 struct EthersSendTransactionArgs: Encodable {
-     let b64EncodedTx: String
+    let b64EncodedTx: String
 }
 
 // Solana bridge arguments

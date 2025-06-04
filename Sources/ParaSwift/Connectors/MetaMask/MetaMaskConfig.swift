@@ -8,10 +8,10 @@ public struct MetaMaskConfig {
     public let appId: String
     /// The MetaMask SDK API version to use
     public let apiVersion: String
-    
+
     public init(appName: String, appId: String, apiVersion: String = "1.0") {
         self.appName = appName
         self.appId = appId
         self.apiVersion = apiVersion
     }
-} 
+}
