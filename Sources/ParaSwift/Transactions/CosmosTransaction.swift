@@ -167,12 +167,6 @@ public struct CosmosTransaction: Codable {
     public let memo: String?
     /// Preferred signing method (defaults to amino)
     public let signingMethod: CosmosSigningMethod
-    /// Chain ID (optional, can be auto-detected)
-    public let chainId: String?
-    /// Account number (optional, can be auto-fetched)
-    public let accountNumber: UInt64?
-    /// Sequence number (optional, can be auto-fetched)
-    public let sequence: UInt64?
     
     /// Creates a new Cosmos transaction
     /// - Parameters:
@@ -180,17 +174,11 @@ public struct CosmosTransaction: Codable {
     ///   - fee: Transaction fee
     ///   - memo: Optional memo text
     ///   - signingMethod: Signing method (defaults to amino)
-    ///   - chainId: Chain ID (optional)
-    ///   - accountNumber: Account number (optional)
-    ///   - sequence: Sequence number (optional)
     public init(
         messages: [CosmosMessage],
         fee: CosmosFee,
         memo: String? = nil,
-        signingMethod: CosmosSigningMethod = .amino,
-        chainId: String? = nil,
-        accountNumber: UInt64? = nil,
-        sequence: UInt64? = nil
+        signingMethod: CosmosSigningMethod = .amino
     ) throws {
         guard !messages.isEmpty else {
             throw CosmosTransactionError.invalidAmount("Transaction must have at least one message")
@@ -200,9 +188,6 @@ public struct CosmosTransaction: Codable {
         self.fee = fee
         self.memo = memo
         self.signingMethod = signingMethod
-        self.chainId = chainId
-        self.accountNumber = accountNumber
-        self.sequence = sequence
     }
     
     /// Convenience initializer for token transfer
@@ -268,43 +253,6 @@ public struct CosmosTransaction: Codable {
         let bech32Charset = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
         return data.lowercased().allSatisfy { bech32Charset.contains($0) }
     }
-    
-    /// Converts transaction to Amino StdSignDoc format for direct signing
-    public func toAminoSignDoc(signerAddress: String, accountNumber: String = "0", sequence: String = "0", chainId: String = "cosmoshub-4") throws -> [String: Any] {
-        // Convert messages to Amino format
-        let aminoMsgs = messages.map { message -> [String: Any] in
-            if message.typeUrl == "/cosmos.bank.v1beta1.MsgSend" {
-                return [
-                    "type": "cosmos-sdk/MsgSend",
-                    "value": message.value
-                ]
-            }
-            // Add more message type conversions as needed
-            return [
-                "type": message.typeUrl,
-                "value": message.value
-            ]
-        }
-        
-        return [
-            "chain_id": chainId,
-            "account_number": accountNumber,
-            "sequence": sequence,
-            "fee": [
-                "amount": fee.amount.map { ["denom": $0.denom, "amount": $0.amount] },
-                "gas": fee.gas
-            ],
-            "msgs": aminoMsgs,
-            "memo": memo ?? ""
-        ]
-    }
-    
-    /// Encodes as Amino StdSignDoc for bridge communication
-    public func toAminoBase64(signerAddress: String, accountNumber: String = "0", sequence: String = "0", chainId: String = "cosmoshub-4") throws -> String {
-        let stdSignDoc = try toAminoSignDoc(signerAddress: signerAddress, accountNumber: accountNumber, sequence: sequence, chainId: chainId)
-        let data = try JSONSerialization.data(withJSONObject: stdSignDoc, options: [])
-        return data.base64EncodedString()
-    }
 }
 
 /// Response structure for Cosmos signing operations
@@ -345,10 +293,10 @@ extension CosmosSignResponse: Codable {
 
 /// Cosmos signature structure
 public struct CosmosSignature: Codable {
-    public let pubKey: CosmosPubKey
+    public let pubKey: CosmosPubKey?
     public let signature: String
     
-    public init(pubKey: CosmosPubKey, signature: String) {
+    public init(pubKey: CosmosPubKey?, signature: String) {
         self.pubKey = pubKey
         self.signature = signature
     }

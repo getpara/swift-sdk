@@ -85,7 +85,7 @@ public class ParaCosmosSigner: ObservableObject {
     public init(
         paraManager: ParaManager,
         chain: CosmosChain,
-        rpcUrl: String = "https://rest.cosmos.directory/cosmoshub",
+        rpcUrl: String = "https://rpc.cosmos.directory:443/cosmoshub",
         walletId: String? = nil,
         messageSigningTimeoutMs: Int? = nil
     ) throws {
@@ -112,7 +112,7 @@ public class ParaCosmosSigner: ObservableObject {
     public init(
         paraManager: ParaManager,
         prefix: String,
-        rpcUrl: String = "https://rest.cosmos.directory/cosmoshub",
+        rpcUrl: String = "https://rpc.cosmos.directory:443/cosmoshub",
         walletId: String? = nil,
         messageSigningTimeoutMs: Int? = nil
     ) throws {
@@ -217,73 +217,56 @@ public class ParaCosmosSigner: ObservableObject {
         _ transaction: CosmosTransaction,
         method: CosmosSigningMethod? = nil
     ) async throws -> CosmosSignResponse {
+        guard let walletId = self.walletId else {
+            throw ParaCosmosSignerError.missingWalletId
+        }
+        
         let signingMethod = method ?? transaction.signingMethod
         
-        switch signingMethod {
-        case .proto:
-            return try await signDirectTransaction(transaction)
-        case .amino:
-            return try await signAminoTransaction(transaction)
-        }
-    }
-    
-    /// Sign a transaction using Proto/Direct signing method
-    /// - Parameter transaction: The CosmosTransaction to sign
-    /// - Returns: The signed transaction response
-    /// - Throws: ParaCosmosSignerError if signing fails
-    public func signDirectTransaction(_ transaction: CosmosTransaction) async throws -> CosmosSignResponse {
-        guard self.walletId != nil else {
-            throw ParaCosmosSignerError.missingWalletId
-        }
-        
         do {
-            let signerAddress = try await getAddress()
+            // Use simple string dictionary like other signers do
+            let messagesArray = transaction.messages.map { msg in
+                ["typeUrl": msg.typeUrl, "value": msg.value]
+            }
+            let feeDict: [String: Any] = [
+                "amount": transaction.fee.amount.map { coin in
+                    ["denom": coin.denom, "amount": coin.amount]
+                },
+                "gas": transaction.fee.gas
+            ]
             
-            // For Proto signing, we would need to create a proper SignDoc
-            // This is a placeholder - proper Proto implementation would need:
-            // 1. Fetch account number and sequence from chain
-            // 2. Create proper protobuf SignDoc
-            // 3. Encode it properly for the bridge
-            throw ParaCosmosSignerError.bridgeError("Proto signing is not yet implemented. Please use Amino signing.")
+            let messagesData = try JSONSerialization.data(withJSONObject: messagesArray)
+            let feeData = try JSONSerialization.data(withJSONObject: feeDict)
             
-        } catch let error as ParaCosmosSignerError {
-            throw error
-        } catch {
-            throw ParaCosmosSignerError.signingFailed(underlyingError: error)
-        }
-    }
-    
-    /// Sign a transaction using Amino signing method
-    /// - Parameter transaction: The CosmosTransaction to sign
-    /// - Returns: The signed transaction response
-    /// - Throws: ParaCosmosSignerError if signing fails
-    public func signAminoTransaction(_ transaction: CosmosTransaction) async throws -> CosmosSignResponse {
-        guard self.walletId != nil else {
-            throw ParaCosmosSignerError.missingWalletId
-        }
-        
-        do {
-            let signerAddress = try await getAddress()
-            let signDocBase64 = try transaction.toAminoBase64(signerAddress: signerAddress)
+            guard let messagesJson = String(data: messagesData, encoding: .utf8),
+                  let feeJson = String(data: feeData, encoding: .utf8) else {
+                throw ParaCosmosSignerError.bridgeError("Failed to encode messages or fee as JSON")
+            }
             
-            let args = CosmosSignAminoArgs(
-                signerAddress: signerAddress,
-                signDocBase64: signDocBase64
+            // Use simple string dictionary like other working signers
+            let args = [
+                "walletId": walletId,
+                "chainId": "cosmoshub-4",
+                "rpcUrl": rpcUrl,
+                "messages": messagesJson,
+                "fee": feeJson,
+                "memo": transaction.memo ?? "",
+                "signingMethod": signingMethod.rawValue
+            ]
+            
+            let result = try await paraManager.postMessage(
+                method: "cosmJsSignTransaction",
+                payload: args
             )
-            
-            let result = try await paraManager.postMessage(method: "cosmJsSignAmino", payload: args)
             
             // Parse the response
             guard let responseDict = result as? [String: Any] else {
                 throw ParaCosmosSignerError.bridgeError("Invalid response format from bridge")
             }
             
-            return try parseSignResponse(responseDict)
+            return try parseSignResponse(responseDict, signingMethod: signingMethod)
             
         } catch let error as ParaWebViewError {
-            if error.localizedDescription.contains("not implemented") {
-                throw ParaCosmosSignerError.bridgeError("Cosmos Amino signing is not yet supported in the bridge")
-            }
             throw ParaCosmosSignerError.signingFailed(underlyingError: error)
         } catch let error as ParaCosmosSignerError {
             throw error
@@ -349,25 +332,67 @@ public class ParaCosmosSigner: ObservableObject {
         )
     }
     
+    /// High-level transfer method
+    /// - Parameters:
+    ///   - to: Recipient address
+    ///   - amount: Amount to send in the smallest unit
+    ///   - denom: Token denomination (defaults to chain's default)
+    ///   - memo: Optional memo
+    ///   - signingMethod: Signing method (defaults to amino)
+    /// - Returns: The signed transaction response
+    /// - Throws: ParaCosmosSignerError if operation fails
+    public func sendTokens(
+        to recipient: String,
+        amount: String,
+        denom: String? = nil,
+        memo: String? = nil,
+        signingMethod: CosmosSigningMethod = .amino
+    ) async throws -> CosmosSignResponse {
+        let fromAddress = try await getAddress()
+        let tokenDenom = denom ?? chain?.defaultDenom ?? "uatom"
+        
+        let transaction = try CosmosTransaction(
+            messages: [
+                try CosmosMessage.send(
+                    fromAddress: fromAddress,
+                    toAddress: recipient,
+                    amount: [CosmosCoin(denom: tokenDenom, amount: amount)]
+                )
+            ],
+            fee: try CosmosFee(denom: tokenDenom, amount: "5000", gas: "200000"),
+            memo: memo,
+            signingMethod: signingMethod
+        )
+        
+        return try await signTransaction(transaction)
+    }
+    
     // MARK: - Private Helpers
     
     /// Parse the sign response from the bridge
-    private func parseSignResponse(_ responseDict: [String: Any]) throws -> CosmosSignResponse {
-        // This is a simplified parser - the actual structure depends on CosmJS response format
-        guard let signatureDict = responseDict["signature"] as? [String: Any],
-              let signatureValue = signatureDict["signature"] as? String,
-              let pubKeyDict = signatureDict["pub_key"] as? [String: Any],
-              let pubKeyType = pubKeyDict["type"] as? String,
-              let pubKeyValue = pubKeyDict["value"] as? String else {
-            throw ParaCosmosSignerError.bridgeError("Invalid signature response structure")
+    private func parseSignResponse(
+        _ responseDict: [String: Any],
+        signingMethod: CosmosSigningMethod
+    ) throws -> CosmosSignResponse {
+        // Extract signature information - both Amino and Proto responses have similar structure
+        guard let signature = responseDict["signature"] as? [String: Any],
+              let sig = signature["signature"] as? String else {
+            throw ParaCosmosSignerError.bridgeError("Missing signature in response")
         }
         
-        let pubKey = CosmosPubKey(type: pubKeyType, value: pubKeyValue)
-        let signature = CosmosSignature(pubKey: pubKey, signature: signatureValue)
+        // Extract pubkey if available (optional since bridge handles this)
+        var pubKey: CosmosPubKey?
+        if let pubKeyDict = signature["pub_key"] as? [String: Any],
+           let pubKeyType = pubKeyDict["type"] as? String,
+           let pubKeyValue = pubKeyDict["value"] as? String {
+            pubKey = CosmosPubKey(type: pubKeyType, value: pubKeyValue)
+        }
+        
+        let cosmosSignature = CosmosSignature(pubKey: pubKey, signature: sig)
         
         // Extract signed document
         let signedDoc = responseDict["signed"] as? [String: Any] ?? [:]
         
-        return CosmosSignResponse(signature: signature, signedDoc: signedDoc)
+        return CosmosSignResponse(signature: cosmosSignature, signedDoc: signedDoc)
     }
 }
