@@ -1,8 +1,9 @@
-import SwiftUI // Keep if @MainActor is used, otherwise Foundation
 import os
+import SwiftUI // Keep if @MainActor is used, otherwise Foundation
 
 // MARK: - Signing Operations
-extension ParaManager {
+
+public extension ParaManager {
     /// Signs a message with a wallet.
     ///
     /// - Parameters:
@@ -10,7 +11,7 @@ extension ParaManager {
     ///   - message: The message to sign.
     ///   - timeoutMs: Optional timeout in milliseconds for the signing operation.
     /// - Returns: The signature as a string.
-    public func signMessage(walletId: String, message: String, timeoutMs: Int? = nil) async throws -> String {
+    func signMessage(walletId: String, message: String, timeoutMs: Int? = nil) async throws -> String {
         try await ensureWebViewReady()
 
         struct SignMessageParams: Encodable {
@@ -23,7 +24,7 @@ extension ParaManager {
         let params = SignMessageParams(
             walletId: walletId,
             messageBase64: messageBase64,
-            timeoutMs: timeoutMs
+            timeoutMs: timeoutMs,
         )
 
         let result = try await postMessage(method: "signMessage", payload: params)
@@ -31,7 +32,7 @@ extension ParaManager {
             result,
             expectedType: String.self,
             method: "signMessage",
-            key: "signature"
+            key: "signature",
         )
     }
 
@@ -43,7 +44,7 @@ extension ParaManager {
     ///   - chainId: The chain ID.
     ///   - timeoutMs: Optional timeout in milliseconds for the signing operation.
     /// - Returns: The signature as a string.
-    public func signTransaction(
+    func signTransaction(
         walletId: String,
         rlpEncodedTx: String,
         chainId: String,
@@ -62,7 +63,7 @@ extension ParaManager {
             walletId: walletId,
             rlpEncodedTxBase64: rlpEncodedTx.toBase64(),
             chainId: chainId,
-            timeoutMs: timeoutMs
+            timeoutMs: timeoutMs,
         )
 
         let result = try await postMessage(method: "signTransaction", payload: params)
@@ -70,7 +71,7 @@ extension ParaManager {
             result,
             expectedType: String.self,
             method: "signTransaction",
-            key: "signature"
+            key: "signature",
         )
     }
 }

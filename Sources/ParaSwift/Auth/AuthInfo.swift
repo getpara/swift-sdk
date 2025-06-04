@@ -18,7 +18,7 @@ public struct ExternalWalletInfo: Codable {
     public let type: ExternalWalletType
     /// The wallet provider (e.g. "metamask")
     public let provider: String?
-    
+
     /// Creates a new ExternalWalletInfo instance
     /// - Parameters:
     ///   - address: The wallet address
@@ -37,30 +37,30 @@ public enum Auth: Encodable {
     case email(String)
     /// Phone-based authentication with full phone number including country code
     case phone(String)
-    
+
     /// String representation for debugging
     public var debugDescription: String {
         switch self {
-        case .email(let value):
-            return "Email(\(value))"
-        case .phone(let phoneNumber):
-            return "Phone(\(phoneNumber))"
+        case let .email(value):
+            "Email(\(value))"
+        case let .phone(phoneNumber):
+            "Phone(\(phoneNumber))"
         }
     }
-    
+
     /// Encodes the authentication type
     /// - Parameter encoder: The encoder to use
     /// - Throws: An error if encoding fails
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
-        case .email(let value):
+        case let .email(value):
             try container.encode(value, forKey: .email)
-        case .phone(let phoneNumber):
+        case let .phone(phoneNumber):
             try container.encode(phoneNumber, forKey: .phone)
         }
     }
-    
+
     /// Coding keys for the Auth enum
     private enum CodingKeys: String, CodingKey {
         case email, phone
@@ -103,7 +103,7 @@ public struct AuthState: Codable {
     public let passwordUrl: String?
     /// Biometric hints for the user's devices
     public let biometricHints: [BiometricHint]?
-    
+
     /// Information about a biometric authentication device
     public struct BiometricHint: Codable {
         /// The AAGUID (Authenticator Attestation GUID) of the device
@@ -111,7 +111,7 @@ public struct AuthState: Codable {
         /// The user agent string of the device
         public let userAgent: String?
     }
-    
+
     /// Creates a new AuthState instance
     /// - Parameters:
     ///   - stage: The authentication stage
@@ -153,24 +153,24 @@ public struct AuthState: Codable {
         self.passwordUrl = passwordUrl
         self.biometricHints = biometricHints
     }
-    
+
     // MARK: - Codable implementation
-    
+
     /// Coding keys for encoding/decoding
     private enum CodingKeys: String, CodingKey {
         case stage, userId, displayName, pfpUrl, username
         case email, phone
         case passkeyUrl, passkeyId, passkeyKnownDeviceUrl, passwordUrl, biometricHints
     }
-    
+
     /// Initialize from decoder
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        
+
         // Decode required fields
         stage = try container.decode(AuthStage.self, forKey: .stage)
         userId = try container.decode(String.self, forKey: .userId)
-        
+
         // Decode optional fields
         email = try container.decodeIfPresent(String.self, forKey: .email)
         phone = try container.decodeIfPresent(String.self, forKey: .phone)

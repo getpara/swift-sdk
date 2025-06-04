@@ -7,22 +7,22 @@ public enum MetaMaskError: LocalizedError {
     case invalidResponse
     case metaMaskError(code: Int, message: String)
     case notInstalled
-    
+
     public var errorDescription: String? {
         switch self {
         case .alreadyProcessing:
-            return "Already processing a request"
+            "Already processing a request"
         case .invalidURL:
-            return "Invalid URL construction"
+            "Invalid URL construction"
         case .invalidResponse:
-            return "Invalid response from MetaMask"
-        case .metaMaskError(let code, let message):
-            return "MetaMask error (\(code)): \(message)"
+            "Invalid response from MetaMask"
+        case let .metaMaskError(code, message):
+            "MetaMask error (\(code)): \(message)"
         case .notInstalled:
-            return "MetaMask is not installed."
+            "MetaMask is not installed."
         }
     }
-    
+
     /// Whether the error represents a user rejection
     public var isUserRejected: Bool {
         if case .metaMaskError(code: 4001, _) = self {
@@ -30,4 +30,4 @@ public enum MetaMaskError: LocalizedError {
         }
         return false
     }
-} 
+}

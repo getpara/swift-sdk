@@ -3,8 +3,7 @@ import os
 import PhoneNumberKit
 
 /// Utility class containing formatting helpers and common operations
-public struct ParaFormatting {
-    
+public enum ParaFormatting {
     /// Formats a phone number into the international format required by Para.
     ///
     /// - Parameters:
@@ -16,10 +15,10 @@ public struct ParaFormatting {
     /// - Note: This method uses PhoneNumberKit to validate and format phone numbers correctly.
     ///         All Para authentication methods expect phone numbers in international format.
     ///         Example: formatPhoneNumber(phoneNumber: "5551234", countryCode: "1") returns "+15551234".
-    public static func formatPhoneNumber(phoneNumber: String, countryCode: String? = nil, forDisplay: Bool = false) -> String? {
+    public static func formatPhoneNumber(phoneNumber: String, countryCode: String? = nil, forDisplay _: Bool = false) -> String? {
         let phoneNumberKit = PhoneNumberUtility()
         let phoneString = countryCode ?? "" + phoneNumber
-        
+
         do {
             let phoneNumber = try phoneNumberKit.parse(phoneString)
             return phoneNumberKit.format(phoneNumber, toType: .e164)
@@ -36,7 +35,6 @@ public extension Logger {
 }
 
 extension Data {
-
     /// Instantiates data by decoding a base64url string into base64
     ///
     /// - Parameter string: A base64url encoded string
@@ -49,13 +47,11 @@ extension Data {
     /// - Returns: A string that is base64 encoded but made safe for passing
     ///            in as a query parameter into a URL string
     func base64URLEncodedString() -> String {
-        return self.base64EncodedString().toggleBase64URLSafe(on: true)
+        base64EncodedString().toggleBase64URLSafe(on: true)
     }
-
 }
 
 extension String {
-
     /// Encodes or decodes into a base64url safe representation
     ///
     /// - Parameter on: Whether or not the string should be made safe for URL strings
@@ -63,13 +59,13 @@ extension String {
     func toggleBase64URLSafe(on: Bool) -> String {
         if on {
             // Make base64 string safe for passing into URL query params
-            let base64url = self.replacingOccurrences(of: "/", with: "_")
+            let base64url = replacingOccurrences(of: "/", with: "_")
                 .replacingOccurrences(of: "+", with: "-")
                 .replacingOccurrences(of: "=", with: "")
             return base64url
         } else {
             // Return to base64 encoding
-            var base64 = self.replacingOccurrences(of: "_", with: "/")
+            var base64 = replacingOccurrences(of: "_", with: "/")
                 .replacingOccurrences(of: "-", with: "+")
             // Add any necessary padding with `=`
             if base64.count % 4 != 0 {
@@ -78,7 +74,6 @@ extension String {
             return base64
         }
     }
-
 }
 
 extension String {
@@ -91,14 +86,13 @@ extension String {
     }
 
     func toBase64() -> String {
-        return Data(self.utf8).base64EncodedString()
+        Data(utf8).base64EncodedString()
     }
-
 }
 
 extension URL {
     func valueOf(_ queryParameterName: String) -> String? {
-        guard let url = URLComponents(string: self.absoluteString) else { return nil }
+        guard let url = URLComponents(string: absoluteString) else { return nil }
         return url.queryItems?.first(where: { $0.name == queryParameterName })?.value
     }
 }

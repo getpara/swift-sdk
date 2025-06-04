@@ -6,13 +6,13 @@ struct OriginatorInfo: Codable {
         let originatorInfo: Info
         let type: String
         let originator: Info
-        
+
         init(originatorInfo: Info, originator: Info) {
             self.originatorInfo = originatorInfo
-            self.type = "originator_info"
+            type = "originator_info"
             self.originator = originator
         }
-        
+
         struct Info: Codable {
             let url: String
             let apiVersion: String
@@ -27,7 +27,7 @@ struct OriginatorInfo: Codable {
     let platform: String
     let title: String
     let dappId: String
-    
+
     // Encodes the originator info in MetaMask's expected format
     func encode() throws -> String {
         let info = Payload.Info(
@@ -35,7 +35,7 @@ struct OriginatorInfo: Codable {
             apiVersion: apiVersion,
             platform: platform,
             title: title,
-            dappId: dappId
+            dappId: dappId,
         )
         let payload = Payload(originatorInfo: info, originator: info)
         let data = try JSONEncoder().encode(payload)
@@ -47,12 +47,12 @@ struct OriginatorInfo: Codable {
 struct SignMessageRequest: Codable {
     let params: [String]
     let method: String
-    
+
     init(params: [String]) {
         self.params = params
-        self.method = "personal_sign"
+        method = "personal_sign"
     }
-    
+
     func encode() throws -> String {
         let data = try JSONEncoder().encode(self)
         return data.base64EncodedString()
@@ -63,15 +63,15 @@ struct SignMessageRequest: Codable {
 struct SendTransactionRequest: Codable {
     let params: [[String: String]]
     let method: String
-    
+
     init(params: [[String: String]]) {
         self.params = params
-        self.method = "eth_sendTransaction"
+        method = "eth_sendTransaction"
     }
-    
+
     func encode() throws -> String {
         let encoder = JSONEncoder()
         let data = try encoder.encode(self)
         return data.base64EncodedString()
     }
-} 
+}

@@ -1,7 +1,7 @@
 import Foundation
 
 /// Current package version.
-public struct ParaPackage {
+public enum ParaPackage {
     /// Package version of the Swift SDK
     public static let version = "2.0.0"
 }
@@ -25,14 +25,14 @@ public enum ParaError: Error, CustomStringConvertible {
 
     public var description: String {
         switch self {
-        case .bridgeError(let info):
-            return "The following error happened while the javascript bridge was executing: \(info)"
+        case let .bridgeError(info):
+            "The following error happened while the javascript bridge was executing: \(info)"
         case .bridgeTimeoutError:
-            return "The javascript bridge did not respond in time and the continuation has been cancelled."
-        case .error(let info):
-            return "An error occurred: \(info)"
-        case .notImplemented(let feature):
-            return "Feature not implemented: \(feature)"
+            "The javascript bridge did not respond in time and the continuation has been cancelled."
+        case let .error(info):
+            "An error occurred: \(info)"
+        case let .notImplemented(feature):
+            "Feature not implemented: \(feature)"
         }
     }
 }

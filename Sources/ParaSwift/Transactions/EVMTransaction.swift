@@ -5,8 +5,8 @@
 //  Created by Para AI on 1/27/25.
 //
 
-import Foundation
 import BigInt
+import Foundation
 
 /// A struct representing an Ethereum transaction
 public struct EVMTransaction: Codable {
@@ -36,7 +36,7 @@ public struct EVMTransaction: Codable {
     public let smartContractByteCode: String?
     /// Transaction type (0 = legacy, 1 = access list, 2 = EIP-1559)
     public let type: Int?
-    
+
     /// Creates a new EVM transaction
     /// - Parameters:
     ///   - to: The recipient address
@@ -81,7 +81,7 @@ public struct EVMTransaction: Codable {
         self.smartContractByteCode = smartContractByteCode
         self.type = type
     }
-    
+
     /// Convenience initializer for simple ETH transfers
     /// - Parameters:
     ///   - to: Recipient address
@@ -92,10 +92,10 @@ public struct EVMTransaction: Codable {
             to: to,
             value: value,
             gasLimit: gasLimit,
-            type: 2  // Default to EIP-1559
+            type: 2, // Default to EIP-1559
         )
     }
-    
+
     /// Convenience initializer for contract interactions
     /// - Parameters:
     ///   - contract: Contract address
@@ -119,10 +119,10 @@ public struct EVMTransaction: Codable {
             smartContractAbi: abi,
             smartContractFunctionName: function,
             smartContractFunctionArgs: args,
-            type: 2  // Default to EIP-1559
+            type: 2, // Default to EIP-1559
         )
     }
-    
+
     /// Encodes the transaction as base64 for bridge communication
     public func b64Encoded() -> String {
         let encodedTransaction = try! JSONEncoder().encode(self)
@@ -132,22 +132,22 @@ public struct EVMTransaction: Codable {
 
 // MARK: - Codable Implementation
 
-extension EVMTransaction {
+public extension EVMTransaction {
     private enum CodingKeys: String, CodingKey {
         case to, value, gasLimit, gasPrice, maxPriorityFeePerGas, maxFeePerGas
         case nonce, chainId, smartContractAbi, smartContractFunctionName
         case smartContractFunctionArgs, smartContractByteCode, type
     }
-    
-    public init(from decoder: Decoder) throws {
+
+    init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        
+
         // Helper function to decode hex strings to BigUInt
         func decodeBigUInt(_ key: CodingKeys) throws -> BigUInt? {
             guard let hexString = try container.decodeIfPresent(String.self, forKey: key) else { return nil }
             return BigUInt(hexString.hasPrefix("0x") ? String(hexString.dropFirst(2)) : hexString, radix: 16)
         }
-        
+
         to = try container.decodeIfPresent(String.self, forKey: .to)
         value = try decodeBigUInt(.value)
         gasLimit = try decodeBigUInt(.gasLimit)
@@ -162,17 +162,17 @@ extension EVMTransaction {
         smartContractByteCode = try container.decodeIfPresent(String.self, forKey: .smartContractByteCode)
         type = try container.decodeIfPresent(Int.self, forKey: .type)
     }
-    
-    public func encode(to encoder: Encoder) throws {
+
+    func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        
+
         // Helper function to encode BigUInt as hex string
         func encode(_ value: BigUInt?, for key: CodingKeys) throws {
-            if let value = value {
+            if let value {
                 try container.encode("0x" + String(value, radix: 16), forKey: key)
             }
         }
-        
+
         try container.encodeIfPresent(to, forKey: .to)
         try encode(value, for: .value)
         try encode(gasLimit, for: .gasLimit)

@@ -1,11 +1,11 @@
-import SwiftUI
 import AuthenticationServices
-import WebKit
 import os
+import SwiftUI
+import WebKit
 
 // MARK: - Internal Authentication Helpers and Types
-extension ParaManager {
 
+extension ParaManager {
     private struct SignUpOrLogInPayload: Encodable {
         let auth: AnyEncodable
 
@@ -16,10 +16,10 @@ extension ParaManager {
 
     private func createSignUpOrLogInPayload(from auth: Auth) -> SignUpOrLogInPayload {
         switch auth {
-        case .email(let emailAddress):
-            return SignUpOrLogInPayload(auth: ["email": emailAddress])
-        case .phone(let phoneNumber):
-            return SignUpOrLogInPayload(auth: ["phone": phoneNumber])
+        case let .email(emailAddress):
+            SignUpOrLogInPayload(auth: ["email": emailAddress])
+        case let .phone(phoneNumber):
+            SignUpOrLogInPayload(auth: ["phone": phoneNumber])
         }
     }
 
@@ -30,7 +30,8 @@ extension ParaManager {
 
         guard let stageString = resultDict["stage"] as? String,
               let stage = AuthStage(rawValue: stageString),
-              let userId = resultDict["userId"] as? String else {
+              let userId = resultDict["userId"] as? String
+        else {
             throw ParaError.bridgeError("Missing required fields in authentication response")
         }
 
@@ -77,34 +78,35 @@ extension ParaManager {
             passkeyId: passkeyId,
             passkeyKnownDeviceUrl: passkeyKnownDeviceUrl,
             passwordUrl: passwordUrl,
-            biometricHints: biometricHints
+            biometricHints: biometricHints,
         )
     }
 }
 
 // MARK: - Authentication Types and Methods
-extension ParaManager {
+
+public extension ParaManager {
     /// Enum defining the possible methods for login when the stage is .login
-    public enum LoginMethod: String, CustomStringConvertible {
+    enum LoginMethod: String, CustomStringConvertible {
         case passkey
         case password
         case passkeyKnownDevice
-        
+
         public var description: String {
-            return self.rawValue
+            rawValue
         }
     }
 
     /// Enum defining the possible methods for signup when the stage is .signup
-    public enum SignupMethod: String, CustomStringConvertible {
+    enum SignupMethod: String, CustomStringConvertible {
         case passkey
         case password
-        
+
         public var description: String {
-            return self.rawValue
+            rawValue
         }
     }
-    
+
     /// Signs up a new user or logs in an existing user
     /// - Parameter auth: Authentication information (email or phone)
     /// - Returns: AuthState object containing information about the next steps
@@ -117,34 +119,34 @@ extension ParaManager {
         let authState = try parseAuthStateFromResult(result)
 
         if authState.stage == .verify || authState.stage == .login {
-            self.sessionState = .active
+            sessionState = .active
         }
 
         return authState
     }
-    
+
     /// Initiates the email/phone authentication flow (signup or login).
     /// Determines if the user exists and returns the appropriate next state.
     /// - Parameter auth: The authentication identifier (Email, Phone).
     /// - Returns: The `AuthState` indicating the next step (.verify for new users, .login for existing users).
     @MainActor
-    public func initiateAuthFlow(auth: Auth) async throws -> AuthState {
+    func initiateAuthFlow(auth: Auth) async throws -> AuthState {
         logger.debug("Initiating auth flow with: \(auth.debugDescription)")
         let authState = try await signUpOrLogIn(auth: auth)
         logger.debug("Auth flow initiated. Resulting stage: \(authState.stage.rawValue)")
         return authState
     }
-    
+
     /// Check if a specific login method is available for the given authentication state.
     /// - Parameters:
     ///   - method: The login method to check availability for.
     ///   - authState: The current authentication state.
     /// - Returns: Boolean indicating if the method is available.
-    public func isLoginMethodAvailable(method: LoginMethod, authState: AuthState) -> Bool {
+    func isLoginMethodAvailable(method: LoginMethod, authState: AuthState) -> Bool {
         guard authState.stage == .login else {
             return false
         }
-        
+
         switch method {
         case .passkey:
             return authState.passkeyUrl != nil || authState.passkeyKnownDeviceUrl != nil
@@ -154,10 +156,10 @@ extension ParaManager {
             return authState.passkeyKnownDeviceUrl != nil
         }
     }
-    
+
     /// Determines which login method to use when a user has previously registered.
     /// This prioritizes passkeys for security when available.
-    /// 
+    ///
     /// - Parameter authState: The current authentication state
     /// - Returns: The recommended login method to use
     private func determinePreferredLoginMethod(authState: AuthState) -> LoginMethod? {
@@ -165,31 +167,32 @@ extension ParaManager {
             logger.error("determinePreferredLoginMethod called with invalid stage: \(authState.stage.rawValue)")
             return nil
         }
-        
+
         // Check if we have both password and passkey options available
         let hasPasswordOption = authState.passwordUrl != nil
         let hasPasskeyOption = authState.passkeyUrl != nil || authState.passkeyKnownDeviceUrl != nil
-        
+
         // Prioritize passkeys when available as they are more secure
         if hasPasskeyOption {
             return .passkey
         }
-        
+
         // Fall back to password if passkey is not available
         if hasPasswordOption {
             return .password
         }
-        
+
         return nil
     }
 }
 
 // MARK: - Verification Methods
-extension ParaManager {
+
+public extension ParaManager {
     /// Verifies a new account with the provided verification code
     /// - Parameter verificationCode: The verification code sent to the user
     /// - Returns: AuthState object containing information about the next steps
-    public func verifyNewAccount(verificationCode: String) async throws -> AuthState {
+    func verifyNewAccount(verificationCode: String) async throws -> AuthState {
         try await ensureWebViewReady()
 
         let result = try await postMessage(method: "verifyNewAccount", payload: VerifyNewAccountArgs(verificationCode: verificationCode))
@@ -199,38 +202,39 @@ extension ParaManager {
         let authState = try parseAuthStateFromResult(result)
 
         if authState.stage == .signup {
-            self.sessionState = .active
+            sessionState = .active
         }
 
         return authState
     }
-    
+
     /// Handles the verification step for a new user.
     /// Assumes the initial `authState.stage` was `.verify`.
     /// - Parameter verificationCode: The code entered by the user.
     /// - Returns: The `AuthState` indicating the next step (expected to be `.signup`).
     @MainActor
-    public func handleVerificationCode(verificationCode: String) async throws -> AuthState {
+    func handleVerificationCode(verificationCode: String) async throws -> AuthState {
         logger.debug("Handling verification code...")
         let newState = try await verifyNewAccount(verificationCode: verificationCode)
         logger.debug("Verification code handled. Resulting stage: \(newState.stage.rawValue)")
-        
+
         guard newState.stage == .signup else {
             logger.error("Verification completed but resulted in unexpected stage: \(newState.stage.rawValue)")
             throw ParaError.bridgeError("Verification resulted in unexpected state.")
         }
         return newState
     }
-    
+
     /// Resend verification code for account verification
-    public func resendVerificationCode() async throws {
+    func resendVerificationCode() async throws {
         try await ensureWebViewReady()
         _ = try await postMessage(method: "resendVerificationCode", payload: EmptyPayload())
     }
 }
 
 // MARK: - Passkey Authentication
-extension ParaManager {
+
+public extension ParaManager {
     /// Logs in with passkey authentication.
     ///
     /// - Parameters:
@@ -239,38 +243,38 @@ extension ParaManager {
     ///   - phone: Optional phone number for authentication.
     /// - Note: Either email or phone can be provided, but not both. If both are nil, the user will be prompted to select a passkey.
     @MainActor
-    public func loginWithPasskey(
+    func loginWithPasskey(
         authorizationController: AuthorizationController,
         email: String? = nil,
-        phone: String? = nil
+        phone: String? = nil,
     ) async throws {
-        if let email = email {
+        if let email {
             logger.debug("Passkey login with email: \(email)")
-        } else if let phone = phone {
+        } else if let phone {
             logger.debug("Passkey login with phone: \(phone)")
         } else {
             logger.debug("Passkey login without identifier")
         }
-        
+
         // Create challenge payload
         let payload = GetWebChallengeArgs(email: email, phone: phone)
         let getWebChallengeResult = try await postMessage(method: "getWebChallenge", payload: payload)
-        
+
         let challenge = try decodeDictionaryResult(
             getWebChallengeResult,
             expectedType: String.self,
             method: "getWebChallenge",
-            key: "challenge"
+            key: "challenge",
         )
-        
+
         // Get allowedPublicKeys from the bridge response
         let allowedPublicKeys = try decodeDictionaryResult(
             getWebChallengeResult,
             expectedType: [String]?.self,
             method: "getWebChallenge",
-            key: "allowedPublicKeys"
+            key: "allowedPublicKeys",
         ) ?? []
-        
+
         // Log the number of keys we received
         if allowedPublicKeys.isEmpty {
             logger.debug("No specific public keys provided for this account. Will show all available passkeys.")
@@ -281,7 +285,7 @@ extension ParaManager {
         let signIntoPasskeyAccountResult = try await passkeysManager.signIntoPasskeyAccount(
             authorizationController: authorizationController,
             challenge: challenge,
-            allowedPublicKeys: allowedPublicKeys
+            allowedPublicKeys: allowedPublicKeys,
         )
 
         let id = signIntoPasskeyAccountResult.credentialID.base64URLEncodedString()
@@ -293,31 +297,31 @@ extension ParaManager {
             publicKey: id,
             authenticatorData: authenticatorData,
             clientDataJSON: clientDataJSON,
-            signature: signature
+            signature: signature,
         )
-        
+
         let verifyWebChallengeResult = try await postMessage(
             method: "verifyWebChallenge",
-            payload: verifyArgs
+            payload: verifyArgs,
         )
-        
+
         let userId = try decodeResult(verifyWebChallengeResult, expectedType: String.self, method: "verifyWebChallenge")
 
         let loginArgs = LoginWithPasskeyArgs(
             userId: userId,
             credentialsId: id,
-            userHandle: signIntoPasskeyAccountResult.userID.base64URLEncodedString()
+            userHandle: signIntoPasskeyAccountResult.userID.base64URLEncodedString(),
         )
-        
+
         let loginResult = try await postMessage(
             method: "loginWithPasskey",
-            payload: loginArgs
+            payload: loginArgs,
         )
         if let _ = loginResult as? [String: Any] {
             logger.debug("loginWithPasskey bridge call returned wallet data")
         }
 
-        self.wallets = try await fetchWallets()
+        wallets = try await fetchWallets()
         sessionState = .activeLoggedIn
     }
 
@@ -326,7 +330,7 @@ extension ParaManager {
     ///   - identifier: The user identifier
     ///   - biometricsId: The biometrics ID for the passkey
     ///   - authorizationController: The controller to handle authorization UI
-    public func generatePasskey(identifier: String, biometricsId: String, authorizationController: AuthorizationController) async throws {
+    func generatePasskey(identifier: String, biometricsId: String, authorizationController: AuthorizationController) async throws {
         try await ensureWebViewReady()
         var userHandle = Data(count: 32)
         _ = userHandle.withUnsafeMutableBytes {
@@ -337,7 +341,7 @@ extension ParaManager {
         let result = try await passkeysManager.createPasskeyAccount(
             authorizationController: authorizationController,
             username: identifier,
-            userHandle: userHandle
+            userHandle: userHandle,
         )
 
         guard let rawAttestation = result.rawAttestationObject else {
@@ -355,15 +359,16 @@ extension ParaManager {
             clientDataJson: clientDataJSONEncoded,
             credentialsId: credentialIDEncoded,
             userHandle: userHandleEncoded,
-            biometricsId: biometricsId
+            biometricsId: biometricsId,
         )
-        
+
         _ = try await postMessage(method: "generatePasskey", payload: generateArgs)
     }
 }
 
 // MARK: - Password Authentication
-extension ParaManager {
+
+public extension ParaManager {
     /// Presents a password URL using a web authentication session and verifies authentication completion.
     /// The caller is responsible for handling subsequent steps like wallet creation if needed.
     ///
@@ -371,7 +376,7 @@ extension ParaManager {
     ///   - url: The password authentication URL to present
     ///   - webAuthenticationSession: The session to use for presenting the URL
     /// - Returns: The callback URL if authentication was successful via direct callback, or a success placeholder URL if the window was closed (interpreted as success). Returns nil on failure.
-    public func presentPasswordUrl(_ url: String, webAuthenticationSession: WebAuthenticationSession) async throws -> URL? {
+    func presentPasswordUrl(_ url: String, webAuthenticationSession: WebAuthenticationSession) async throws -> URL? {
         let logger = Logger(subsystem: "com.paraSwift", category: "PasswordAuth")
         guard let originalPasswordUrl = URL(string: url) else {
             throw ParaError.error("Invalid password authentication URL")
@@ -396,8 +401,8 @@ extension ParaManager {
             let callbackURL = try await webAuthenticationSession.authenticate(using: finalPasswordUrl, callbackURLScheme: deepLink)
             // Normal callback URL completion (rare for password auth)
             logger.debug("Received callback URL from authentication session")
-            
-            self.wallets = try await self.fetchWallets()
+
+            wallets = try await fetchWallets()
 
             return callbackURL
         } catch {
@@ -407,13 +412,13 @@ extension ParaManager {
     }
 }
 
-
 // MARK: - External Wallet Authentication
-extension ParaManager {
+
+public extension ParaManager {
     /// Logs in using an external wallet
     /// - Parameters:
     ///   - wallet: Information about the external wallet
-    public func loginExternalWallet(wallet: ExternalWalletInfo) async throws {
+    func loginExternalWallet(wallet: ExternalWalletInfo) async throws {
         try await ensureWebViewReady()
 
         // Create a payload with just the wallet info (no identity wrapper needed)
@@ -422,11 +427,11 @@ extension ParaManager {
             let type: String
             let provider: String?
         }
-        
+
         let params = WalletLoginPayload(
             address: wallet.address,
             type: wallet.type.rawValue,
-            provider: wallet.provider
+            provider: wallet.provider,
         )
 
         // Call the loginExternalWallet method
@@ -434,21 +439,21 @@ extension ParaManager {
 
         // Process the result
         do {
-            let _ = try parseAuthStateFromResult(authStateResult)
+            _ = try parseAuthStateFromResult(authStateResult)
             logger.debug("loginExternalWallet completed for address: \(wallet.address)")
         } catch let parseError {
             logger.error("loginExternalWallet: Failed to parse result: \(parseError.localizedDescription)")
             throw parseError
         }
 
-        self.sessionState = .activeLoggedIn
+        sessionState = .activeLoggedIn
     }
 
     /// Logs in with an external wallet address (legacy version)
     /// - Parameters:
     ///   - externalAddress: The external wallet address
     ///   - type: The type of wallet (e.g. "EVM")
-    public func loginExternalWallet(externalAddress: String, type: String) async throws {
+    func loginExternalWallet(externalAddress: String, type: String) async throws {
         let walletType = ExternalWalletType(rawValue: type) ?? .evm
         let wallet = ExternalWalletInfo(address: externalAddress, type: walletType)
         try await loginExternalWallet(wallet: wallet)
@@ -456,10 +461,11 @@ extension ParaManager {
 }
 
 // MARK: - Two-Factor Authentication
-extension ParaManager {
+
+public extension ParaManager {
     /// Setup two-factor authentication
     /// - Returns: Response indicating if 2FA is already set up or needs to be configured
-    public func setup2fa() async throws -> TwoFactorSetupResponse {
+    func setup2fa() async throws -> TwoFactorSetupResponse {
         try await ensureWebViewReady()
         let result = try await postMessage(method: "setup2fa", payload: EmptyPayload())
         guard let dict = result as? [String: Any] else {
@@ -476,7 +482,7 @@ extension ParaManager {
 
     /// Enable two-factor authentication after setup
     /// - Parameter verificationCode: The code from the user's authenticator app.
-    public func enable2fa(verificationCode: String) async throws {
+    func enable2fa(verificationCode: String) async throws {
         try await ensureWebViewReady()
         struct Enable2faArgs: Encodable {
             let verificationCode: String
@@ -487,7 +493,8 @@ extension ParaManager {
 }
 
 // MARK: - High-Level Auth Workflow Methods
-extension ParaManager {
+
+public extension ParaManager {
     /// Handles the login process for an existing user with the specified method.
     /// Assumes the `authState.stage` is `.login`.
     /// - Parameters:
@@ -497,11 +504,11 @@ extension ParaManager {
     ///   - webAuthenticationSession: Required for password operations.
     /// - Throws: Error if login fails or the chosen method is unavailable.
     @MainActor
-    public func handleLoginWithMethod(
+    func handleLoginWithMethod(
         authState: AuthState,
         method: LoginMethod,
         authorizationController: AuthorizationController,
-        webAuthenticationSession: WebAuthenticationSession
+        webAuthenticationSession: WebAuthenticationSession,
     ) async throws {
         guard authState.stage == .login else {
             logger.error("handleLoginWithMethod called with invalid stage: \(authState.stage.rawValue)")
@@ -517,7 +524,7 @@ extension ParaManager {
             try await loginWithPasskey(
                 authorizationController: authorizationController,
                 email: authState.email,
-                phone: authState.phone
+                phone: authState.phone,
             )
             logger.debug("loginWithPasskey successful.")
             // `loginWithPasskey` internally sets sessionState and fetches wallets.
@@ -530,15 +537,15 @@ extension ParaManager {
             logger.debug("Calling presentPasswordUrl for login...")
             let resultUrl = try await presentPasswordUrl(
                 passwordUrl,
-                webAuthenticationSession: webAuthenticationSession
+                webAuthenticationSession: webAuthenticationSession,
             )
 
             // Check if the result indicates success
             if resultUrl != nil {
                 logger.debug("presentPasswordUrl successful for login.")
                 // Password login success path requires explicit state update and wallet fetch
-                self.wallets = try await self.fetchWallets()
-                self.sessionState = .activeLoggedIn
+                wallets = try await fetchWallets()
+                sessionState = .activeLoggedIn
             } else {
                 // Should only happen if webAuthenticationSession throws internally and presentPasswordUrl catches/returns nil
                 logger.warning("Password login flow seemed to fail (nil result from presentPasswordUrl).")
@@ -551,8 +558,8 @@ extension ParaManager {
         }
         logger.info("Login successful via \(method.description). Session active.")
     }
-    
-    /// Handles the login process for an existing user by automatically determining 
+
+    /// Handles the login process for an existing user by automatically determining
     /// and using the preferred login method.
     /// Assumes the `authState.stage` is `.login`.
     /// - Parameters:
@@ -562,36 +569,36 @@ extension ParaManager {
     /// - Throws: Error if login fails or no login methods are available.
     /// - Note: This is a convenience method that uses `handleLoginWithMethod` with the best available method.
     @MainActor
-    public func handleLogin(
+    func handleLogin(
         authState: AuthState,
         authorizationController: AuthorizationController,
-        webAuthenticationSession: WebAuthenticationSession
+        webAuthenticationSession: WebAuthenticationSession,
     ) async throws {
         guard authState.stage == .login else {
             logger.error("handleLogin called with invalid stage: \(authState.stage.rawValue)")
             throw ParaError.error("Invalid application state: Expected login stage.")
         }
-        
+
         // Determine the preferred login method automatically
         guard let preferredMethod = determinePreferredLoginMethod(authState: authState) else {
             logger.error("No login methods available for userId: \(authState.userId)")
             throw ParaError.error("No login methods available for this account.")
         }
-        
+
         logger.debug("Automatically selected login method: \(preferredMethod.description) for userId: \(authState.userId)")
-        
+
         // Use the method-specific implementation
         try await handleLoginWithMethod(
             authState: authState,
             method: preferredMethod,
             authorizationController: authorizationController,
-            webAuthenticationSession: webAuthenticationSession
+            webAuthenticationSession: webAuthenticationSession,
         )
     }
 
     /// Determines which signup method to use when a user is creating an account.
     /// This prioritizes passkeys for security when available.
-    /// 
+    ///
     /// - Parameter authState: The current authentication state
     /// - Returns: The recommended signup method to use
     private func determinePreferredSignupMethod(authState: AuthState) -> SignupMethod? {
@@ -599,34 +606,34 @@ extension ParaManager {
             logger.error("determinePreferredSignupMethod called with invalid stage: \(authState.stage.rawValue)")
             return nil
         }
-        
+
         // Check for available signup options
         let hasPasskeyOption = authState.passkeyId != nil
         let hasPasswordOption = authState.passwordUrl != nil
-        
+
         // Prioritize passkeys when available as they are more secure
         if hasPasskeyOption {
             return .passkey
         }
-        
+
         // Fall back to password if passkey is not available
         if hasPasswordOption {
             return .password
         }
-        
+
         return nil
     }
-    
+
     /// Check if a specific signup method is available for the given authentication state.
     /// - Parameters:
     ///   - method: The signup method to check availability for.
     ///   - authState: The current authentication state.
     /// - Returns: Boolean indicating if the method is available.
-    public func isSignupMethodAvailable(method: SignupMethod, authState: AuthState) -> Bool {
+    func isSignupMethodAvailable(method: SignupMethod, authState: AuthState) -> Bool {
         guard authState.stage == .signup else {
             return false
         }
-        
+
         switch method {
         case .passkey:
             return authState.passkeyId != nil
@@ -634,7 +641,7 @@ extension ParaManager {
             return authState.passwordUrl != nil
         }
     }
-    
+
     /// Handles the signup process for a new user with the specified method.
     /// Assumes the `authState.stage` is `.signup`.
     /// - Parameters:
@@ -644,17 +651,17 @@ extension ParaManager {
     ///   - webAuthenticationSession: Required for password operations.
     /// - Throws: Error if signup fails or the chosen method is unavailable.
     @MainActor
-    public func handleSignup(
+    func handleSignup(
         authState: AuthState,
         method: SignupMethod,
         authorizationController: AuthorizationController,
-        webAuthenticationSession: WebAuthenticationSession
+        webAuthenticationSession: WebAuthenticationSession,
     ) async throws {
         guard authState.stage == .signup else {
             logger.error("handleSignup called with invalid stage: \(authState.stage.rawValue)")
             throw ParaError.error("Invalid application state: Expected signup stage.")
         }
-        
+
         // Get identifier from email or phone
         let identifier: String
         if let email = authState.email {
@@ -665,9 +672,9 @@ extension ParaManager {
             logger.error("Cannot perform signup without email or phone in AuthState.")
             throw ParaError.error("Missing user identifier for signup.")
         }
-        
+
         logger.debug("Handling signup with method: \(method.description) for userId: \(authState.userId)")
-        
+
         // Execute the signup workflow based on the specified method
         switch method {
         case .passkey:
@@ -679,7 +686,7 @@ extension ParaManager {
             try await generatePasskey(
                 identifier: identifier, // Use identifier from authState
                 biometricsId: passkeyId,
-                authorizationController: authorizationController
+                authorizationController: authorizationController,
             )
             logger.debug("Passkey generated. Creating wallet...")
             _ = try await createWallet(type: .evm, skipDistributable: false) // Assuming default EVM
@@ -693,7 +700,7 @@ extension ParaManager {
             logger.debug("Calling presentPasswordUrl for signup...")
             let resultUrl = try await presentPasswordUrl(
                 passwordUrl,
-                webAuthenticationSession: webAuthenticationSession
+                webAuthenticationSession: webAuthenticationSession,
             )
 
             // Check if the result indicates success
@@ -709,8 +716,8 @@ extension ParaManager {
         }
 
         // Common success path for both methods: Update state and fetch wallets
-        self.wallets = try await fetchWallets()
-        self.sessionState = .activeLoggedIn
+        wallets = try await fetchWallets()
+        sessionState = .activeLoggedIn
         logger.info("Signup successful via \(method.description). Session active.")
     }
 }

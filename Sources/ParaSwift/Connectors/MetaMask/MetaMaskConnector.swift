@@ -1,3 +1,5 @@
+// swiftformat:disable:redundantSelf
+
 //
 //  MetaMaskConnector.swift
 //  ParaSwift
@@ -5,46 +7,44 @@
 //  Created by Tyson Williams on 2/8/25.
 //
 
-import Foundation
-import UIKit
-import os
 import BigInt
+import Foundation
+import os
+import UIKit
 
 /// Main connector class for interacting with MetaMask
 public class MetaMaskConnector: ObservableObject {
     private let logger = Logger(subsystem: "com.paraSwift", category: "MetaMaskConnector")
-    
+
     // MARK: - Properties
-    
+
     private let para: ParaManager
     private let appUrl: String
     private let config: MetaMaskConfig
     private let channelId = UUID().uuidString
-    
+
     /// Whether MetaMask is currently connected
     @Published public private(set) var isConnected = false
     /// Connected MetaMask accounts
     @Published public private(set) var accounts: [String] = []
     /// Current chain ID (e.g., "0x1" for Ethereum mainnet)
     @Published public private(set) var chainId: String?
-    
+
     private var currentMessageType: MetaMaskMessageType?
-    private lazy var originatorInfo: OriginatorInfo = {
-        OriginatorInfo(url: appUrl, apiVersion: config.apiVersion, platform: "ios", title: config.appName, dappId: config.appId)
-    }()
-    
+    private lazy var originatorInfo: OriginatorInfo = .init(url: appUrl, apiVersion: config.apiVersion, platform: "ios", title: config.appName, dappId: config.appId)
+
     // MARK: - Continuation Management
-    
+
     private var continuation: Any? {
         didSet { currentMessageType = continuation != nil ? currentMessageType : nil }
     }
-    
+
     private func withContinuation<T>(type: MetaMaskMessageType, _ body: (CheckedContinuation<T, Error>) throws -> Void) async throws -> T {
         guard currentMessageType == nil else {
             logger.error("Already processing message of type: \(String(describing: self.currentMessageType))")
             throw MetaMaskError.alreadyProcessing
         }
-        
+
         return try await withCheckedThrowingContinuation { cont in
             self.continuation = cont
             self.currentMessageType = type
@@ -56,19 +56,19 @@ public class MetaMaskConnector: ObservableObject {
             }
         }
     }
-    
+
     private func complete<T>(with result: T) {
         logger.debug("Operation completed successfully.")
         guard let continuation = continuation as? CheckedContinuation<T, Error> else { return }
         self.continuation = nil
         continuation.resume(returning: result)
     }
-    
+
     private func complete(with error: Error) {
         logger.error("Operation completed with error: \(error.localizedDescription)")
-        guard let continuation = continuation else { return }
+        guard let continuation else { return }
         self.continuation = nil
-        
+
         switch continuation {
         case let cont as CheckedContinuation<Void, Error>:
             cont.resume(throwing: error)
@@ -78,9 +78,9 @@ public class MetaMaskConnector: ObservableObject {
             break
         }
     }
-    
+
     // MARK: - Initialization
-    
+
     /// Initialize a new MetaMask connector
     /// - Parameters:
     ///   - para: The Para manager instance
@@ -92,13 +92,13 @@ public class MetaMaskConnector: ObservableObject {
         self.config = config
         logger.debug("Initialized MetaMaskConnector with appUrl: \(appUrl) and deepLink: \(para.deepLink)")
     }
-    
+
     deinit {
         NotificationCenter.default.removeObserver(self)
     }
-    
+
     // MARK: - Deep Link Handling
-    
+
     /// Handles deep link URLs from MetaMask
     /// - Parameter url: The URL to handle
     /// - Returns: Whether the URL was handled successfully
@@ -108,16 +108,17 @@ public class MetaMaskConnector: ObservableObject {
             logger.debug("Received deep link with invalid URL: \(url)")
             return false
         }
-        
+
         logger.debug("Handling deep link: \(url.absoluteString)")
         do {
             guard let components = URLComponents(url: url, resolvingAgainstBaseURL: true),
                   let messageParam = components.queryItems?.first(where: { $0.name == "message" })?.value,
-                  let messageData = Data(base64Encoded: messageParam) else {
+                  let messageData = Data(base64Encoded: messageParam)
+            else {
                 logger.error("Deep link is missing required parameters.")
                 throw MetaMaskError.invalidResponse
             }
-            
+
             switch currentMessageType {
             case .connect:
                 let response = try JSONDecoder().decode(ConnectResponse.self, from: messageData)
@@ -129,7 +130,6 @@ public class MetaMaskConnector: ObservableObject {
                 handleResponse(response)
             case .none:
                 logger.debug("No active message type for deep link handling.")
-                break
             }
             return true
         } catch {
@@ -138,36 +138,36 @@ public class MetaMaskConnector: ObservableObject {
             return false
         }
     }
-    
+
     private func handleResponse<T>(_ response: MetaMaskResponse<T>) {
         if let error = response.data.error {
             complete(with: MetaMaskError.metaMaskError(code: error.code, message: error.message))
             return
         }
-        
+
         guard let result = response.data.result else {
             complete(with: MetaMaskError.invalidResponse)
             return
         }
-        
+
         switch (currentMessageType, result) {
-        case (.connect, let connectResponse as ConnectResponse):
+        case let (.connect, connectResponse as ConnectResponse):
             handleConnectResult(connectResponse)
-        case (.signMessage, let signature as String):
+        case let (.signMessage, signature as String):
             complete(with: signature as! T)
-        case (.sendTransaction, let txHash as String):
+        case let (.sendTransaction, txHash as String):
             complete(with: txHash as! T)
         default:
             complete(with: MetaMaskError.invalidResponse)
         }
     }
-    
+
     private func handleConnectResult(_ response: ConnectResponse) {
         logger.debug("Handling connect result: chainId=\(response.data.chainId), accounts=\(response.data.accounts)")
-        self.chainId = response.data.chainId
-        self.accounts = response.data.accounts
-        self.isConnected = true
-        
+        chainId = response.data.chainId
+        accounts = response.data.accounts
+        isConnected = true
+
         Task {
             do {
                 guard let address = accounts.first, !address.isEmpty else {
@@ -175,7 +175,7 @@ public class MetaMaskConnector: ObservableObject {
                     complete(with: MetaMaskError.invalidResponse)
                     return
                 }
-                
+
                 logger.debug("Attempting external wallet login: address=\(address)")
                 try await para.loginExternalWallet(wallet: ExternalWalletInfo(address: address, type: .evm))
                 logger.debug("External wallet login completed")
@@ -186,13 +186,13 @@ public class MetaMaskConnector: ObservableObject {
             }
         }
     }
-    
+
     // MARK: - Public Methods
-    
+
     /// Initiates a connection request to MetaMask.
     public func connect() async throws {
         logger.debug("Initiating MetaMask connection")
-        try await withContinuation(type: .connect) { (continuation: CheckedContinuation<Void, Error>) in
+        try await withContinuation(type: .connect) { (_: CheckedContinuation<Void, Error>) in
             do {
                 let originatorData = try originatorInfo.encode()
                 let url = try makeMetaMaskURL(host: "connect", originatorInfo: originatorData)
@@ -204,7 +204,7 @@ public class MetaMaskConnector: ObservableObject {
             }
         }
     }
-    
+
     /// Initiates a personal sign request.
     /// - Parameters:
     ///   - message: The message to sign
@@ -214,8 +214,8 @@ public class MetaMaskConnector: ObservableObject {
         logger.debug("Initiating signMessage for account: \(account)")
         let request = SignMessageRequest(params: [message, account])
         let encodedMessage = try request.encode()
-        
-        return try await withContinuation(type: .signMessage) { (continuation: CheckedContinuation<String, Error>) in
+
+        return try await withContinuation(type: .signMessage) { (_: CheckedContinuation<String, Error>) in
             do {
                 let url = try makeMetaMaskURL(host: "mmsdk", message: encodedMessage, account: "\(account)@\(chainId ?? "")")
                 logger.debug("SignMessage URL: \(url.absoluteString)")
@@ -226,7 +226,7 @@ public class MetaMaskConnector: ObservableObject {
             }
         }
     }
-    
+
     /// Internal implementation for sending transactions.
     /// This method handles the low-level communication with MetaMask.
     /// For general usage, prefer the EVMTransaction-based overload.
@@ -234,12 +234,12 @@ public class MetaMaskConnector: ObservableObject {
     ///   - transaction: The transaction details in MetaMask's expected format
     ///   - account: The account to send from
     /// - Returns: The transaction hash
-    internal func sendTransaction(_ transaction: [String: String], account: String) async throws -> String {
+    func sendTransaction(_ transaction: [String: String], account: String) async throws -> String {
         logger.debug("Initiating sendTransaction for account: \(account)")
         let request = SendTransactionRequest(params: [transaction])
         let encodedMessage = try request.encode()
-        
-        return try await withContinuation(type: .sendTransaction) { (continuation: CheckedContinuation<String, Error>) in
+
+        return try await withContinuation(type: .sendTransaction) { (_: CheckedContinuation<String, Error>) in
             do {
                 let url = try makeMetaMaskURL(host: "mmsdk", message: encodedMessage, account: "\(account)@\(chainId ?? "")")
                 logger.debug("SendTransaction URL: \(url.absoluteString)")
@@ -250,7 +250,7 @@ public class MetaMaskConnector: ObservableObject {
             }
         }
     }
-    
+
     /// Initiates a transaction request using an EVMTransaction.
     /// This is the recommended method for sending transactions.
     /// - Parameters:
@@ -279,7 +279,7 @@ private extension MetaMaskConnector {
             UIApplication.shared.open(url)
         }
     }
-    
+
     /// Constructs a URL for MetaMask communication
     func makeMetaMaskURL(
         host: String,
@@ -290,12 +290,12 @@ private extension MetaMaskConnector {
         var components = URLComponents()
         components.scheme = "metamask"
         components.host = host
-        
+
         var queryItems = [
             URLQueryItem(name: "scheme", value: para.deepLink),
             URLQueryItem(name: "channelId", value: channelId),
         ]
-        
+
         if let message {
             queryItems.append(URLQueryItem(name: "message", value: message))
         }
@@ -306,9 +306,9 @@ private extension MetaMaskConnector {
             queryItems.append(URLQueryItem(name: "comm", value: "deeplinking"))
             queryItems.append(URLQueryItem(name: "originatorInfo", value: originatorInfo))
         }
-        
+
         components.queryItems = queryItems
-        
+
         guard let url = components.url else {
             throw MetaMaskError.invalidURL
         }
@@ -318,28 +318,28 @@ private extension MetaMaskConnector {
 
 // MARK: - EVMTransaction Extension
 
-internal extension EVMTransaction {
+extension EVMTransaction {
     /// Converts the transaction to MetaMask format
     /// - Parameter from: The sender address
     /// - Returns: Transaction in MetaMask format
     func toMetaMaskFormat(from: String) -> [String: String] {
         var tx: [String: String] = ["from": from]
-        
+
         // Helper function to convert BigUInt to hex string
         func toHexString(_ value: BigUInt?) -> String? {
             value.map { "0x" + String($0, radix: 16) }
         }
-        
-        if let to = to { tx["to"] = to }
+
+        if let to { tx["to"] = to }
         if let value = toHexString(value) { tx["value"] = value }
         if let gasLimit = toHexString(gasLimit) { tx["gas"] = gasLimit }
         if let gasPrice = toHexString(gasPrice) { tx["gasPrice"] = gasPrice }
         if let maxPriorityFeePerGas = toHexString(maxPriorityFeePerGas) { tx["maxPriorityFeePerGas"] = maxPriorityFeePerGas }
         if let maxFeePerGas = toHexString(maxFeePerGas) { tx["maxFeePerGas"] = maxFeePerGas }
         if let nonce = toHexString(nonce) { tx["nonce"] = nonce }
-        if let type = type { tx["type"] = "0x" + String(type, radix: 16) }
+        if let type { tx["type"] = "0x" + String(type, radix: 16) }
         if let chainId = toHexString(chainId) { tx["chainId"] = chainId }
-        
+
         return tx
     }
 }
