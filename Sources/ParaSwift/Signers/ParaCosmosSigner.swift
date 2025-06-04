@@ -21,8 +21,6 @@ public enum ParaCosmosSignerError: Error, LocalizedError {
     case missingWalletId
     /// Wallet address is missing or invalid
     case invalidWalletAddress
-    /// Invalid chain prefix
-    case invalidPrefix(String)
     /// Signing operation failed
     case signingFailed(underlyingError: Error?)
     /// Network operation failed
@@ -40,8 +38,6 @@ public enum ParaCosmosSignerError: Error, LocalizedError {
             return "Wallet ID is missing"
         case .invalidWalletAddress:
             return "Wallet address is missing or invalid"
-        case .invalidPrefix(let prefix):
-            return "Invalid chain prefix: \(prefix)"
         case .signingFailed(let error):
             return "Signing operation failed: \(error?.localizedDescription ?? "Unknown error")"
         case .networkError(let error):
@@ -54,32 +50,14 @@ public enum ParaCosmosSignerError: Error, LocalizedError {
     }
 }
 
-/// Supported Cosmos chains - keeping it simple for v1
-public enum CosmosChain: String {
-    case cosmos = "cosmos"
-    
-    /// The bech32 prefix for this chain
-    public var prefix: String {
-        return self.rawValue
-    }
-    
-    /// Default denomination for this chain
-    public var defaultDenom: String {
-        return "uatom"
-    }
-}
 
 /// A signer for Cosmos blockchain operations using Para's secure key management via bridge
 @MainActor
 public class ParaCosmosSigner: ObservableObject {
     private let paraManager: ParaManager
-    private let prefix: String
     private var walletId: String?
-    private let messageSigningTimeoutMs: Int?
     private let rpcUrl: String
     
-    /// The chain this signer is configured for
-    public let chain: CosmosChain?
     
     /// Initialize a new ParaCosmosSigner
     /// - Parameters:
@@ -94,10 +72,6 @@ public class ParaCosmosSigner: ObservableObject {
         self.paraManager = paraManager
         self.rpcUrl = rpcUrl
         
-        // Default to cosmos chain
-        self.prefix = "cosmos"
-        self.chain = .cosmos
-        self.messageSigningTimeoutMs = nil
         
         if let walletId = walletId {
             Task {
@@ -110,8 +84,8 @@ public class ParaCosmosSigner: ObservableObject {
     private func initCosmosSigners(walletId: String) async throws {
         let args = CosmosSignerInitArgs(
             walletId: walletId,
-            prefix: prefix,
-            messageSigningTimeoutMs: messageSigningTimeoutMs
+            prefix: "cosmos",
+            messageSigningTimeoutMs: nil
         )
         let _ = try await paraManager.postMessage(method: "initCosmJsSigners", payload: args)
         self.walletId = walletId
@@ -159,7 +133,7 @@ public class ParaCosmosSigner: ObservableObject {
         
         // Get the wallet address
         let address = try await getAddress()
-        let queryDenom = denom ?? chain?.defaultDenom ?? "uatom"
+        let queryDenom = denom ?? "uatom"
         
         do {
             // Pass address, denom, and rpcUrl to the bridge
@@ -231,7 +205,7 @@ public class ParaCosmosSigner: ObservableObject {
         }
         
         let fromAddress = try await getAddress()
-        let tokenDenom = denom ?? chain?.defaultDenom ?? "uatom"
+        let tokenDenom = denom ?? "uatom"
         
         // Validate recipient address
         guard isValidBech32Address(recipient) else {
