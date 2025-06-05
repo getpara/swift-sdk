@@ -688,9 +688,7 @@ public extension ParaManager {
                 biometricsId: passkeyId,
                 authorizationController: authorizationController,
             )
-            logger.debug("Passkey generated. Creating wallet...")
-            _ = try await createWallet(type: .evm, skipDistributable: false) // Assuming default EVM
-            logger.debug("Wallet created after passkey signup.")
+            logger.debug("Passkey generated successfully.")
 
         case .password:
             guard let passwordUrl = authState.passwordUrl else {
@@ -706,9 +704,6 @@ public extension ParaManager {
             // Check if the result indicates success
             if resultUrl != nil {
                 logger.debug("presentPasswordUrl successful for signup.")
-                logger.debug("Creating wallet after password signup...")
-                _ = try await createWallet(type: .evm, skipDistributable: false) // Assuming default EVM
-                logger.debug("Wallet created after password signup.")
             } else {
                 logger.warning("Password signup flow seemed to fail (nil result from presentPasswordUrl).")
                 throw ParaError.error("Password setup failed or was cancelled.")

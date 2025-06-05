@@ -276,8 +276,7 @@ extension ParaManager {
                     authorizationController: authorizationController,
                 )
 
-                logger.debug("Creating wallet")
-                try await createWallet(type: .evm, skipDistributable: false)
+                logger.debug("Passkey generation completed successfully")
                 return (success: true, errorMessage: nil)
             } else {
                 logger.error("No passkey ID available for signup")
