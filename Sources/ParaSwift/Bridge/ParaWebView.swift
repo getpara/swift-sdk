@@ -42,6 +42,8 @@ public class ParaWebView: NSObject, ObservableObject {
     ///   - apiKey: The API key for Para services
     ///   - requestTimeout: The timeout duration for requests in seconds (default: 30.0)
     public init(environment: ParaEnvironment, apiKey: String, requestTimeout: TimeInterval = 30.0) {
+        logger.info("ParaWebView init: \(environment.name), bridge: \(environment.jsBridgeUrl.absoluteString), API key: \(String(apiKey.prefix(8)))...")
+        
         self.environment = environment
         self.apiKey = apiKey
         self.requestTimeout = requestTimeout
@@ -110,12 +112,12 @@ public class ParaWebView: NSObject, ObservableObject {
     @discardableResult
     public func postMessage(method: String, payload: Encodable) async throws -> Any? {
         guard isReady else {
-            logger.error("WebView not ready for method: \(method)")
+            logger.error("WebView not ready for \(method)")
             throw ParaWebViewError.webViewNotReady
         }
 
         guard isParaInitialized else {
-            logger.error("Para not initialized for method: \(method)")
+            logger.error("Para not initialized for \(method), API key: \(String(self.apiKey.prefix(8)))...")
             throw ParaWebViewError.bridgeError("Para not initialized")
         }
 
@@ -179,14 +181,14 @@ public class ParaWebView: NSObject, ObservableObject {
 
     /// Loads the JavaScript bridge into the WebView
     private func loadBridge() {
-        logger.info("Loading bridge from URL: \(self.environment.jsBridgeUrl.absoluteString)")
+        logger.info("Loading bridge: \(self.environment.jsBridgeUrl.absoluteString)")
         let request = URLRequest(url: environment.jsBridgeUrl)
         webView.load(request)
     }
 
     /// Initializes Para with the current environment and API key
     private func initPara() {
-        logger.info("Initializing Para with environment: \(self.environment.name), apiKey: \(String(self.apiKey.prefix(8)))...")
+        logger.info("Initializing Para bridge with API key: \(String(self.apiKey.prefix(8)))...")
 
         let args: [String: String] = [
             "environment": environment.name,
@@ -213,21 +215,21 @@ public class ParaWebView: NSObject, ObservableObject {
         }
 
         let script = """
-        console.log('Para Swift SDK: Sending init message');
+        console.log('Para Swift SDK: Sending init message with API key \(String(apiKey.prefix(8)))...');
         window.postMessage({
           messageType: 'Para#init',
           arguments: \(jsonString)
         });
         """
 
-        logger.debug("Executing init script: \(script)")
+        logger.debug("Executing Para#init script")
 
         webView.evaluateJavaScript(script) { [weak self] _, error in
             if let error {
-                self?.logger.error("JavaScript init failed: \(error.localizedDescription)")
+                self?.logger.error("Para#init script failed: \(error.localizedDescription)")
                 self?.lastError = error
             } else {
-                self?.logger.debug("JavaScript init executed successfully")
+                self?.logger.debug("Para#init script executed, waiting for response...")
             }
         }
     }
@@ -242,7 +244,7 @@ public class ParaWebView: NSObject, ObservableObject {
         }
 
         if method == "Para#init", response["requestId"] == nil {
-            logger.debug("Para initialization completed")
+            logger.info("Para initialization completed")
             self.isParaInitialized = true
             self.isReady = true
             return
@@ -305,8 +307,7 @@ extension ParaWebView: WKNavigationDelegate {
 
     /// Called when the WebView finishes loading
     public func webView(_ webView: WKWebView, didFinish _: WKNavigation!) {
-        logger.info("WebView finished loading: \(webView.url?.absoluteString ?? "unknown")")
-        logger.info("Initializing Para...")
+        logger.info("Bridge loaded, initializing Para...")
         initPara()
     }
 

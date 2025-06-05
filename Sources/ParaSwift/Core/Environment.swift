@@ -43,7 +43,7 @@ public enum ParaEnvironment: Hashable {
         config.jsBridgeUrl
     }
 
-    var name: String {
+    public var name: String {
         config.name
     }
 }

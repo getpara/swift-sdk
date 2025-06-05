@@ -54,12 +54,16 @@ public class ParaManager: NSObject, ObservableObject {
     ///   - apiKey: Your Para API key.
     ///   - deepLink: Optional deep link for your application. Defaults to the app's bundle identifier.
     public init(environment: ParaEnvironment, apiKey: String, deepLink: String? = nil) {
+        logger.info("ParaManager init: \(environment.name), API key: \(String(apiKey.prefix(8)))...")
+        
         self.environment = environment
         self.apiKey = apiKey
         passkeysManager = PasskeysManager(relyingPartyIdentifier: environment.relyingPartyId)
         paraWebView = ParaWebView(environment: environment, apiKey: apiKey)
         self.deepLink = deepLink ?? Bundle.main.bundleIdentifier!
+        
         super.init()
+        
         Task { @MainActor in
             await waitForParaReady()
         }
@@ -73,17 +77,22 @@ public class ParaManager: NSObject, ObservableObject {
         let maxWaitDuration: TimeInterval = 30.0
 
         while !paraWebView.isReady && paraWebView.initializationError == nil && paraWebView.lastError == nil {
-            if Date().timeIntervalSince(startTime) > maxWaitDuration {
+            let elapsed = Date().timeIntervalSince(startTime)
+            
+            if elapsed > maxWaitDuration {
+                logger.error("WebView initialization timeout after \(elapsed) seconds")
                 await MainActor.run {
                     self.objectWillChange.send()
                     self.sessionState = .inactive
                 }
                 return
             }
+            
             try? await Task.sleep(nanoseconds: 100_000_000)
         }
 
         if paraWebView.initializationError != nil || paraWebView.lastError != nil {
+            logger.error("WebView initialization failed: \(self.paraWebView.initializationError?.localizedDescription ?? self.paraWebView.lastError?.localizedDescription ?? "unknown")")
             await MainActor.run {
                 self.objectWillChange.send()
                 self.sessionState = .inactive
@@ -93,25 +102,23 @@ public class ParaManager: NSObject, ObservableObject {
 
         if let active = try? await isSessionActive(), active {
             if let loggedIn = try? await isFullyLoggedIn(), loggedIn {
-                logger.info("Session is active and user is fully logged in")
+                logger.info("Session active and user logged in")
                 await MainActor.run {
                     self.objectWillChange.send()
                     self.sessionState = .activeLoggedIn
                 }
             } else {
-                logger.info("Session is active but user is not fully logged in")
+                logger.info("Session active but user not fully logged in")
                 await MainActor.run {
                     self.objectWillChange.send()
                     self.sessionState = .active
                 }
             }
         } else {
-            logger.info("Session is not active")
+            logger.info("Session not active")
             await MainActor.run {
-                logger.info("Setting sessionState to .inactive")
                 self.objectWillChange.send()
                 self.sessionState = .inactive
-                logger.info("sessionState set to: \(String(describing: self.sessionState))")
             }
         }
     }
@@ -119,7 +126,7 @@ public class ParaManager: NSObject, ObservableObject {
     /// Ensure that the web view is ready before sending messages
     func ensureWebViewReady() async throws {
         if !paraWebView.isReady {
-            logger.debug("Waiting for WebView initialization...")
+            logger.debug("WebView not ready, waiting for initialization...")
             await waitForParaReady()
             guard paraWebView.isReady else {
                 throw ParaError.bridgeError("WebView failed to initialize")
@@ -133,22 +140,13 @@ public class ParaManager: NSObject, ObservableObject {
     ///   - payload: The payload to pass
     /// - Returns: The response from the bridge
     func postMessage(method: String, payload: Encodable) async throws -> Any? {
-        // Log payload as JSON string
-        var payloadString = "<encoding error>"
-        if let data: Data = try? JSONEncoder().encode(AnyEncodable(payload)),
-           let jsonString = String(data: data, encoding: .utf8)
-        {
-            payloadString = jsonString
-        }
-        logger.debug("Posting message to bridge - Method: \(method), Payload: \(payloadString)")
+        logger.debug("Calling bridge method: \(method), API key: \(String(self.apiKey.prefix(8)))...")
 
         do {
-            // Call the ParaWebView postMessage with payload
             let result: Any? = try await paraWebView.postMessage(method: method, payload: payload)
-            logger.debug("Bridge response for method \(method): \(String(describing: result))")
             return result
         } catch {
-            logger.error("Bridge error for method \(method): \(error.localizedDescription)")
+            logger.error("Bridge error for \(method): \(error.localizedDescription)")
             throw error
         }
     }
