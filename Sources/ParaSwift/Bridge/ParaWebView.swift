@@ -43,7 +43,7 @@ public class ParaWebView: NSObject, ObservableObject {
     ///   - requestTimeout: The timeout duration for requests in seconds (default: 30.0)
     public init(environment: ParaEnvironment, apiKey: String, requestTimeout: TimeInterval = 30.0) {
         logger.info("ParaWebView init: \(environment.name), bridge: \(environment.jsBridgeUrl.absoluteString), API key: \(String(apiKey.prefix(8)))...")
-        
+
         self.environment = environment
         self.apiKey = apiKey
         self.requestTimeout = requestTimeout
@@ -306,7 +306,7 @@ extension ParaWebView: WKNavigationDelegate {
     }
 
     /// Called when the WebView finishes loading
-    public func webView(_ webView: WKWebView, didFinish _: WKNavigation!) {
+    public func webView(_: WKWebView, didFinish _: WKNavigation!) {
         logger.info("Bridge loaded, initializing Para...")
         initPara()
     }

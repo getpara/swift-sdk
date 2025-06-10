@@ -67,8 +67,8 @@ public struct Wallet {
         partnerId = nil
         self.signer = signer
         self.address = address
-        self.addressSecondary = nil
-        self.scheme = nil
+        addressSecondary = nil
+        scheme = nil
         self.publicKey = publicKey
         createdAt = nil
         name = nil

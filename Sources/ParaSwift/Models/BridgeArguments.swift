@@ -98,3 +98,8 @@ struct CosmosSignerInitArgs: Encodable {
     let messageSigningTimeoutMs: Int?
 }
 
+struct GetDisplayAddressArgs: Encodable {
+    let walletId: String
+    let addressType: String
+    let cosmosPrefix: String?
+}
