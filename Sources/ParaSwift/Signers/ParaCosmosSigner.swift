@@ -22,6 +22,9 @@ public enum ParaCosmosSignerError: Error, LocalizedError {
     case networkError(underlyingError: Error?)
     case bridgeError(String)
     case invalidTransaction(String)
+    case protoSigningFailed(underlyingError: Error?)
+    case aminoSigningFailed(underlyingError: Error?)
+    case invalidSignDoc(String)
 
     public var errorDescription: String? {
         switch self {
@@ -32,6 +35,9 @@ public enum ParaCosmosSignerError: Error, LocalizedError {
         case let .networkError(error): "Network operation failed: \(error?.localizedDescription ?? "Unknown error")"
         case let .bridgeError(message): "Bridge operation failed: \(message)"
         case let .invalidTransaction(message): "Invalid transaction: \(message)"
+        case let .protoSigningFailed(error): "Proto/Direct signing failed: \(error?.localizedDescription ?? "Unknown error")"
+        case let .aminoSigningFailed(error): "Amino signing failed: \(error?.localizedDescription ?? "Unknown error")"
+        case let .invalidSignDoc(message): "Invalid SignDoc: \(message)"
         }
     }
 }
@@ -154,7 +160,7 @@ public class ParaCosmosSigner: ObservableObject {
         amount: String,
         denom: String? = nil,
         memo: String? = nil,
-        signingMethod: CosmosSigningMethod = .amino
+        signingMethod: CosmosSigningMethod = .proto
     ) async throws -> [String: Any] {
         guard let walletId else { throw ParaCosmosSignerError.missingWalletId }
         guard isValidBech32Address(recipient) else {
@@ -172,6 +178,7 @@ public class ParaCosmosSigner: ObservableObject {
                 amount: amount,
                 denom: tokenDenom
             )
+
 
             let args = [
                 "walletId": walletId,
@@ -194,6 +201,45 @@ public class ParaCosmosSigner: ObservableObject {
             throw error
         } catch {
             throw ParaCosmosSignerError.signingFailed(underlyingError: error)
+        }
+    }
+
+    /// Sign a transaction using direct/proto signing
+    /// Uses the cosmJsSignDirect bridge method for direct access to CosmJS proto signing
+    /// Note: "Direct" and "Proto" refer to the same signing method in CosmJS
+    public func signDirect(signDocBase64: String) async throws -> [String: Any] {
+        guard let walletId else { throw ParaCosmosSignerError.missingWalletId }
+        
+        let address = try await getAddress()
+        let args = CosmJsSignDirectArgs(signerAddress: address, signDocBase64: signDocBase64)
+        
+        do {
+            let result = try await paraManager.postMessage(method: "cosmJsSignDirect", payload: args)
+            guard let responseDict = result as? [String: Any] else {
+                throw ParaCosmosSignerError.bridgeError("Invalid response format from cosmJsSignDirect")
+            }
+            return responseDict
+        } catch {
+            throw ParaCosmosSignerError.protoSigningFailed(underlyingError: error)
+        }
+    }
+
+    /// Sign a transaction using amino signing
+    /// Uses the cosmJsSignAmino bridge method for direct access to CosmJS amino signing
+    public func signAmino(signDocBase64: String) async throws -> [String: Any] {
+        guard let walletId else { throw ParaCosmosSignerError.missingWalletId }
+        
+        let address = try await getAddress()
+        let args = CosmJsSignAminoArgs(signerAddress: address, signDocBase64: signDocBase64)
+        
+        do {
+            let result = try await paraManager.postMessage(method: "cosmJsSignAmino", payload: args)
+            guard let responseDict = result as? [String: Any] else {
+                throw ParaCosmosSignerError.bridgeError("Invalid response format from cosmJsSignAmino")
+            }
+            return responseDict
+        } catch {
+            throw ParaCosmosSignerError.aminoSigningFailed(underlyingError: error)
         }
     }
 

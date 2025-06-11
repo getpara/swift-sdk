@@ -103,3 +103,15 @@ struct GetDisplayAddressArgs: Encodable {
     let addressType: String
     let cosmosPrefix: String?
 }
+
+// Cosmos signing arguments for low-level bridge methods
+// Note: "Direct" == "Proto" signing in CosmJS terminology
+struct CosmJsSignDirectArgs: Encodable {
+    let signerAddress: String
+    let signDocBase64: String
+}
+
+struct CosmJsSignAminoArgs: Encodable {
+    let signerAddress: String
+    let signDocBase64: String
+}
