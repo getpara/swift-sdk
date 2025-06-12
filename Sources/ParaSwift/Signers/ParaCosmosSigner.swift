@@ -7,12 +7,6 @@
 
 import Foundation
 
-/// Signing method for Cosmos transactions
-public enum CosmosSigningMethod: String {
-    case amino // Standard signing method (default)
-    case proto // Modern Proto/Direct signing
-}
-
 /// Errors specific to ParaCosmosSigner operations
 public enum ParaCosmosSignerError: Error, LocalizedError {
     case invalidWalletType
@@ -83,13 +77,14 @@ public class ParaCosmosSigner: ObservableObject {
         do {
             // Use the bridge to get the proper address for this chain
             let result = try await paraManager.postMessage(method: "getCosmosSignerAddress", payload: EmptyPayload())
-            
+
             if let addressResponse = result as? [String: Any],
                let addressString = addressResponse["address"] as? String,
-               !addressString.isEmpty {
+               !addressString.isEmpty
+            {
                 return addressString
             }
-            
+
             // Fallback to wallet fetch if bridge method doesn't work
             let wallets = try await paraManager.fetchWallets()
             guard let wallet = wallets.first(where: { $0.id == walletId && $0.type == .cosmos }) else {
@@ -104,7 +99,7 @@ public class ParaCosmosSigner: ObservableObject {
             if cosmosAddress.hasPrefix(prefix + "1") {
                 return cosmosAddress
             }
-            
+
             // For now, return the original address and let the bridge handle conversion
             return cosmosAddress
         } catch let error as ParaWebViewError {
@@ -114,17 +109,18 @@ public class ParaCosmosSigner: ObservableObject {
 
     /// Get the balance for this wallet
     public func getBalance(denom: String? = nil) async throws -> String {
-        guard walletId != nil else { throw ParaCosmosSignerError.missingWalletId }
+        guard let _ = walletId else { throw ParaCosmosSignerError.missingWalletId }
 
         let address = try await getAddress()
         let queryDenom = denom ?? getDefaultDenom()
 
         do {
-            let args = ["address": address, "denom": queryDenom, "rpcUrl": rpcUrl]
+            let args = CosmJsGetBalanceArgs(address: address, denom: queryDenom, rpcUrl: rpcUrl)
             let result = try await paraManager.postMessage(method: "cosmJsGetBalance", payload: args)
 
             guard let balanceInfo = result as? [String: Any],
-                  let amount = balanceInfo["amount"] as? String else {
+                  let amount = balanceInfo["amount"] as? String
+            else {
                 throw ParaCosmosSignerError.bridgeError("Invalid balance response from bridge")
             }
 
@@ -154,65 +150,15 @@ public class ParaCosmosSigner: ObservableObject {
         }
     }
 
-    /// Sign a Cosmos transaction (without broadcasting)
-    public func signTransaction(
-        to recipient: String,
-        amount: String,
-        denom: String? = nil,
-        memo: String? = nil,
-        signingMethod: CosmosSigningMethod = .proto
-    ) async throws -> [String: Any] {
-        guard let walletId else { throw ParaCosmosSignerError.missingWalletId }
-        guard isValidBech32Address(recipient) else {
-            throw ParaCosmosSignerError.invalidTransaction("Invalid recipient address: \(recipient)")
-        }
-
-        let fromAddress = try await getAddress()
-        let tokenDenom = denom ?? getDefaultDenom()
-
-        do {
-            // Create transaction data for signing only
-            let (messagesJson, feeJson) = try createTransactionData(
-                fromAddress: fromAddress,
-                toAddress: recipient,
-                amount: amount,
-                denom: tokenDenom
-            )
-
-
-            let args = [
-                "walletId": walletId,
-                "chainId": chainId,
-                "rpcUrl": rpcUrl,
-                "messages": messagesJson,
-                "fee": feeJson,
-                "memo": memo ?? "",
-                "signingMethod": signingMethod.rawValue
-            ]
-
-            let result = try await paraManager.postMessage(method: "cosmJsSignTransaction", payload: args)
-
-            guard let responseDict = result as? [String: Any] else {
-                throw ParaCosmosSignerError.bridgeError("Invalid response format from bridge")
-            }
-
-            return responseDict
-        } catch let error as ParaCosmosSignerError {
-            throw error
-        } catch {
-            throw ParaCosmosSignerError.signingFailed(underlyingError: error)
-        }
-    }
-
     /// Sign a transaction using direct/proto signing
     /// Uses the cosmJsSignDirect bridge method for direct access to CosmJS proto signing
     /// Note: "Direct" and "Proto" refer to the same signing method in CosmJS
     public func signDirect(signDocBase64: String) async throws -> [String: Any] {
-        guard let walletId else { throw ParaCosmosSignerError.missingWalletId }
-        
+        guard let _ = walletId else { throw ParaCosmosSignerError.missingWalletId }
+
         let address = try await getAddress()
         let args = CosmJsSignDirectArgs(signerAddress: address, signDocBase64: signDocBase64)
-        
+
         do {
             let result = try await paraManager.postMessage(method: "cosmJsSignDirect", payload: args)
             guard let responseDict = result as? [String: Any] else {
@@ -227,11 +173,11 @@ public class ParaCosmosSigner: ObservableObject {
     /// Sign a transaction using amino signing
     /// Uses the cosmJsSignAmino bridge method for direct access to CosmJS amino signing
     public func signAmino(signDocBase64: String) async throws -> [String: Any] {
-        guard let walletId else { throw ParaCosmosSignerError.missingWalletId }
-        
+        guard let _ = walletId else { throw ParaCosmosSignerError.missingWalletId }
+
         let address = try await getAddress()
         let args = CosmJsSignAminoArgs(signerAddress: address, signDocBase64: signDocBase64)
-        
+
         do {
             let result = try await paraManager.postMessage(method: "cosmJsSignAmino", payload: args)
             guard let responseDict = result as? [String: Any] else {
@@ -240,58 +186,6 @@ public class ParaCosmosSigner: ObservableObject {
             return responseDict
         } catch {
             throw ParaCosmosSignerError.aminoSigningFailed(underlyingError: error)
-        }
-    }
-
-    /// Send a Cosmos transaction (sign and broadcast) using standard CosmJS pattern
-    public func sendTransaction(
-        to recipient: String,
-        amount: String,
-        denom: String? = nil,
-        memo: String? = nil,
-        signingMethod: CosmosSigningMethod = .proto
-    ) async throws -> String {
-        guard let walletId else { throw ParaCosmosSignerError.missingWalletId }
-        guard isValidBech32Address(recipient) else {
-            throw ParaCosmosSignerError.invalidTransaction("Invalid recipient address: \(recipient)")
-        }
-
-        let fromAddress = try await getAddress()
-        let tokenDenom = denom ?? getDefaultDenom()
-
-        do {
-            // Initialize SigningStargateClient
-            let clientArgs = ["rpcUrl": rpcUrl, "signingMethod": signingMethod.rawValue]
-            _ = try await paraManager.postMessage(method: "initCosmosStargateClient", payload: clientArgs)
-
-            // Create transaction data
-            let (messagesJson, feeJson) = try createTransactionData(
-                fromAddress: fromAddress,
-                toAddress: recipient,
-                amount: amount,
-                denom: tokenDenom
-            )
-
-            // Sign and broadcast
-            let broadcastArgs = [
-                "signerAddress": fromAddress,
-                "messages": messagesJson,
-                "fee": feeJson,
-                "memo": memo ?? ""
-            ]
-
-            let result = try await paraManager.postMessage(method: "cosmosSignAndBroadcast", payload: broadcastArgs)
-
-            guard let responseDict = result as? [String: Any],
-                  let transactionHash = responseDict["transactionHash"] as? String else {
-                throw ParaCosmosSignerError.bridgeError("Invalid response format from bridge")
-            }
-
-            return transactionHash
-        } catch let error as ParaCosmosSignerError {
-            throw error
-        } catch {
-            throw ParaCosmosSignerError.signingFailed(underlyingError: error)
         }
     }
 
@@ -316,44 +210,5 @@ public class ParaCosmosSigner: ObservableObject {
         case "stargaze-1": "ustars"
         default: "uatom"
         }
-    }
-
-    private func createTransactionData(fromAddress: String, toAddress: String, amount: String, denom: String) throws -> (String, String) {
-        let message: [String: Any] = [
-            "typeUrl": "/cosmos.bank.v1beta1.MsgSend",
-            "value": [
-                "fromAddress": fromAddress,
-                "toAddress": toAddress,
-                "amount": [["denom": denom, "amount": amount]]
-            ]
-        ]
-
-        let fee: [String: Any] = [
-            "amount": [["denom": denom, "amount": "5000"]],
-            "gas": "200000"
-        ]
-
-        let messagesData = try JSONSerialization.data(withJSONObject: [message])
-        let feeData = try JSONSerialization.data(withJSONObject: fee)
-
-        guard let messagesJson = String(data: messagesData, encoding: .utf8),
-              let feeJson = String(data: feeData, encoding: .utf8) else {
-            throw ParaCosmosSignerError.bridgeError("Failed to encode transaction data")
-        }
-
-        return (messagesJson, feeJson)
-    }
-
-    private func isValidBech32Address(_ address: String) -> Bool {
-        let parts = address.components(separatedBy: "1")
-        guard parts.count == 2 else { return false }
-
-        let hrp = parts[0], data = parts[1]
-        guard hrp.count >= 1, hrp.count <= 10,
-              data.count >= 6, data.count <= 87,
-              address.count >= 8, address.count <= 90 else { return false }
-
-        let bech32Charset = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
-        return data.lowercased().allSatisfy { bech32Charset.contains($0) }
     }
 }

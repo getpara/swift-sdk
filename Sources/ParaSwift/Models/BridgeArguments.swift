@@ -115,3 +115,9 @@ struct CosmJsSignAminoArgs: Encodable {
     let signerAddress: String
     let signDocBase64: String
 }
+
+struct CosmJsGetBalanceArgs: Encodable {
+    let address: String
+    let denom: String
+    let rpcUrl: String
+}
