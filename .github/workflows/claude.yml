@@ -1,6 +1,11 @@
 name: Claude Code
 
 on:
+  pull_request:
+    types: [opened]
+    branches:
+      - main
+      - 2.0.0-alpha
   issue_comment:
     types: [created]
   pull_request_review_comment:
@@ -13,6 +18,7 @@ on:
 jobs:
   claude:
     if: |
+      (github.event_name == 'pull_request') ||
       (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
       (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
       (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
@@ -34,4 +40,5 @@ jobs:
         uses: anthropics/claude-code-action@beta
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          direct_prompt: "Review this Swift SDK pull request for code quality, Swift best practices, and potential issues."
 
