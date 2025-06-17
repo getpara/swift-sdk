@@ -2,7 +2,7 @@
 //  ParaCosmosSigner.swift
 //  ParaSwift
 //
-//  Created by Para AI on 1/30/25.
+//  Created by Para AI on 6/17/25.
 //
 
 import Foundation
@@ -48,7 +48,7 @@ public class ParaCosmosSigner: ObservableObject {
     /// Initialize a new ParaCosmosSigner
     public init(
         paraManager: ParaManager,
-        chainId: String = "provider",
+        chainId: String = "cosmoshub-4",
         rpcUrl: String = "https://rpc.provider-sentry-01.ics-testnet.polypore.xyz",
         prefix: String = "cosmos",
         walletId: String? = nil
@@ -190,15 +190,6 @@ public class ParaCosmosSigner: ObservableObject {
     }
 
     // MARK: - Private Helpers
-
-    private func convertAddressToPrefix(_ address: String, targetPrefix: String) -> String {
-        if address.hasPrefix(targetPrefix + "1") { return address }
-
-        guard let separatorIndex = address.firstIndex(of: "1") else { return address }
-        let dataPartStart = address.index(after: separatorIndex)
-        let dataPart = String(address[dataPartStart...])
-        return targetPrefix + "1" + dataPart
-    }
 
     private func getDefaultDenom() -> String {
         switch chainId {
