@@ -1,3 +1,5 @@
+// swiftformat:disable:redundantSelf
+
 import AuthenticationServices
 import os
 import SwiftUI
@@ -55,15 +57,15 @@ public class ParaManager: NSObject, ObservableObject {
     ///   - deepLink: Optional deep link for your application. Defaults to the app's bundle identifier.
     public init(environment: ParaEnvironment, apiKey: String, deepLink: String? = nil) {
         logger.info("ParaManager init: \(environment.name), API key: \(String(apiKey.prefix(8)))...")
-        
+
         self.environment = environment
         self.apiKey = apiKey
         passkeysManager = PasskeysManager(relyingPartyIdentifier: environment.relyingPartyId)
         paraWebView = ParaWebView(environment: environment, apiKey: apiKey)
         self.deepLink = deepLink ?? Bundle.main.bundleIdentifier!
-        
+
         super.init()
-        
+
         Task { @MainActor in
             await waitForParaReady()
         }
@@ -78,7 +80,7 @@ public class ParaManager: NSObject, ObservableObject {
 
         while !paraWebView.isReady && paraWebView.initializationError == nil && paraWebView.lastError == nil {
             let elapsed = Date().timeIntervalSince(startTime)
-            
+
             if elapsed > maxWaitDuration {
                 logger.error("WebView initialization timeout after \(elapsed) seconds")
                 await MainActor.run {
@@ -87,11 +89,11 @@ public class ParaManager: NSObject, ObservableObject {
                 }
                 return
             }
-            
+
             try? await Task.sleep(nanoseconds: 100_000_000)
         }
 
-        if paraWebView.initializationError != nil || paraWebView.lastError != nil {
+        if self.paraWebView.initializationError != nil || self.paraWebView.lastError != nil {
             logger.error("WebView initialization failed: \(self.paraWebView.initializationError?.localizedDescription ?? self.paraWebView.lastError?.localizedDescription ?? "unknown")")
             await MainActor.run {
                 self.objectWillChange.send()
@@ -143,7 +145,7 @@ public class ParaManager: NSObject, ObservableObject {
         logger.debug("Calling bridge method: \(method), API key: \(String(self.apiKey.prefix(8)))...")
 
         do {
-            let result: Any? = try await paraWebView.postMessage(method: method, payload: payload)
+            let result: Any? = try await self.paraWebView.postMessage(method: method, payload: payload)
             return result
         } catch {
             logger.error("Bridge error for \(method): \(error.localizedDescription)")

@@ -39,6 +39,8 @@ public struct Wallet {
     public let signer: String?
     /// Public address of the wallet
     public let address: String?
+    /// Secondary address (e.g., Cosmos bech32 address for Cosmos wallets)
+    public let addressSecondary: String?
     /// Scheme used by the wallet
     public let scheme: String?
     /// Public key of the wallet
@@ -65,6 +67,7 @@ public struct Wallet {
         partnerId = nil
         self.signer = signer
         self.address = address
+        addressSecondary = nil
         scheme = nil
         self.publicKey = publicKey
         createdAt = nil
@@ -89,6 +92,7 @@ public struct Wallet {
         partnerId = result["partnerId"] as? String
         signer = result["signer"] as? String
         address = result["address"] as? String
+        addressSecondary = result["addressSecondary"] as? String
         scheme = result["scheme"] as? String
         publicKey = result["publicKey"] as? String
         let createdAtString = result["createdAt"] as? String

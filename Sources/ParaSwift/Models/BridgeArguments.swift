@@ -90,3 +90,34 @@ struct DistributeNewWalletShareArgs: Encodable {
     let walletId: String
     let userShare: String
 }
+
+// Cosmos bridge arguments
+struct CosmosSignerInitArgs: Encodable {
+    let walletId: String
+    let prefix: String
+    let messageSigningTimeoutMs: Int?
+}
+
+struct GetDisplayAddressArgs: Encodable {
+    let walletId: String
+    let addressType: String
+    let cosmosPrefix: String?
+}
+
+// Cosmos signing arguments for low-level bridge methods
+// Note: "Direct" == "Proto" signing in CosmJS terminology
+struct CosmJsSignDirectArgs: Encodable {
+    let signerAddress: String
+    let signDocBase64: String
+}
+
+struct CosmJsSignAminoArgs: Encodable {
+    let signerAddress: String
+    let signDocBase64: String
+}
+
+struct CosmJsGetBalanceArgs: Encodable {
+    let address: String
+    let denom: String
+    let rpcUrl: String
+}
