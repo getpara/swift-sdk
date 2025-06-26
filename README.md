@@ -77,7 +77,7 @@ In the associated domains section that appears, add the domains corresponding to
 
 This allows your app to use passkeys created by other apps within the Para ecosystem.
 
-### Deep Link URL Scheme (Required for OAuth & MetaMask)
+### App URL Scheme (Required for OAuth & MetaMask)
 
 Under **Targets** -> **Your App Name** -> **Info**, expand **URL Types**.
 
@@ -171,12 +171,12 @@ struct YourApp: App {
                 .environmentObject(metaMaskConnector)
                 .environmentObject(appRootManager) // Pass your state manager too
                 .onOpenURL { url in
-                    // Handle deep links (required for OAuth & MetaMask)
-                    logger.debug("Received deep link: \(url.absoluteString)")
+                    // Handle app scheme callbacks (required for OAuth & MetaMask)
+                    logger.debug("Received app scheme callback: \(url.absoluteString)")
                     // Pass the URL to the MetaMask connector first
                     let handledByMetaMask = metaMaskConnector.handleURL(url)
                     if !handledByMetaMask {
-                        // Add handling for other deep links if necessary
+                        // Add handling for other app scheme callbacks if necessary
                         logger.debug("URL not handled by MetaMask.")
                     }
                 }
@@ -728,7 +728,7 @@ Use `MetaMaskConnector` to interact with the MetaMask mobile app.
 **Setup:**
 
 1.  Add `metamask` to `LSApplicationQueriesSchemes` in `Info.plist`.
-2.  Configure your app's deep link URL scheme in `Info.plist` under `URL Types`.
+2.  Configure your app's URL scheme in `Info.plist` under `URL Types`.
 3.  Handle incoming URLs in your `App` struct's `.onOpenURL` modifier and pass them to `metaMaskConnector.handleURL(url)`.
 
 **Usage:**

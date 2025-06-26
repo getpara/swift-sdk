@@ -384,7 +384,7 @@ public extension ParaManager {
 
         // Add nativeCallbackUrl query parameter for ASWebAuthenticationSession
         var components = URLComponents(url: originalPasswordUrl, resolvingAgainstBaseURL: false)
-        let callbackQueryItem = URLQueryItem(name: "nativeCallbackUrl", value: deepLink + "://")
+        let callbackQueryItem = URLQueryItem(name: "nativeCallbackUrl", value: appScheme + "://")
         // Resolve overlapping access warning by modifying a local variable
         var currentQueryItems = components?.queryItems ?? []
         currentQueryItems.append(callbackQueryItem)
@@ -398,7 +398,7 @@ public extension ParaManager {
 
         do {
             // Attempt to authenticate with the web session using the modified URL
-            let callbackURL = try await webAuthenticationSession.authenticate(using: finalPasswordUrl, callbackURLScheme: deepLink)
+            let callbackURL = try await webAuthenticationSession.authenticate(using: finalPasswordUrl, callbackURLScheme: appScheme)
             // Normal callback URL completion (rare for password auth)
             logger.debug("Received callback URL from authentication session")
 
