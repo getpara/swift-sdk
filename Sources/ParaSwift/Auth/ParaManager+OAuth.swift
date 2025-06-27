@@ -27,8 +27,8 @@ public enum OAuthProvider: String {
 private struct OAuthUrlParams: Encodable {
     /// The OAuth method/provider name
     let method: String
-    /// The deeplink URL for redirecting back to the app
-    let deeplinkUrl: String
+    /// The app scheme for redirecting back to the app
+    let appScheme: String
 }
 
 /// Struct for verifyOAuth parameters that conforms to Encodable
@@ -53,7 +53,7 @@ extension ParaManager {
 
         // Step 1: Prepare and get the OAuth URL
         logger.debug("Getting OAuth URL for provider: \(provider.rawValue)")
-        let oAuthParams = OAuthUrlParams(method: provider.rawValue, deeplinkUrl: deepLink)
+        let oAuthParams = OAuthUrlParams(method: provider.rawValue, appScheme: appScheme)
 
         let oAuthUrlResult = try await paraWebView.postMessage(method: "getOAuthUrl", payload: oAuthParams)
         guard let oAuthURL = oAuthUrlResult as? String, let url = URL(string: oAuthURL) else {
@@ -65,7 +65,7 @@ extension ParaManager {
         _ = extractSessionLookupId(from: oAuthURL, logger: logger)
 
         // Step 3: Perform the authentication flow
-        let callbackURL = try await webAuthenticationSession.authenticate(using: url, callbackURLScheme: deepLink)
+        let callbackURL = try await webAuthenticationSession.authenticate(using: url, callbackURLScheme: appScheme)
         let callbackUrlString = callbackURL.absoluteString
         logger.debug("Received callback URL: \(callbackUrlString)")
 

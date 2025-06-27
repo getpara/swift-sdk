@@ -44,8 +44,8 @@ public class ParaManager: NSObject, ObservableObject {
     let passkeysManager: PasskeysManager
     /// Web view interface for communicating with Para services.
     let paraWebView: ParaWebView
-    /// Deep link for app authentication flows.
-    let deepLink: String
+    /// App scheme for authentication callbacks.
+    let appScheme: String
 
     // MARK: - Initialization
 
@@ -54,15 +54,15 @@ public class ParaManager: NSObject, ObservableObject {
     /// - Parameters:
     ///   - environment: The Para environment configuration.
     ///   - apiKey: Your Para API key.
-    ///   - deepLink: Optional deep link for your application. Defaults to the app's bundle identifier.
-    public init(environment: ParaEnvironment, apiKey: String, deepLink: String? = nil) {
+    ///   - appScheme: Optional app scheme for authentication callbacks. Defaults to the app's bundle identifier.
+    public init(environment: ParaEnvironment, apiKey: String, appScheme: String? = nil) {
         logger.info("ParaManager init: \(environment.name), API key: \(String(apiKey.prefix(8)))...")
 
         self.environment = environment
         self.apiKey = apiKey
         passkeysManager = PasskeysManager(relyingPartyIdentifier: environment.relyingPartyId)
         paraWebView = ParaWebView(environment: environment, apiKey: apiKey)
-        self.deepLink = deepLink ?? Bundle.main.bundleIdentifier!
+        self.appScheme = appScheme ?? Bundle.main.bundleIdentifier!
 
         super.init()
 

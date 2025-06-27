@@ -90,7 +90,7 @@ public class MetaMaskConnector: ObservableObject {
         self.para = para
         self.appUrl = appUrl
         self.config = config
-        logger.debug("Initialized MetaMaskConnector with appUrl: \(appUrl) and deepLink: \(para.deepLink)")
+        logger.debug("Initialized MetaMaskConnector with appUrl: \(appUrl) and appScheme: \(para.appScheme)")
     }
 
     deinit {
@@ -292,7 +292,7 @@ private extension MetaMaskConnector {
         components.host = host
 
         var queryItems = [
-            URLQueryItem(name: "scheme", value: para.deepLink),
+            URLQueryItem(name: "scheme", value: para.appScheme),
             URLQueryItem(name: "channelId", value: channelId),
         ]
 
