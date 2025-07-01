@@ -42,6 +42,33 @@ private struct VerifyOAuthParams: Encodable {
 // MARK: - OAuth Authentication Methods
 
 extension ParaManager {
+    
+    /// Handles the complete OAuth authentication flow, including processing the authentication state
+    /// and performing the appropriate login or signup actions based on the result.
+    /// - Parameters:
+    ///   - provider: The OAuth provider to authenticate with
+    ///   - webAuthenticationSession: The WebAuthenticationSession to use for the OAuth flow
+    ///   - authorizationController: The AuthorizationController to use for passkey operations
+    /// - Throws: ParaError or other authentication-related errors
+    public func handleOAuth(
+        provider: OAuthProvider,
+        webAuthenticationSession: WebAuthenticationSession,
+        authorizationController: AuthorizationController
+    ) async throws {
+        let logger = Logger(subsystem: "com.paraSwift", category: "OAuth")
+
+        // Step 1: Get OAuth verification
+        logger.debug("Starting OAuth flow for provider: \(provider.rawValue)")
+        let authState = try await verifyOAuth(provider: provider, webAuthenticationSession: webAuthenticationSession)
+
+        // Step 2: Process the authentication state based on its stage
+        try await processOAuthAuthState(
+            authState,
+            authorizationController: authorizationController,
+            logger: logger
+        )
+    }
+    
     /// Verifies an OAuth authentication and returns an AuthState object according to the V2 authentication flow
     /// - Parameters:
     ///   - provider: The OAuth provider to verify
@@ -52,7 +79,7 @@ extension ParaManager {
         try await ensureWebViewReady()
 
         // Step 1: Prepare and get the OAuth URL
-        logger.debug("Getting OAuth URL for provider: \(provider.rawValue)")
+        logger.debug("Getting OAuth URL for provider: \(provider.rawValue) and appScheme: \(self.appScheme)")
         let oAuthParams = OAuthUrlParams(method: provider.rawValue, appScheme: appScheme)
 
         let oAuthUrlResult = try await paraWebView.postMessage(method: "getOAuthUrl", payload: oAuthParams)
@@ -83,37 +110,6 @@ extension ParaManager {
         logger.debug("OAuth verification completed with stage: \(authState.stage.rawValue)")
 
         return authState
-    }
-
-    /// Handles the complete OAuth authentication flow, including processing the authentication state
-    /// and performing the appropriate login or signup actions based on the result.
-    /// - Parameters:
-    ///   - provider: The OAuth provider to authenticate with
-    ///   - webAuthenticationSession: The WebAuthenticationSession to use for the OAuth flow
-    ///   - authorizationController: The AuthorizationController to use for passkey operations
-    /// - Returns: A tuple containing the result status and any error message
-    public func handleOAuth(
-        provider: OAuthProvider,
-        webAuthenticationSession: WebAuthenticationSession,
-        authorizationController: AuthorizationController
-    ) async -> (success: Bool, errorMessage: String?) {
-        let logger = Logger(subsystem: "com.paraSwift", category: "OAuth")
-
-        do {
-            // Step 1: Get OAuth verification
-            logger.debug("Starting OAuth flow for provider: \(provider.rawValue)")
-            let authState = try await verifyOAuth(provider: provider, webAuthenticationSession: webAuthenticationSession)
-
-            // Step 2: Process the authentication state based on its stage
-            return try await processOAuthAuthState(
-                authState,
-                authorizationController: authorizationController,
-                logger: logger,
-            )
-        } catch {
-            logger.error("OAuth error: \(error.localizedDescription)")
-            return (success: false, errorMessage: String(describing: error))
-        }
     }
 
     // MARK: - Private OAuth Helper Methods
@@ -228,12 +224,12 @@ extension ParaManager {
     ///   - authState: The auth state to process
     ///   - authorizationController: The controller for passkey operations
     ///   - logger: Logger for debug messages
-    /// - Returns: A tuple with the success status and any error message
+    /// - Throws: ParaError or other authentication-related errors
     private func processOAuthAuthState(
         _ authState: AuthState,
         authorizationController: AuthorizationController,
         logger: Logger
-    ) async throws -> (success: Bool, errorMessage: String?) {
+    ) async throws {
         switch authState.stage {
         case .login:
             logger.debug("Processing login stage for user ID: \(authState.userId)")
@@ -249,44 +245,42 @@ extension ParaManager {
             try await loginWithPasskey(
                 authorizationController: authorizationController,
                 email: authState.email,
-                phone: authState.phone,
+                phone: authState.phone
             )
 
             logger.debug("Login successful")
-            return (success: true, errorMessage: nil)
 
         case .signup:
             logger.debug("Processing signup stage for user ID: \(authState.userId)")
 
             // Handle signup with passkey if available
-            if let passkeyId = authState.passkeyId {
-                logger.debug("Generating passkey with ID: \(passkeyId)")
-                // Use the appropriate identifier based on identity
-                let identifier: String = if let email = authState.email {
-                    email
-                } else if let phone = authState.phone {
-                    phone
-                } else {
-                    authState.userId
-                }
-
-                try await generatePasskey(
-                    identifier: identifier,
-                    biometricsId: passkeyId,
-                    authorizationController: authorizationController,
-                )
-
-                logger.debug("Passkey generation completed successfully")
-                return (success: true, errorMessage: nil)
-            } else {
+            guard let passkeyId = authState.passkeyId else {
                 logger.error("No passkey ID available for signup")
-                return (success: false, errorMessage: "No authentication method available")
+                throw ParaError.error("No authentication method available")
             }
+
+            logger.debug("Generating passkey with ID: \(passkeyId)")
+            // Use the appropriate identifier based on identity
+            let identifier: String = if let email = authState.email {
+                email
+            } else if let phone = authState.phone {
+                phone
+            } else {
+                authState.userId
+            }
+
+            try await generatePasskey(
+                identifier: identifier,
+                biometricsId: passkeyId,
+                authorizationController: authorizationController
+            )
+
+            logger.debug("Passkey generation completed successfully")
 
         case .verify:
             // This shouldn't happen with OAuth
             logger.error("Unexpected verify stage in OAuth flow")
-            return (success: false, errorMessage: "Unexpected authentication stage")
+            throw ParaError.error("Unexpected authentication stage")
         }
     }
 }
