@@ -69,12 +69,14 @@ extension ParaManager {
         )
     }
     
+    // MARK: - Private OAuth Helper Methods
+    
     /// Verifies an OAuth authentication and returns an AuthState object according to the V2 authentication flow
     /// - Parameters:
     ///   - provider: The OAuth provider to verify
     ///   - webAuthenticationSession: The WebAuthenticationSession to use for the OAuth flow
     /// - Returns: An AuthState object containing information about the next steps in the authentication flow
-    func verifyOAuth(provider: OAuthProvider, webAuthenticationSession: WebAuthenticationSession) async throws -> AuthState {
+    private func verifyOAuth(provider: OAuthProvider, webAuthenticationSession: WebAuthenticationSession) async throws -> AuthState {
         let logger = Logger(subsystem: "com.paraSwift", category: "OAuth")
         try await ensureWebViewReady()
 
@@ -87,9 +89,6 @@ extension ParaManager {
             throw ParaError.error("Invalid OAuth URL")
         }
         logger.debug("Received OAuth URL: \(oAuthURL)")
-
-        // Step 2: Extract session information if available
-        _ = extractSessionLookupId(from: oAuthURL, logger: logger)
 
         // Step 3: Perform the authentication flow
         let callbackURL = try await webAuthenticationSession.authenticate(using: url, callbackURLScheme: appScheme)
@@ -110,24 +109,6 @@ extension ParaManager {
         logger.debug("OAuth verification completed with stage: \(authState.stage.rawValue)")
 
         return authState
-    }
-
-    // MARK: - Private OAuth Helper Methods
-
-    /// Extracts the session lookup ID from an OAuth URL if present
-    /// - Parameters:
-    ///   - url: The OAuth URL to extract from
-    ///   - logger: Logger for debug messages
-    /// - Returns: The session lookup ID, if found
-    private func extractSessionLookupId(from url: String, logger: Logger) -> String? {
-        if let urlComponents = URLComponents(string: url),
-           let queryItems = urlComponents.queryItems
-        {
-            let sessionLookupId = queryItems.first(where: { $0.name == "sessionLookupId" })?.value
-            logger.debug("Extracted sessionLookupId: \(sessionLookupId ?? "nil")")
-            return sessionLookupId
-        }
-        return nil
     }
 
     // Note: The sessionLookupId is currently not used in the OAuth flow,
