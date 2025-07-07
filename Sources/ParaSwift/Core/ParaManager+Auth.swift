@@ -421,29 +421,38 @@ public extension ParaManager {
     func loginExternalWallet(wallet: ExternalWalletInfo) async throws {
         try await ensureWebViewReady()
 
-        // Create a payload with just the wallet info (no identity wrapper needed)
+        // Create a payload with the wallet info wrapped in externalWallet property
         struct WalletLoginPayload: Encodable {
-            let address: String
-            let type: String
-            let provider: String?
+            let externalWallet: ExternalWalletInfo
         }
 
-        let params = WalletLoginPayload(
-            address: wallet.address,
-            type: wallet.type.rawValue,
-            provider: wallet.provider,
-        )
+        let params = WalletLoginPayload(externalWallet: wallet)
 
         // Call the loginExternalWallet method
         let authStateResult = try await postMessage(method: "loginExternalWallet", payload: params)
 
         // Process the result
-        do {
-            _ = try parseAuthStateFromResult(authStateResult)
-            logger.debug("loginExternalWallet completed for address: \(wallet.address)")
-        } catch let parseError {
-            logger.error("loginExternalWallet: Failed to parse result: \(parseError.localizedDescription)")
-            throw parseError
+        // For connection-only wallets, the response is just { userId: "EXTERNAL_WALLET_CONNECTION_ONLY" }
+        // For full auth wallets, it would be a full AuthState object
+        if wallet.isConnectionOnly == true {
+            // Connection-only mode - just verify we got a response
+            if let resultDict = authStateResult as? [String: Any],
+               let userId = resultDict["userId"] as? String
+            {
+                logger.debug("loginExternalWallet completed for connection-only wallet: \(wallet.address), userId: \(userId)")
+            } else {
+                logger.error("loginExternalWallet: Invalid response format for connection-only wallet")
+                throw ParaError.bridgeError("Invalid response format for connection-only wallet")
+            }
+        } else {
+            // Full auth mode - parse as AuthState
+            do {
+                _ = try parseAuthStateFromResult(authStateResult)
+                logger.debug("loginExternalWallet completed for address: \(wallet.address)")
+            } catch let parseError {
+                logger.error("loginExternalWallet: Failed to parse result: \(parseError.localizedDescription)")
+                throw parseError
+            }
         }
 
         sessionState = .activeLoggedIn

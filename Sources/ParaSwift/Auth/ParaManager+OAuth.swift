@@ -42,7 +42,6 @@ private struct VerifyOAuthParams: Encodable {
 // MARK: - OAuth Authentication Methods
 
 extension ParaManager {
-    
     /// Handles the complete OAuth authentication flow, including processing the authentication state
     /// and performing the appropriate login or signup actions based on the result.
     /// - Parameters:
@@ -53,7 +52,7 @@ extension ParaManager {
     public func handleOAuth(
         provider: OAuthProvider,
         webAuthenticationSession: WebAuthenticationSession,
-        authorizationController: AuthorizationController
+        authorizationController: AuthorizationController,
     ) async throws {
         let logger = Logger(subsystem: "com.paraSwift", category: "OAuth")
 
@@ -65,12 +64,12 @@ extension ParaManager {
         try await processOAuthAuthState(
             authState,
             authorizationController: authorizationController,
-            logger: logger
+            logger: logger,
         )
     }
-    
+
     // MARK: - Private OAuth Helper Methods
-    
+
     /// Verifies an OAuth authentication and returns an AuthState object according to the V2 authentication flow
     /// - Parameters:
     ///   - provider: The OAuth provider to verify
@@ -209,7 +208,7 @@ extension ParaManager {
     private func processOAuthAuthState(
         _ authState: AuthState,
         authorizationController: AuthorizationController,
-        logger: Logger
+        logger: Logger,
     ) async throws {
         switch authState.stage {
         case .login:
@@ -226,7 +225,7 @@ extension ParaManager {
             try await loginWithPasskey(
                 authorizationController: authorizationController,
                 email: authState.email,
-                phone: authState.phone
+                phone: authState.phone,
             )
 
             logger.debug("Login successful")
@@ -253,7 +252,7 @@ extension ParaManager {
             try await generatePasskey(
                 identifier: identifier,
                 biometricsId: passkeyId,
-                authorizationController: authorizationController
+                authorizationController: authorizationController,
             )
 
             logger.debug("Passkey generation completed successfully")

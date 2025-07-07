@@ -18,16 +18,25 @@ public struct ExternalWalletInfo: Codable {
     public let type: ExternalWalletType
     /// The wallet provider (e.g. "metamask")
     public let provider: String?
+    /// Whether this is a connection-only wallet (not for full auth)
+    public let isConnectionOnly: Bool?
 
     /// Creates a new ExternalWalletInfo instance
     /// - Parameters:
     ///   - address: The wallet address
     ///   - type: The wallet type
-    ///   - provider: Optional wallet provider
-    public init(address: String, type: ExternalWalletType, provider: String? = nil) {
+    ///   - provider: Optional wallet provider (e.g. "metamask")
+    ///   - isConnectionOnly: Whether this is connection-only (defaults to true)
+    public init(
+        address: String,
+        type: ExternalWalletType,
+        provider: String? = nil,
+        isConnectionOnly: Bool? = true
+    ) {
         self.address = address
         self.type = type
         self.provider = provider
+        self.isConnectionOnly = isConnectionOnly
     }
 }
 

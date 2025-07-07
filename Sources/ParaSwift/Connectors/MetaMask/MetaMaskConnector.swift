@@ -177,7 +177,11 @@ public class MetaMaskConnector: ObservableObject {
                 }
 
                 logger.debug("Attempting external wallet login: address=\(address)")
-                try await para.loginExternalWallet(wallet: ExternalWalletInfo(address: address, type: .evm))
+                try await para.loginExternalWallet(wallet: ExternalWalletInfo(
+                    address: address,
+                    type: .evm,
+                    provider: "metamask",
+                ))
                 logger.debug("External wallet login completed")
                 complete(with: ())
             } catch {

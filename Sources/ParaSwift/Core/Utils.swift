@@ -17,10 +17,10 @@ public enum ParaFormatting {
     ///         Example: formatPhoneNumber(phoneNumber: "5551234", countryCode: "1") returns "+15551234".
     public static func formatPhoneNumber(phoneNumber: String, countryCode: String? = nil, forDisplay _: Bool = false) -> String? {
         let phoneNumberKit = PhoneNumberUtility()
-        
+
         // Construct the phone string with optional country code
         let phoneString: String
-        if let countryCode = countryCode {
+        if let countryCode {
             // Ensure country code doesn't already have + and add it
             let cleanCountryCode = countryCode.replacingOccurrences(of: "+", with: "")
             phoneString = "+\(cleanCountryCode)\(phoneNumber)"
