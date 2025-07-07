@@ -16,6 +16,9 @@ import UIKit
 public class MetaMaskConnector: ObservableObject {
     private let logger = Logger(subsystem: "com.paraSwift", category: "MetaMaskConnector")
 
+    /// Shared instance for deep link handling
+    private static var activeInstance: MetaMaskConnector?
+
     // MARK: - Properties
 
     private let para: ParaManager
@@ -62,6 +65,11 @@ public class MetaMaskConnector: ObservableObject {
         guard let continuation = continuation as? CheckedContinuation<T, Error> else { return }
         self.continuation = nil
         continuation.resume(returning: result)
+
+        // Clear active instance after successful operation
+        if Self.activeInstance === self {
+            Self.activeInstance = nil
+        }
     }
 
     private func complete(with error: Error) {
@@ -76,6 +84,11 @@ public class MetaMaskConnector: ObservableObject {
             cont.resume(throwing: error)
         default:
             break
+        }
+
+        // Clear active instance after error
+        if Self.activeInstance === self {
+            Self.activeInstance = nil
         }
     }
 
@@ -98,6 +111,17 @@ public class MetaMaskConnector: ObservableObject {
     }
 
     // MARK: - Deep Link Handling
+
+    /// Static method to handle deep link URLs from MetaMask
+    /// - Parameter url: The URL to handle
+    /// - Returns: Whether the URL was handled successfully
+    @discardableResult
+    public static func handleDeepLink(_ url: URL) -> Bool {
+        guard let instance = activeInstance else {
+            return false
+        }
+        return instance.handleURL(url)
+    }
 
     /// Handles deep link URLs from MetaMask
     /// - Parameter url: The URL to handle
@@ -196,6 +220,9 @@ public class MetaMaskConnector: ObservableObject {
     /// Initiates a connection request to MetaMask.
     public func connect() async throws {
         logger.debug("Initiating MetaMask connection")
+        // Set this as the active instance for deep link handling
+        Self.activeInstance = self
+
         try await withContinuation(type: .connect) { (_: CheckedContinuation<Void, Error>) in
             do {
                 let originatorData = try originatorInfo.encode()
@@ -216,6 +243,9 @@ public class MetaMaskConnector: ObservableObject {
     /// - Returns: The signature
     public func signMessage(_ message: String, account: String) async throws -> String {
         logger.debug("Initiating signMessage for account: \(account)")
+        // Set this as the active instance for deep link handling
+        Self.activeInstance = self
+
         let request = SignMessageRequest(params: [message, account])
         let encodedMessage = try request.encode()
 
@@ -240,6 +270,9 @@ public class MetaMaskConnector: ObservableObject {
     /// - Returns: The transaction hash
     func sendTransaction(_ transaction: [String: String], account: String) async throws -> String {
         logger.debug("Initiating sendTransaction for account: \(account)")
+        // Set this as the active instance for deep link handling
+        Self.activeInstance = self
+
         let request = SendTransactionRequest(params: [transaction])
         let encodedMessage = try request.encode()
 
