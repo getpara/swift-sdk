@@ -56,7 +56,7 @@ public class ParaManager: NSObject, ObservableObject {
     ///   - apiKey: Your Para API key.
     ///   - appScheme: Optional app scheme for authentication callbacks. Defaults to the app's bundle identifier.
     public init(environment: ParaEnvironment, apiKey: String, appScheme: String? = nil) {
-        logger.info("ParaManager init: \(environment.name), API key: \(String(apiKey.prefix(8)))...")
+        logger.info("ParaManager init: \(environment.name)")
 
         self.environment = environment
         self.apiKey = apiKey
@@ -142,7 +142,7 @@ public class ParaManager: NSObject, ObservableObject {
     ///   - payload: The payload to pass
     /// - Returns: The response from the bridge
     func postMessage(method: String, payload: Encodable) async throws -> Any? {
-        logger.debug("Calling bridge method: \(method), API key: \(String(self.apiKey.prefix(8)))...")
+        logger.debug("Calling bridge method: \(method)")
 
         do {
             let result: Any? = try await self.paraWebView.postMessage(method: method, payload: payload)

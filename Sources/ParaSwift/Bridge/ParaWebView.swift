@@ -42,7 +42,7 @@ public class ParaWebView: NSObject, ObservableObject {
     ///   - apiKey: The API key for Para services
     ///   - requestTimeout: The timeout duration for requests in seconds (default: 30.0)
     public init(environment: ParaEnvironment, apiKey: String, requestTimeout: TimeInterval = 30.0) {
-        logger.info("ParaWebView init: \(environment.name), bridge: \(environment.jsBridgeUrl.absoluteString), API key: \(String(apiKey.prefix(8)))...")
+        logger.info("ParaWebView init: \(environment.name), bridge: \(environment.jsBridgeUrl.absoluteString)")
 
         self.environment = environment
         self.apiKey = apiKey
@@ -117,7 +117,7 @@ public class ParaWebView: NSObject, ObservableObject {
         }
 
         guard isParaInitialized else {
-            logger.error("Para not initialized for \(method), API key: \(String(self.apiKey.prefix(8)))...")
+            logger.error("Para not initialized for \(method)")
             throw ParaWebViewError.bridgeError("Para not initialized")
         }
 
@@ -188,7 +188,7 @@ public class ParaWebView: NSObject, ObservableObject {
 
     /// Initializes Para with the current environment and API key
     private func initPara() {
-        logger.info("Initializing Para bridge with API key: \(String(self.apiKey.prefix(8)))...")
+        logger.info("Initializing Para bridge")
 
         let args: [String: String] = [
             "environment": environment.name,
@@ -215,7 +215,7 @@ public class ParaWebView: NSObject, ObservableObject {
         }
 
         let script = """
-        console.log('Para Swift SDK: Sending init message with API key \(String(apiKey.prefix(8)))...');
+        console.log('Para Swift SDK: Sending init message');
         window.postMessage({
           messageType: 'Para#init',
           arguments: \(jsonString)
