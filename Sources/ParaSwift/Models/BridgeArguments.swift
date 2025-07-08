@@ -36,6 +36,16 @@ struct CreateWalletArgs: Encodable {
     let skipDistributable: Bool
 }
 
+struct CreateWalletPerTypeArgs: Encodable {
+    let types: [String]?
+    let skipDistribute: Bool?
+    
+    init(types: [String]? = nil, skipDistribute: Bool? = nil) {
+        self.types = types
+        self.skipDistribute = skipDistribute
+    }
+}
+
 // Renaming existing Params structs for consistency
 struct SignMessageArgs: Encodable {
     let walletId: String
