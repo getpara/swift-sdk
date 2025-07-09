@@ -257,6 +257,22 @@ extension ParaManager {
 
             logger.debug("Passkey generation completed successfully")
 
+            // Update session state after successful signup
+            wallets = try await fetchWallets()
+            sessionState = .activeLoggedIn
+
+            // Synchronize required wallets for new OAuth users
+            logger.info("Synchronizing required wallets for new OAuth user...")
+            do {
+                let newWallets = try await synchronizeRequiredWallets()
+                if !newWallets.isEmpty {
+                    logger.info("Created \(newWallets.count) required wallets for new OAuth user")
+                }
+            } catch {
+                // Don't fail the signup if wallet creation fails
+                logger.error("Failed to synchronize required wallets: \(error.localizedDescription)")
+            }
+
         case .verify:
             // This shouldn't happen with OAuth
             logger.error("Unexpected verify stage in OAuth flow")

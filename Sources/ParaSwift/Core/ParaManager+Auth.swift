@@ -723,5 +723,17 @@ public extension ParaManager {
         wallets = try await fetchWallets()
         sessionState = .activeLoggedIn
         logger.info("Signup successful via \(method.description). Session active.")
+
+        // Synchronize required wallets for new users
+        logger.info("Synchronizing required wallets for new user...")
+        do {
+            let newWallets = try await synchronizeRequiredWallets()
+            if !newWallets.isEmpty {
+                logger.info("Created \(newWallets.count) required wallets for new user")
+            }
+        } catch {
+            // Don't fail the signup if wallet creation fails
+            logger.error("Failed to synchronize required wallets: \(error.localizedDescription)")
+        }
     }
 }
