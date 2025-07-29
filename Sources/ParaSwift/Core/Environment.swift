@@ -23,13 +23,13 @@ public enum ParaEnvironment: Hashable {
         case .beta:
             (
                 "app.beta.usecapsule.com",
-                URL(string: "https://js-bridge.beta.usecapsule.com/")!,
+                URL(string: "https://alpha-js-bridge.beta.getpara.com/")!,
                 "BETA"
             )
         case .prod:
             (
                 "app.usecapsule.com",
-                URL(string: "https://js-bridge.prod.usecapsule.com/")!,
+                URL(string: "https://alpha-js-bridge.prod.getpara.com/")!,
                 "PROD"
             )
         }
