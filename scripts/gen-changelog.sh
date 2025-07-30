@@ -5,7 +5,20 @@
 
 CHANGELOG_FILE="./CHANGELOG.md"
 COMMIT_TITLE="chore: release"
-BRANCH=${1:-$(git branch --show-current)}
+# Explicit branch override or auto-detect
+if [[ -n "${1:-}" ]]; then
+  BRANCH="$1"
+else
+  CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+  if [[ -z "$CURRENT_BRANCH" || "$CURRENT_BRANCH" == "HEAD" ]]; then
+    echo "Error: Cannot determine current branch (detached HEAD?)" >&2
+    echo "Please specify branch: ./scripts/gen-changelog.sh <branch-name>" >&2
+    exit 1
+  fi
+  BRANCH="$CURRENT_BRANCH"
+fi
+
+echo "Generating changelog for branch: $BRANCH"
 
 # Get commits since last release tag
 LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
