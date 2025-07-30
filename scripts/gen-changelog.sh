@@ -5,7 +5,7 @@
 
 CHANGELOG_FILE="./CHANGELOG.md"
 COMMIT_TITLE="chore: release"
-BRANCH=${1:-main}
+BRANCH=${1:-$(git branch --show-current)}
 
 # Get commits since last release tag
 LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
