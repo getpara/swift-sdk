@@ -41,4 +41,3 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           direct_prompt: "Review this Swift SDK pull request for code quality, Swift best practices, and potential issues."
-
