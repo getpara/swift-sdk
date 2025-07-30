@@ -102,7 +102,7 @@ done <<< "$COMMITS"
 VERSION=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "Unreleased")
 
 # Build changelog entry
-NEW_ENTRY="# Release v${VERSION} ($(date '+%a %b %d %Y'))
+NEW_ENTRY="## $VERSION ($(date '+%a %b %d %Y'))
 
 "
 
