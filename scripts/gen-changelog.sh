@@ -5,7 +5,7 @@
 
 CHANGELOG_FILE="./CHANGELOG.md"
 COMMIT_TITLE="chore: release"
-BRANCH=${1:-main}
+BRANCH=${1:-$(git branch --show-current)}
 
 # Get commits since last release tag
 LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
@@ -85,11 +85,11 @@ while IFS= read -r commit; do
   esac
 done <<< "$COMMITS"
 
-# Get version from git tag or use placeholder
-VERSION=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || echo "Unreleased")
+# Use "Unreleased" as version since this is for the NEXT release
+VERSION="Unreleased"
 
 # Build changelog entry
-NEW_ENTRY="# Release v${VERSION} ($(date '+%a %b %d %Y'))
+NEW_ENTRY="# Release ${VERSION} ($(date '+%a %b %d %Y'))
 
 "
 
