@@ -30,12 +30,8 @@ public class ParaManager: NSObject, ObservableObject, ErrorTrackable {
             passkeysManager.relyingPartyIdentifier = environment.relyingPartyId
             
             // Reinitialize error reporting client when environment changes
-            if isErrorTrackingEnabled {
-                let apiBaseURL = deriveApiBaseURL(from: environment)
-                errorReportingClient = ErrorReportingClient(baseURL: apiBaseURL, apiKey: apiKey)
-            } else {
-                errorReportingClient = nil
-            }
+            let apiBaseURL = deriveApiBaseURL(from: environment)
+            errorReportingClient = ErrorReportingClient(baseURL: apiBaseURL, apiKey: apiKey)
         }
     }
 
@@ -60,9 +56,9 @@ public class ParaManager: NSObject, ObservableObject, ErrorTrackable {
     /// Error reporting client for tracking SDK errors
     internal var errorReportingClient: ErrorReportingClient?
     
-    /// Whether error tracking is enabled (only in non-production environments)
+    /// Whether error tracking is enabled (always enabled - backend decides what to log)
     internal var isErrorTrackingEnabled: Bool {
-        environment != .prod
+        true
     }
 
     // MARK: - Initialization
@@ -84,11 +80,9 @@ public class ParaManager: NSObject, ObservableObject, ErrorTrackable {
         
         super.init()
         
-        // Initialize error reporting client if tracking is enabled
-        if isErrorTrackingEnabled {
-            let apiBaseURL = deriveApiBaseURL(from: environment)
-            errorReportingClient = ErrorReportingClient(baseURL: apiBaseURL, apiKey: apiKey)
-        }
+        // Initialize error reporting client
+        let apiBaseURL = deriveApiBaseURL(from: environment)
+        errorReportingClient = ErrorReportingClient(baseURL: apiBaseURL, apiKey: apiKey)
 
         Task { @MainActor in
             await waitForParaReady()
@@ -299,11 +293,11 @@ public class ParaManager: NSObject, ObservableObject, ErrorTrackable {
     private func deriveApiBaseURL(from environment: ParaEnvironment) -> String {
         switch environment {
         case .dev:
-            return "http://localhost:8080/api"
+            return "http://localhost:8080"
         case .sandbox:
-            return "https://api.sandbox.getpara.com/api"
+            return "https://api.sandbox.getpara.com"
         case .beta:
-            return "https://api.beta.getpara.com/api"
+            return "https://api.beta.getpara.com"
         case .prod:
             return "https://api.getpara.com"
         }
