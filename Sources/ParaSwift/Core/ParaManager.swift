@@ -312,7 +312,8 @@ public class ParaManager: NSObject, ObservableObject, ErrorTrackable {
     /// Get current user ID for error reporting context
     func getCurrentUserId() -> String? {
         // This is a synchronous version to avoid async complications in error tracking
-        // We'll try to get it from the current session state if possible
-        nil // For now, return nil - can be enhanced later with cached user info
+        // Return the userId from the first wallet if available
+        // All wallets for a user should have the same userId
+        wallets.first?.userId
     }
 }
