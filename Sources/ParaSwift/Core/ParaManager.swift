@@ -305,7 +305,7 @@ public class ParaManager: NSObject, ObservableObject, ErrorTrackable {
         case .beta:
             return "https://api.beta.getpara.com/api"
         case .prod:
-            return "https://api.prod.getpara.com/api"
+            return "https://api.getpara.com"
         }
     }
     
