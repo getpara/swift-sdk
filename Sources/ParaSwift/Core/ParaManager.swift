@@ -10,7 +10,7 @@ import WebKit
 /// This class provides a comprehensive interface for applications to interact with Para wallet services.
 /// It handles authentication flows, wallet creation and management, and transaction signing operations.
 @MainActor
-public class ParaManager: NSObject, ObservableObject {
+public class ParaManager: NSObject, ObservableObject, ErrorTrackable {
     // MARK: - Properties
 
     /// Current package version.
@@ -28,6 +28,14 @@ public class ParaManager: NSObject, ObservableObject {
     public var environment: ParaEnvironment {
         didSet {
             passkeysManager.relyingPartyIdentifier = environment.relyingPartyId
+            
+            // Reinitialize error reporting client when environment changes
+            if isErrorTrackingEnabled {
+                let apiBaseURL = deriveApiBaseURL(from: environment)
+                errorReportingClient = ErrorReportingClient(baseURL: apiBaseURL, apiKey: apiKey)
+            } else {
+                errorReportingClient = nil
+            }
         }
     }
 
@@ -46,6 +54,16 @@ public class ParaManager: NSObject, ObservableObject {
     let paraWebView: ParaWebView
     /// App scheme for authentication callbacks.
     let appScheme: String
+    
+    // MARK: - Error Reporting Properties
+    
+    /// Error reporting client for tracking SDK errors
+    internal var errorReportingClient: ErrorReportingClient?
+    
+    /// Whether error tracking is enabled (only in non-production environments)
+    internal var isErrorTrackingEnabled: Bool {
+        environment != .prod
+    }
 
     // MARK: - Initialization
 
@@ -63,8 +81,14 @@ public class ParaManager: NSObject, ObservableObject {
         passkeysManager = PasskeysManager(relyingPartyIdentifier: environment.relyingPartyId)
         paraWebView = ParaWebView(environment: environment, apiKey: apiKey)
         self.appScheme = appScheme ?? Bundle.main.bundleIdentifier!
-
+        
         super.init()
+        
+        // Initialize error reporting client if tracking is enabled
+        if isErrorTrackingEnabled {
+            let apiBaseURL = deriveApiBaseURL(from: environment)
+            errorReportingClient = ErrorReportingClient(baseURL: apiBaseURL, apiKey: apiKey)
+        }
 
         Task { @MainActor in
             await waitForParaReady()
@@ -267,5 +291,28 @@ public class ParaManager: NSObject, ObservableObject {
             pfpUrl: authInfoDict["pfpUrl"] as? String,
             username: authInfoDict["username"] as? String,
         )
+    }
+    
+    // MARK: - Error Reporting Support
+    
+    /// Derive API base URL from environment
+    private func deriveApiBaseURL(from environment: ParaEnvironment) -> String {
+        switch environment {
+        case .dev:
+            return "http://localhost:8080/api"
+        case .sandbox:
+            return "https://api.sandbox.getpara.com/api"
+        case .beta:
+            return "https://api.beta.getpara.com/api"
+        case .prod:
+            return "https://api.prod.getpara.com/api"
+        }
+    }
+    
+    /// Get current user ID for error reporting context
+    func getCurrentUserId() -> String? {
+        // This is a synchronous version to avoid async complications in error tracking
+        // We'll try to get it from the current session state if possible
+        nil // For now, return nil - can be enhanced later with cached user info
     }
 }
