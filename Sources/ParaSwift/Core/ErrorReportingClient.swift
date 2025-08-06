@@ -35,7 +35,7 @@ internal class ErrorReportingClient {
             )
             
             try await sendErrorToAPI(payload: payload)
-            logger.debug("Error reported successfully for method: \(methodName)")
+            logger.info("Error reported successfully for method: \(methodName)")
         } catch {
             // Silent failure to prevent error reporting loops
             logger.error("Failed to report error for method \(methodName): \(error)")
@@ -44,7 +44,9 @@ internal class ErrorReportingClient {
     
     /// Send error payload to the API
     private func sendErrorToAPI(payload: ErrorPayload) async throws {
-        guard let url = URL(string: "\(baseURL)/errors/sdk") else {
+        let urlString = "\(baseURL)/errors/sdk"
+        guard let url = URL(string: urlString) else {
+            logger.error("Invalid URL: \(urlString)")
             throw ErrorReportingError.invalidURL
         }
         
@@ -56,11 +58,22 @@ internal class ErrorReportingClient {
         let jsonData = try JSONEncoder().encode(payload)
         request.httpBody = jsonData
         
-        let (_, response) = try await URLSession.shared.data(for: request)
-        
-        guard let httpResponse = response as? HTTPURLResponse,
-              httpResponse.statusCode == 200 else {
-            throw ErrorReportingError.networkError
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                logger.error("Response is not HTTPURLResponse")
+                throw ErrorReportingError.networkError
+            }
+            
+            if !(200...299).contains(httpResponse.statusCode) {
+                let responseBody = String(data: data, encoding: .utf8) ?? "Unable to decode response body"
+                logger.error("HTTP \(httpResponse.statusCode) error. Response: \(responseBody)")
+                throw ErrorReportingError.networkError
+            }
+        } catch {
+            logger.error("Failed to send error report: \(error.localizedDescription)")
+            throw error
         }
     }
 }
