@@ -31,7 +31,7 @@ public class ParaManager: NSObject, ObservableObject, ErrorTrackable {
             
             // Reinitialize error reporting client when environment changes
             let apiBaseURL = deriveApiBaseURL(from: environment)
-            errorReportingClient = ErrorReportingClient(baseURL: apiBaseURL, apiKey: apiKey, environment: environment.name)
+            errorReportingClient = ErrorReportingClient(baseURL: apiBaseURL, environment: environment.name)
         }
     }
 
@@ -82,7 +82,7 @@ public class ParaManager: NSObject, ObservableObject, ErrorTrackable {
         
         // Initialize error reporting client
         let apiBaseURL = deriveApiBaseURL(from: environment)
-        errorReportingClient = ErrorReportingClient(baseURL: apiBaseURL, apiKey: apiKey, environment: environment.name)
+        errorReportingClient = ErrorReportingClient(baseURL: apiBaseURL, environment: environment.name)
 
         Task { @MainActor in
             await waitForParaReady()

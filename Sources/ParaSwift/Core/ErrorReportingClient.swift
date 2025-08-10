@@ -6,18 +6,15 @@ import UIKit
 @MainActor
 internal class ErrorReportingClient {
     private let baseURL: String
-    private let apiKey: String
     private let environment: String
     private let logger = Logger(subsystem: "ParaSwift", category: "ErrorReporting")
     
     /// Initialize the error reporting client
     /// - Parameters:
     ///   - baseURL: Base URL for the Para API
-    ///   - apiKey: API key for authentication
     ///   - environment: Environment name for context
-    init(baseURL: String, apiKey: String, environment: String = "PROD") {
+    init(baseURL: String, environment: String = "PROD") {
         self.baseURL = baseURL
-        self.apiKey = apiKey
         self.environment = environment
     }
     
@@ -126,7 +123,6 @@ internal class ErrorReportingClient {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         
         let jsonData = try JSONEncoder().encode(payload)
         request.httpBody = jsonData
