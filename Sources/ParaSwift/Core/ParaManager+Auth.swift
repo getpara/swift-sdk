@@ -111,18 +111,24 @@ public extension ParaManager {
     /// - Parameter auth: Authentication information (email or phone)
     /// - Returns: AuthState object containing information about the next steps
     internal func signUpOrLogIn(auth: Auth) async throws -> AuthState {
-        try await ensureWebViewReady()
+        try await withErrorTracking(
+            methodName: "signUpOrLogIn",
+            userId: getCurrentUserId(),
+            operation: {
+                try await ensureWebViewReady()
 
-        let payload = createSignUpOrLogInPayload(from: auth)
+                let payload = createSignUpOrLogInPayload(from: auth)
 
-        let result = try await postMessage(method: "signUpOrLogIn", payload: payload)
-        let authState = try parseAuthStateFromResult(result)
+                let result = try await postMessage(method: "signUpOrLogIn", payload: payload)
+                let authState = try parseAuthStateFromResult(result)
 
-        if authState.stage == .verify || authState.stage == .login {
-            sessionState = .active
-        }
+                if authState.stage == .verify || authState.stage == .login {
+                    sessionState = .active
+                }
 
-        return authState
+                return authState
+            }
+        )
     }
 
     /// Initiates the email/phone authentication flow (signup or login).
@@ -193,19 +199,25 @@ public extension ParaManager {
     /// - Parameter verificationCode: The verification code sent to the user
     /// - Returns: AuthState object containing information about the next steps
     func verifyNewAccount(verificationCode: String) async throws -> AuthState {
-        try await ensureWebViewReady()
+        try await withErrorTracking(
+            methodName: "verifyNewAccount",
+            userId: getCurrentUserId(),
+            operation: {
+                try await ensureWebViewReady()
 
-        let result = try await postMessage(method: "verifyNewAccount", payload: VerifyNewAccountArgs(verificationCode: verificationCode))
-        // Log the raw result from the bridge before parsing
-        let logger = Logger(subsystem: "com.paraSwift", category: "ParaManager.Verify")
-        logger.debug("Raw result from verifyNewAccount bridge call received")
-        let authState = try parseAuthStateFromResult(result)
+                let result = try await postMessage(method: "verifyNewAccount", payload: VerifyNewAccountArgs(verificationCode: verificationCode))
+                // Log the raw result from the bridge before parsing
+                let logger = Logger(subsystem: "com.paraSwift", category: "ParaManager.Verify")
+                logger.debug("Raw result from verifyNewAccount bridge call received")
+                let authState = try parseAuthStateFromResult(result)
 
-        if authState.stage == .signup {
-            sessionState = .active
-        }
+                if authState.stage == .signup {
+                    sessionState = .active
+                }
 
-        return authState
+                return authState
+            }
+        )
     }
 
     /// Handles the verification step for a new user.
