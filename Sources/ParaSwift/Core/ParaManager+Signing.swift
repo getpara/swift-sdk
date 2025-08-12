@@ -38,7 +38,7 @@ public extension ParaManager {
                     method: "signMessage",
                     key: "signature",
                 )
-            }
+            },
         )
     }
 
@@ -83,7 +83,7 @@ public extension ParaManager {
                     method: "signTransaction",
                     key: "signature",
                 )
-            }
+            },
         )
     }
 }

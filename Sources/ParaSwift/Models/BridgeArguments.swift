@@ -39,7 +39,7 @@ struct CreateWalletArgs: Encodable {
 struct CreateWalletPerTypeArgs: Encodable {
     let types: [String]?
     let skipDistribute: Bool?
-    
+
     init(types: [String]? = nil, skipDistribute: Bool? = nil) {
         self.types = types
         self.skipDistribute = skipDistribute

@@ -25,14 +25,14 @@ extension ParaManager {
 
     private func parseAuthStateFromResult(_ result: Any?) throws -> AuthState {
         guard let resultDict = result as? [String: Any] else {
-            throw ParaError.bridgeError("Invalid result format from authentication call")
+            throw ParaError.legacyBridgeError("Invalid result format from authentication call")
         }
 
         guard let stageString = resultDict["stage"] as? String,
               let stage = AuthStage(rawValue: stageString),
               let userId = resultDict["userId"] as? String
         else {
-            throw ParaError.bridgeError("Missing required fields in authentication response")
+            throw ParaError.legacyBridgeError("Missing required fields in authentication response")
         }
 
         let passkeyUrl = resultDict["passkeyUrl"] as? String
@@ -127,7 +127,7 @@ public extension ParaManager {
                 }
 
                 return authState
-            }
+            },
         )
     }
 
@@ -216,7 +216,7 @@ public extension ParaManager {
                 }
 
                 return authState
-            }
+            },
         )
     }
 
@@ -232,7 +232,7 @@ public extension ParaManager {
 
         guard newState.stage == .signup else {
             logger.error("Verification completed but resulted in unexpected stage: \(newState.stage.rawValue)")
-            throw ParaError.bridgeError("Verification resulted in unexpected state.")
+            throw ParaError.legacyBridgeError("Verification resulted in unexpected state.")
         }
         return newState
     }
@@ -357,7 +357,7 @@ public extension ParaManager {
         )
 
         guard let rawAttestation = result.rawAttestationObject else {
-            throw ParaError.bridgeError("Missing attestation object")
+            throw ParaError.legacyBridgeError("Missing attestation object")
         }
         let rawClientData = result.rawClientDataJSON
         let credID = result.credentialID
@@ -454,7 +454,7 @@ public extension ParaManager {
                 logger.debug("loginExternalWallet completed for connection-only wallet: \(wallet.address), userId: \(userId)")
             } else {
                 logger.error("loginExternalWallet: Invalid response format for connection-only wallet")
-                throw ParaError.bridgeError("Invalid response format for connection-only wallet")
+                throw ParaError.legacyBridgeError("Invalid response format for connection-only wallet")
             }
         } else {
             // Full auth mode - parse as AuthState
@@ -490,7 +490,7 @@ public extension ParaManager {
         try await ensureWebViewReady()
         let result = try await postMessage(method: "setup2fa", payload: EmptyPayload())
         guard let dict = result as? [String: Any] else {
-            throw ParaError.bridgeError("Invalid result format from setup2fa")
+            throw ParaError.legacyBridgeError("Invalid result format from setup2fa")
         }
 
         if let isSetup = dict["isSetup"] as? Bool, isSetup {

@@ -28,7 +28,7 @@ public class ParaManager: NSObject, ObservableObject, ErrorTrackable {
     public var environment: ParaEnvironment {
         didSet {
             passkeysManager.relyingPartyIdentifier = environment.relyingPartyId
-            
+
             // Reinitialize error reporting client when environment changes
             let apiBaseURL = deriveApiBaseURL(from: environment)
             errorReportingClient = ErrorReportingClient(baseURL: apiBaseURL, environment: environment.name)
@@ -50,14 +50,14 @@ public class ParaManager: NSObject, ObservableObject, ErrorTrackable {
     let paraWebView: ParaWebView
     /// App scheme for authentication callbacks.
     let appScheme: String
-    
+
     // MARK: - Error Reporting Properties
-    
+
     /// Error reporting client for tracking SDK errors
-    internal var errorReportingClient: ErrorReportingClient?
-    
+    var errorReportingClient: ErrorReportingClient?
+
     /// Whether error tracking is enabled (always enabled - backend decides what to log)
-    internal var isErrorTrackingEnabled: Bool {
+    var isErrorTrackingEnabled: Bool {
         true
     }
 
@@ -77,9 +77,9 @@ public class ParaManager: NSObject, ObservableObject, ErrorTrackable {
         passkeysManager = PasskeysManager(relyingPartyIdentifier: environment.relyingPartyId)
         paraWebView = ParaWebView(environment: environment, apiKey: apiKey)
         self.appScheme = appScheme ?? Bundle.main.bundleIdentifier!
-        
+
         super.init()
-        
+
         // Initialize error reporting client
         let apiBaseURL = deriveApiBaseURL(from: environment)
         errorReportingClient = ErrorReportingClient(baseURL: apiBaseURL, environment: environment.name)
@@ -149,7 +149,7 @@ public class ParaManager: NSObject, ObservableObject, ErrorTrackable {
             logger.debug("WebView not ready, waiting for initialization...")
             await waitForParaReady()
             guard paraWebView.isReady else {
-                throw ParaError.bridgeError("WebView failed to initialize")
+                throw ParaError.legacyBridgeError("WebView failed to initialize")
             }
         }
     }
@@ -179,7 +179,7 @@ public class ParaManager: NSObject, ObservableObject, ErrorTrackable {
     /// - Returns: The decoded result
     func decodeResult<T>(_ result: Any?, expectedType _: T.Type, method: String) throws -> T {
         guard let value = result as? T else {
-            throw ParaError.bridgeError("METHOD_ERROR<\(method)>: Invalid result format expected \(T.self), but got \(String(describing: result))")
+            throw ParaError.legacyBridgeError("METHOD_ERROR<\(method)>: Invalid result format expected \(T.self), but got \(String(describing: result))")
         }
         return value
     }
@@ -194,7 +194,7 @@ public class ParaManager: NSObject, ObservableObject, ErrorTrackable {
     func decodeDictionaryResult<T>(_ result: Any?, expectedType _: T.Type, method: String, key: String) throws -> T {
         let dict = try decodeResult(result, expectedType: [String: Any].self, method: method)
         guard let value = dict[key] as? T else {
-            throw ParaError.bridgeError("KEY_ERROR<\(method)-\(key)>: Missing or invalid key result")
+            throw ParaError.legacyBridgeError("KEY_ERROR<\(method)-\(key)>: Missing or invalid key result")
         }
         return value
     }
@@ -286,23 +286,23 @@ public class ParaManager: NSObject, ObservableObject, ErrorTrackable {
             username: authInfoDict["username"] as? String,
         )
     }
-    
+
     // MARK: - Error Reporting Support
-    
+
     /// Derive API base URL from environment
     private func deriveApiBaseURL(from environment: ParaEnvironment) -> String {
         switch environment {
         case .dev:
-            return "http://localhost:8080"
+            "http://localhost:8080"
         case .sandbox:
-            return "https://api.sandbox.getpara.com"
+            "https://api.sandbox.getpara.com"
         case .beta:
-            return "https://api.beta.getpara.com"
+            "https://api.beta.getpara.com"
         case .prod:
-            return "https://api.getpara.com"
+            "https://api.getpara.com"
         }
     }
-    
+
     /// Get current user ID for error reporting context
     func getCurrentUserId() -> String? {
         // This is a synchronous version to avoid async complications in error tracking

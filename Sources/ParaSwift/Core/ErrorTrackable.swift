@@ -2,13 +2,13 @@ import Foundation
 
 /// Protocol for classes that support error tracking
 @MainActor
-internal protocol ErrorTrackable {
+protocol ErrorTrackable {
     /// The error reporting client instance
     var errorReportingClient: ErrorReportingClient? { get }
-    
+
     /// Whether error tracking is enabled
     var isErrorTrackingEnabled: Bool { get }
-    
+
     /// Get the current user ID for error context
     func getCurrentUserId() -> String?
 }
@@ -29,7 +29,7 @@ extension ErrorTrackable {
             await client.trackError(methodName: methodName, error: error, userId: userId ?? getCurrentUserId())
         }
     }
-    
+
     /// Wrap async methods with error tracking
     /// This provides a functional approach to method wrapping without runtime method swizzling
     func withErrorTracking<T>(
@@ -44,7 +44,7 @@ extension ErrorTrackable {
             throw error
         }
     }
-    
+
     /// Wrap synchronous methods with error tracking
     func withErrorTracking<T>(
         methodName: String,

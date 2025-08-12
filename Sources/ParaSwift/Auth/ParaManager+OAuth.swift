@@ -80,7 +80,7 @@ extension ParaManager {
         try await ensureWebViewReady()
 
         // Step 1: Prepare and get the OAuth URL
-        logger.debug("Getting OAuth URL for provider: \(provider.rawValue) and appScheme: \(self.appScheme)")
+        logger.debug("Getting OAuth URL for provider: \(provider.rawValue) and appScheme: \(appScheme)")
         let oAuthParams = OAuthUrlParams(method: provider.rawValue, appScheme: appScheme)
 
         let oAuthUrlResult = try await paraWebView.postMessage(method: "getOAuthUrl", payload: oAuthParams)
@@ -120,7 +120,7 @@ extension ParaManager {
     /// - Returns: The parsed AuthState object
     private func processOAuthResult(_ result: Any?, logger _: Logger) throws -> AuthState {
         guard let resultDict = result as? [String: Any] else {
-            throw ParaError.bridgeError("Invalid result format from verifyOAuth: \(String(describing: result))")
+            throw ParaError.legacyBridgeError("Invalid result format from verifyOAuth: \(String(describing: result))")
         }
 
         // Extract required fields from the response
@@ -128,7 +128,7 @@ extension ParaManager {
               let stage = AuthStage(rawValue: stageString),
               let userId = resultDict["userId"] as? String
         else {
-            throw ParaError.bridgeError("Missing required fields in verifyOAuth response: \(resultDict)")
+            throw ParaError.legacyBridgeError("Missing required fields in verifyOAuth response: \(resultDict)")
         }
 
         // Extract optional fields

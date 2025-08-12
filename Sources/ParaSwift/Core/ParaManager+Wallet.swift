@@ -68,19 +68,20 @@ public extension ParaManager {
     @MainActor
     func synchronizeRequiredWallets() async throws -> [Wallet] {
         logger.info("Starting wallet synchronization...")
-        
+
         // Call createWalletPerType without types parameter
         // This will automatically create wallets for all missing required types
         let result = try await postMessage(method: "createWalletPerType", payload: CreateWalletPerTypeArgs())
-        
+
         guard let resultDict = result as? [String: Any],
-              let walletsArray = resultDict["wallets"] as? [[String: Any]] else {
+              let walletsArray = resultDict["wallets"] as? [[String: Any]]
+        else {
             logger.error("Invalid response from createWalletPerType")
             return []
         }
-        
+
         let newWallets = walletsArray.map { Wallet(result: $0) }
-        
+
         if !newWallets.isEmpty {
             logger.info("Created \(newWallets.count) required wallets")
             // Update local wallets list
@@ -88,7 +89,7 @@ public extension ParaManager {
         } else {
             logger.info("No new wallets created - all required types already exist")
         }
-        
+
         return newWallets
     }
 }
