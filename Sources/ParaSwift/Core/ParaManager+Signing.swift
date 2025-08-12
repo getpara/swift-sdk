@@ -12,33 +12,27 @@ public extension ParaManager {
     ///   - timeoutMs: Optional timeout in milliseconds for the signing operation.
     /// - Returns: The signature as a string.
     func signMessage(walletId: String, message: String, timeoutMs: Int? = nil) async throws -> String {
-        try await withErrorTracking(
-            methodName: "signMessage",
-            userId: getCurrentUserId(),
-            operation: {
-                try await ensureWebViewReady()
+        try await ensureWebViewReady()
 
-                struct SignMessageParams: Encodable {
-                    let walletId: String
-                    let messageBase64: String
-                    let timeoutMs: Int?
-                }
+        struct SignMessageParams: Encodable {
+            let walletId: String
+            let messageBase64: String
+            let timeoutMs: Int?
+        }
 
-                let messageBase64 = message.toBase64()
-                let params = SignMessageParams(
-                    walletId: walletId,
-                    messageBase64: messageBase64,
-                    timeoutMs: timeoutMs,
-                )
+        let messageBase64 = message.toBase64()
+        let params = SignMessageParams(
+            walletId: walletId,
+            messageBase64: messageBase64,
+            timeoutMs: timeoutMs,
+        )
 
-                let result = try await postMessage(method: "signMessage", payload: params)
-                return try decodeDictionaryResult(
-                    result,
-                    expectedType: String.self,
-                    method: "signMessage",
-                    key: "signature",
-                )
-            },
+        let result = try await postMessage(method: "signMessage", payload: params)
+        return try decodeDictionaryResult(
+            result,
+            expectedType: String.self,
+            method: "signMessage",
+            key: "signature",
         )
     }
 
@@ -56,34 +50,28 @@ public extension ParaManager {
         chainId: String,
         timeoutMs: Int? = nil
     ) async throws -> String {
-        try await withErrorTracking(
-            methodName: "signTransaction",
-            userId: getCurrentUserId(),
-            operation: {
-                try await ensureWebViewReady()
+        try await ensureWebViewReady()
 
-                struct SignTransactionParams: Encodable {
-                    let walletId: String
-                    let rlpEncodedTxBase64: String
-                    let chainId: String
-                    let timeoutMs: Int?
-                }
+        struct SignTransactionParams: Encodable {
+            let walletId: String
+            let rlpEncodedTxBase64: String
+            let chainId: String
+            let timeoutMs: Int?
+        }
 
-                let params = SignTransactionParams(
-                    walletId: walletId,
-                    rlpEncodedTxBase64: rlpEncodedTx.toBase64(),
-                    chainId: chainId,
-                    timeoutMs: timeoutMs,
-                )
+        let params = SignTransactionParams(
+            walletId: walletId,
+            rlpEncodedTxBase64: rlpEncodedTx.toBase64(),
+            chainId: chainId,
+            timeoutMs: timeoutMs,
+        )
 
-                let result = try await postMessage(method: "signTransaction", payload: params)
-                return try decodeDictionaryResult(
-                    result,
-                    expectedType: String.self,
-                    method: "signTransaction",
-                    key: "signature",
-                )
-            },
+        let result = try await postMessage(method: "signTransaction", payload: params)
+        return try decodeDictionaryResult(
+            result,
+            expectedType: String.self,
+            method: "signTransaction",
+            key: "signature",
         )
     }
 }

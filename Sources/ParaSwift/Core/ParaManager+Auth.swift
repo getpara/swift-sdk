@@ -25,14 +25,14 @@ extension ParaManager {
 
     private func parseAuthStateFromResult(_ result: Any?) throws -> AuthState {
         guard let resultDict = result as? [String: Any] else {
-            throw ParaError.legacyBridgeError("Invalid result format from authentication call")
+            throw ParaError.bridgeError("Invalid result format from authentication call")
         }
 
         guard let stageString = resultDict["stage"] as? String,
               let stage = AuthStage(rawValue: stageString),
               let userId = resultDict["userId"] as? String
         else {
-            throw ParaError.legacyBridgeError("Missing required fields in authentication response")
+            throw ParaError.bridgeError("Missing required fields in authentication response")
         }
 
         let passkeyUrl = resultDict["passkeyUrl"] as? String
@@ -111,24 +111,18 @@ public extension ParaManager {
     /// - Parameter auth: Authentication information (email or phone)
     /// - Returns: AuthState object containing information about the next steps
     internal func signUpOrLogIn(auth: Auth) async throws -> AuthState {
-        try await withErrorTracking(
-            methodName: "signUpOrLogIn",
-            userId: getCurrentUserId(),
-            operation: {
-                try await ensureWebViewReady()
+        try await ensureWebViewReady()
 
-                let payload = createSignUpOrLogInPayload(from: auth)
+        let payload = createSignUpOrLogInPayload(from: auth)
 
-                let result = try await postMessage(method: "signUpOrLogIn", payload: payload)
-                let authState = try parseAuthStateFromResult(result)
+        let result = try await postMessage(method: "signUpOrLogIn", payload: payload)
+        let authState = try parseAuthStateFromResult(result)
 
-                if authState.stage == .verify || authState.stage == .login {
-                    sessionState = .active
-                }
+        if authState.stage == .verify || authState.stage == .login {
+            sessionState = .active
+        }
 
-                return authState
-            },
-        )
+        return authState
     }
 
     /// Initiates the email/phone authentication flow (signup or login).
@@ -199,25 +193,19 @@ public extension ParaManager {
     /// - Parameter verificationCode: The verification code sent to the user
     /// - Returns: AuthState object containing information about the next steps
     func verifyNewAccount(verificationCode: String) async throws -> AuthState {
-        try await withErrorTracking(
-            methodName: "verifyNewAccount",
-            userId: getCurrentUserId(),
-            operation: {
-                try await ensureWebViewReady()
+        try await ensureWebViewReady()
 
-                let result = try await postMessage(method: "verifyNewAccount", payload: VerifyNewAccountArgs(verificationCode: verificationCode))
-                // Log the raw result from the bridge before parsing
-                let logger = Logger(subsystem: "com.paraSwift", category: "ParaManager.Verify")
-                logger.debug("Raw result from verifyNewAccount bridge call received")
-                let authState = try parseAuthStateFromResult(result)
+        let result = try await postMessage(method: "verifyNewAccount", payload: VerifyNewAccountArgs(verificationCode: verificationCode))
+        // Log the raw result from the bridge before parsing
+        let logger = Logger(subsystem: "com.paraSwift", category: "ParaManager.Verify")
+        logger.debug("Raw result from verifyNewAccount bridge call received")
+        let authState = try parseAuthStateFromResult(result)
 
-                if authState.stage == .signup {
-                    sessionState = .active
-                }
+        if authState.stage == .signup {
+            sessionState = .active
+        }
 
-                return authState
-            },
-        )
+        return authState
     }
 
     /// Handles the verification step for a new user.
@@ -232,7 +220,7 @@ public extension ParaManager {
 
         guard newState.stage == .signup else {
             logger.error("Verification completed but resulted in unexpected stage: \(newState.stage.rawValue)")
-            throw ParaError.legacyBridgeError("Verification resulted in unexpected state.")
+            throw ParaError.bridgeError("Verification resulted in unexpected state.")
         }
         return newState
     }
@@ -357,7 +345,7 @@ public extension ParaManager {
         )
 
         guard let rawAttestation = result.rawAttestationObject else {
-            throw ParaError.legacyBridgeError("Missing attestation object")
+            throw ParaError.bridgeError("Missing attestation object")
         }
         let rawClientData = result.rawClientDataJSON
         let credID = result.credentialID
@@ -454,7 +442,7 @@ public extension ParaManager {
                 logger.debug("loginExternalWallet completed for connection-only wallet: \(wallet.address), userId: \(userId)")
             } else {
                 logger.error("loginExternalWallet: Invalid response format for connection-only wallet")
-                throw ParaError.legacyBridgeError("Invalid response format for connection-only wallet")
+                throw ParaError.bridgeError("Invalid response format for connection-only wallet")
             }
         } else {
             // Full auth mode - parse as AuthState
@@ -490,7 +478,7 @@ public extension ParaManager {
         try await ensureWebViewReady()
         let result = try await postMessage(method: "setup2fa", payload: EmptyPayload())
         guard let dict = result as? [String: Any] else {
-            throw ParaError.legacyBridgeError("Invalid result format from setup2fa")
+            throw ParaError.bridgeError("Invalid result format from setup2fa")
         }
 
         if let isSetup = dict["isSetup"] as? Bool, isSetup {

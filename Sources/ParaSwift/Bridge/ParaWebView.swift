@@ -234,187 +234,6 @@ public class ParaWebView: NSObject, ObservableObject {
         }
     }
 
-    /// Parses bridge error from JavaScript response into structured ParaError
-    /// - Parameters:
-    ///   - errorValue: Error value from bridge response (can be string or structured object)
-    ///   - method: Method name that failed for context
-    /// - Returns: Structured ParaError with appropriate type and context
-    private func parseBridgeError(_ errorValue: Any, method: String) -> ParaError {
-        // Try to parse as structured BridgeError from bridge-v2
-        if let dict = errorValue as? [String: Any] {
-            return parseStructuredBridgeError(dict, method: method)
-        } else if let message = errorValue as? String {
-            // Legacy string error - maintain backward compatibility
-            logger.debug("Received legacy string error: \(message)")
-            return ParaError.legacyBridgeError(message)
-        } else {
-            // Fallback for unknown error format
-            let errorStr = String(describing: errorValue)
-            logger.debug("Received unknown error format: \(errorStr)")
-            return ParaError.legacyBridgeError(errorStr)
-        }
-    }
-
-    /// Legacy method - kept for backward compatibility but redirects to the streamlined version
-    private func parseStructuredBridgeError(_ errorDict: [String: Any]) -> ParaBridgeError? {
-        logger.debug("Using legacy parseStructuredBridgeError method - consider updating caller")
-        
-        guard let code = errorDict["code"] as? String,
-              let message = errorDict["message"] as? String,
-              let contextDict = errorDict["context"] as? [String: Any],
-              let retryable = errorDict["retryable"] as? Bool
-        else {
-            return nil
-        }
-        
-        let userMessage = errorDict["userMessage"] as? String
-        
-        let context = ParaErrorContext(
-            operation: contextDict["operation"] as? String ?? "unknown",
-            chainId: contextDict["chainId"] as? String,
-            walletType: contextDict["walletType"] as? String,
-            method: contextDict["method"] as? String
-        )
-        
-        return ParaBridgeError(
-            code: code,
-            message: message,
-            userMessage: userMessage,
-            context: context,
-            retryable: retryable
-        )
-    }
-
-    /// Parses structured BridgeError object into appropriate ParaError type
-    private func parseStructuredBridgeError(_ dict: [String: Any], method: String) -> ParaError {
-        // Extract required fields with fallbacks
-        guard let code = dict["code"] as? String,
-              let message = dict["message"] as? String,
-              let contextDict = dict["context"] as? [String: Any],
-              let retryable = dict["retryable"] as? Bool
-        else {
-            // Fallback for malformed bridge error
-            logger.warning("Received malformed bridge error, falling back to legacy error")
-            let errorStr = String(describing: dict)
-            return ParaError.legacyBridgeError(errorStr)
-        }
-
-        let userMessage = dict["userMessage"] as? String // Optional now
-
-        // Extract context information
-        let operation = contextDict["operation"] as? String ?? method
-        let chainId = contextDict["chainId"] as? String
-        let walletType = contextDict["walletType"] as? String
-        let contextMethod = contextDict["method"] as? String
-
-        let context = ParaErrorContext(
-            operation: operation,
-            chainId: chainId,
-            walletType: walletType,
-            method: contextMethod
-        )
-
-        let bridgeError = ParaBridgeError(
-            code: code,
-            message: message,
-            userMessage: userMessage,
-            context: context,
-            retryable: retryable
-        )
-
-        // Log structured error with rich context
-        logStructuredError(bridgeError, method: method)
-
-        // Map to appropriate ParaError type based on error code or operation
-        return mapToParaErrorType(bridgeError)
-    }
-
-    /// Maps structured bridge error to appropriate ParaError type using streamlined error codes
-    private func mapToParaErrorType(_ bridgeError: ParaBridgeError) -> ParaError {
-        switch bridgeError.code {
-        case "AUTH_FAILED":
-            return .authenticationError(bridgeError)
-        case "SIGNER_INIT_FAILED":
-            return .walletError(bridgeError)
-        case "SIGNING_FAILED", "TRANSACTION_FAILED":
-            return .signingError(bridgeError)
-        case "NETWORK_ERROR", "GAS_ERROR":
-            return .networkError(bridgeError)
-        case "USER_REJECTED", "INSUFFICIENT_FUNDS":
-            return .signingError(bridgeError) // These are signing-related user actions
-        case "FETCH_FAILED":
-            return .networkError(bridgeError)
-        case "INIT_FAILED", "METHOD_NOT_IMPLEMENTED":
-            return .bridgeError(bridgeError)
-        default:
-            // Fallback: try operation-based mapping for any unmapped codes
-            let operation = bridgeError.context.operation.lowercased()
-            if operation.contains("auth") || operation.contains("login") || operation.contains("passkey") {
-                return .authenticationError(bridgeError)
-            } else if operation.contains("wallet") || operation.contains("init") || operation.contains("connect") {
-                return .walletError(bridgeError)
-            } else if operation.contains("sign") || operation.contains("transaction") {
-                return .signingError(bridgeError)
-            }
-            return .bridgeError(bridgeError)
-        }
-    }
-
-    /// Enhanced logging for structured errors with rich context
-    private func logStructuredError(_ bridgeError: ParaBridgeError, method: String) {
-        var logComponents = ["[PARA ERROR]"]
-
-        // Operation context
-        logComponents.append("\(bridgeError.context.operation) failed")
-
-        if let chainId = bridgeError.context.chainId, let walletType = bridgeError.context.walletType {
-            let chainName = formatChainNameForLogging(chainId)
-            logComponents.append("on \(chainName) (\(walletType) wallet)")
-        } else if let chainId = bridgeError.context.chainId {
-            let chainName = formatChainNameForLogging(chainId)
-            logComponents.append("on \(chainName)")
-        } else if let walletType = bridgeError.context.walletType {
-            logComponents.append("(\(walletType) wallet)")
-        }
-
-        // Error details
-        logComponents.append("- Error Code: \(bridgeError.code)")
-        logComponents.append("- Reason: \(bridgeError.displayMessage)")
-
-        if bridgeError.retryable {
-            logComponents.append("- Suggestion: Operation can be retried")
-        }
-
-        // Log with structured information
-        let logMessage = logComponents.joined(separator: " ")
-        logger.error("\(logMessage)")
-
-        // Additional debug info
-        logger.debug("Bridge method: \(method)")
-        logger.debug("Technical message: \(bridgeError.message)")
-        if let contextMethod = bridgeError.context.method {
-            logger.debug("Context method: \(contextMethod)")
-        }
-    }
-
-    /// Format chain name for logging (simplified version)
-    private func formatChainNameForLogging(_ chainId: String) -> String {
-        switch chainId {
-        case "1": "Ethereum mainnet"
-        case "137": "Polygon"
-        case "56": "BNB Chain"
-        case "43114": "Avalanche"
-        case "42161": "Arbitrum One"
-        case "10": "Optimism"
-        case "8453": "Base"
-        case "solana-mainnet": "Solana mainnet"
-        case "solana-devnet": "Solana devnet"
-        case "cosmoshub-4": "Cosmos Hub"
-        case "osmosis-1": "Osmosis"
-        default: "chain \(chainId)"
-        }
-    }
-
     /// Handles callbacks from the JavaScript bridge
     /// - Parameter response: The response data from JavaScript
     private func handleCallback(response: [String: Any]) {
@@ -446,9 +265,22 @@ public class ParaWebView: NSObject, ObservableObject {
         entry.timeoutTask?.cancel()
 
         if let errorValue = response["error"] {
-            let paraError = parseBridgeError(errorValue, method: method)
-            logger.error("Bridge error received: method=\(method) error=\(paraError.description)")
-            entry.continuation.resume(throwing: paraError)
+            var errorMessage = ""
+            if let dict = errorValue as? [String: Any] {
+                if let data = try? JSONSerialization.data(withJSONObject: dict, options: .prettyPrinted),
+                   let jsonStr = String(data: data, encoding: .utf8)
+                {
+                    errorMessage = jsonStr
+                } else {
+                    errorMessage = String(describing: dict)
+                }
+            } else if let message = errorValue as? String {
+                errorMessage = message
+            } else {
+                errorMessage = String(describing: errorValue)
+            }
+            logger.error("Bridge error received: method=\(method) error=\(errorMessage)")
+            entry.continuation.resume(throwing: ParaWebViewError.bridgeError(errorMessage))
             return
         }
 

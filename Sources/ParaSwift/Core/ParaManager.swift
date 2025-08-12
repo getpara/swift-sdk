@@ -10,7 +10,7 @@ import WebKit
 /// This class provides a comprehensive interface for applications to interact with Para wallet services.
 /// It handles authentication flows, wallet creation and management, and transaction signing operations.
 @MainActor
-public class ParaManager: NSObject, ObservableObject, ErrorTrackable {
+public class ParaManager: NSObject, ObservableObject {
     // MARK: - Properties
 
     /// Current package version.
@@ -28,10 +28,7 @@ public class ParaManager: NSObject, ObservableObject, ErrorTrackable {
     public var environment: ParaEnvironment {
         didSet {
             passkeysManager.relyingPartyIdentifier = environment.relyingPartyId
-
-            // Reinitialize error reporting client when environment changes
-            let apiBaseURL = deriveApiBaseURL(from: environment)
-            errorReportingClient = ErrorReportingClient(baseURL: apiBaseURL, environment: environment.name)
+            
         }
     }
 
@@ -50,17 +47,7 @@ public class ParaManager: NSObject, ObservableObject, ErrorTrackable {
     let paraWebView: ParaWebView
     /// App scheme for authentication callbacks.
     let appScheme: String
-
-    // MARK: - Error Reporting Properties
-
-    /// Error reporting client for tracking SDK errors
-    var errorReportingClient: ErrorReportingClient?
-
-    /// Whether error tracking is enabled (always enabled - backend decides what to log)
-    var isErrorTrackingEnabled: Bool {
-        true
-    }
-
+    
     // MARK: - Initialization
 
     /// Creates a new Para manager instance.
@@ -77,12 +64,8 @@ public class ParaManager: NSObject, ObservableObject, ErrorTrackable {
         passkeysManager = PasskeysManager(relyingPartyIdentifier: environment.relyingPartyId)
         paraWebView = ParaWebView(environment: environment, apiKey: apiKey)
         self.appScheme = appScheme ?? Bundle.main.bundleIdentifier!
-
+        
         super.init()
-
-        // Initialize error reporting client
-        let apiBaseURL = deriveApiBaseURL(from: environment)
-        errorReportingClient = ErrorReportingClient(baseURL: apiBaseURL, environment: environment.name)
 
         Task { @MainActor in
             await waitForParaReady()
@@ -149,7 +132,7 @@ public class ParaManager: NSObject, ObservableObject, ErrorTrackable {
             logger.debug("WebView not ready, waiting for initialization...")
             await waitForParaReady()
             guard paraWebView.isReady else {
-                throw ParaError.legacyBridgeError("WebView failed to initialize")
+                throw ParaError.bridgeError("WebView failed to initialize")
             }
         }
     }
@@ -179,7 +162,7 @@ public class ParaManager: NSObject, ObservableObject, ErrorTrackable {
     /// - Returns: The decoded result
     func decodeResult<T>(_ result: Any?, expectedType _: T.Type, method: String) throws -> T {
         guard let value = result as? T else {
-            throw ParaError.legacyBridgeError("METHOD_ERROR<\(method)>: Invalid result format expected \(T.self), but got \(String(describing: result))")
+            throw ParaError.bridgeError("METHOD_ERROR<\(method)>: Invalid result format expected \(T.self), but got \(String(describing: result))")
         }
         return value
     }
@@ -194,7 +177,7 @@ public class ParaManager: NSObject, ObservableObject, ErrorTrackable {
     func decodeDictionaryResult<T>(_ result: Any?, expectedType _: T.Type, method: String, key: String) throws -> T {
         let dict = try decodeResult(result, expectedType: [String: Any].self, method: method)
         guard let value = dict[key] as? T else {
-            throw ParaError.legacyBridgeError("KEY_ERROR<\(method)-\(key)>: Missing or invalid key result")
+            throw ParaError.bridgeError("KEY_ERROR<\(method)-\(key)>: Missing or invalid key result")
         }
         return value
     }
@@ -285,29 +268,5 @@ public class ParaManager: NSObject, ObservableObject, ErrorTrackable {
             pfpUrl: authInfoDict["pfpUrl"] as? String,
             username: authInfoDict["username"] as? String,
         )
-    }
-
-    // MARK: - Error Reporting Support
-
-    /// Derive API base URL from environment
-    private func deriveApiBaseURL(from environment: ParaEnvironment) -> String {
-        switch environment {
-        case .dev:
-            "http://localhost:8080"
-        case .sandbox:
-            "https://api.sandbox.getpara.com"
-        case .beta:
-            "https://api.beta.getpara.com"
-        case .prod:
-            "https://api.getpara.com"
-        }
-    }
-
-    /// Get current user ID for error reporting context
-    func getCurrentUserId() -> String? {
-        // This is a synchronous version to avoid async complications in error tracking
-        // Return the userId from the first wallet if available
-        // All wallets for a user should have the same userId
-        wallets.first?.userId
     }
 }
