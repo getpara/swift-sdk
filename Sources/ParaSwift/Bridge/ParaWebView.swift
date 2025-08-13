@@ -267,9 +267,12 @@ public class ParaWebView: NSObject, ObservableObject {
         if let errorValue = response["error"] {
             var errorMessage = ""
             if let dict = errorValue as? [String: Any] {
-                if let data = try? JSONSerialization.data(withJSONObject: dict, options: .prettyPrinted),
-                   let jsonStr = String(data: data, encoding: .utf8)
-                {
+                // Prefer a concise detail message when available (e.g. { details: { message } })
+                let details = dict["details"] as? [String: Any]
+                if let friendly = details?["message"] as? String ?? dict["message"] as? String, !friendly.isEmpty {
+                    errorMessage = friendly
+                } else if let data = try? JSONSerialization.data(withJSONObject: dict, options: .prettyPrinted),
+                          let jsonStr = String(data: data, encoding: .utf8) {
                     errorMessage = jsonStr
                 } else {
                     errorMessage = String(describing: dict)
@@ -368,7 +371,7 @@ extension ParaWebView: WKScriptMessageHandler {
 }
 
 /// Errors that can occur during WebView operations
-enum ParaWebViewError: Error, CustomStringConvertible {
+enum ParaWebViewError: Error, CustomStringConvertible, LocalizedError {
     /// The WebView is not ready to accept requests
     case webViewNotReady
     /// Invalid arguments were provided
@@ -391,6 +394,9 @@ enum ParaWebViewError: Error, CustomStringConvertible {
             "Bridge error: \(msg)"
         }
     }
+
+    // Provide nicer strings for SwiftUI alerts and NSError bridging
+    var errorDescription: String? { description }
 }
 
 /// A helper class to avoid retain cycles in script message handling

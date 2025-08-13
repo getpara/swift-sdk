@@ -148,6 +148,28 @@ public class ParaManager: NSObject, ObservableObject {
         do {
             let result: Any? = try await self.paraWebView.postMessage(method: method, payload: payload)
             return result
+        } catch let error as ParaWebViewError {
+            logger.error("Bridge error for \(method): \(error.localizedDescription)")
+            // Convert ParaWebViewError to ParaError for better user experience
+            switch error {
+            case .bridgeError(let message):
+                // Attempt to extract a concise message from a JSON payload produced by the bridge
+                if let data = message.data(using: .utf8),
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    let details = json["details"] as? [String: Any]
+                    let userMessage = (details?["message"] as? String)
+                        ?? (json["message"] as? String)
+                        ?? message
+                    throw ParaError.bridgeError(userMessage)
+                }
+                throw ParaError.bridgeError(message)
+            case .webViewNotReady:
+                throw ParaError.bridgeError("WebView is not ready")
+            case .requestTimeout:
+                throw ParaError.bridgeTimeoutError
+            case .invalidArguments(let message):
+                throw ParaError.error("Invalid arguments: \(message)")
+            }
         } catch {
             logger.error("Bridge error for \(method): \(error.localizedDescription)")
             throw error
