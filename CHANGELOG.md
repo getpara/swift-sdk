@@ -1,3 +1,11 @@
+# Release 2.0.1 (Thu Aug 14 2025)
+
+### Features
+- Added comprehensive error tracking system for development and staging environments (#29)
+
+### Fixes
+- Fixed password login wallet persistence to resolve "wallet with id does not exist" errors after authentication (#31)
+
 # Release 2.0.0 (Thu Aug 07 2025)
 
 ## Package Version
