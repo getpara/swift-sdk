@@ -396,7 +396,18 @@ enum ParaWebViewError: Error, CustomStringConvertible, LocalizedError {
     }
 
     // Provide nicer strings for SwiftUI alerts and NSError bridging
-    var errorDescription: String? { description }
+    var errorDescription: String? {
+        switch self {
+        case .webViewNotReady:
+            return "WebView is not ready to accept requests."
+        case let .invalidArguments(msg):
+            return "Invalid arguments: \(msg)"
+        case .requestTimeout:
+            return "The request timed out."
+        case let .bridgeError(msg):
+            return msg // Return the raw error message without "Bridge error:" prefix
+        }
+    }
 }
 
 /// A helper class to avoid retain cycles in script message handling
