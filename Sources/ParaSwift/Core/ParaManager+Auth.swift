@@ -511,6 +511,21 @@ public extension ParaManager {
         let payload = Enable2faArgs(verificationCode: verificationCode)
         _ = try await postMessage(method: "enable2fa", payload: payload)
     }
+    
+    /// Loads transmission keyshares into wallets after authentication
+    /// This should be called after password authentication completes to ensure
+    /// that wallet signers are properly loaded from the backend.
+    func loadTransmissionKeyshares() async throws -> Int {
+        try await ensureWebViewReady()
+        let result = try await postMessage(method: "loadTransmissionKeyshares", payload: EmptyPayload())
+        
+        // Parse the result to get the number of shares loaded
+        if let resultDict = result as? [String: Any],
+           let sharesLoaded = resultDict["sharesLoaded"] as? Int {
+            return sharesLoaded
+        }
+        return 0
+    }
 }
 
 // MARK: - High-Level Auth Workflow Methods
@@ -565,6 +580,10 @@ public extension ParaManager {
             if resultUrl != nil {
                 logger.debug("presentPasswordUrl successful for login.")
                 // Password login success path requires explicit state update and wallet fetch
+                // First load transmission keyshares
+                let sharesLoaded = try await loadTransmissionKeyshares()
+                logger.debug("Loaded \(sharesLoaded) transmission keyshares.")
+                // Then fetch the populated wallets
                 wallets = try await fetchWallets()
                 sessionState = .activeLoggedIn
             } else {
