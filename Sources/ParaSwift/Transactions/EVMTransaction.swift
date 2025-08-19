@@ -123,11 +123,6 @@ public struct EVMTransaction: Codable {
         )
     }
 
-    /// Encodes the transaction as base64 for bridge communication
-    public func b64Encoded() -> String {
-        let encodedTransaction = try! JSONEncoder().encode(self)
-        return encodedTransaction.base64EncodedString()
-    }
 }
 
 // MARK: - Codable Implementation
