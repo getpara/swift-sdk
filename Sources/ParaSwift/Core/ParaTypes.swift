@@ -13,7 +13,7 @@ public enum AuthMethod {
 }
 
 /// Errors that can occur during Para operations.
-public enum ParaError: Error, CustomStringConvertible {
+public enum ParaError: Error, CustomStringConvertible, LocalizedError {
     /// An error occurred while executing JavaScript bridge code.
     case bridgeError(String)
     /// The JavaScript bridge did not respond in time.
@@ -33,6 +33,20 @@ public enum ParaError: Error, CustomStringConvertible {
             "An error occurred: \(info)"
         case let .notImplemented(feature):
             "Feature not implemented: \(feature)"
+        }
+    }
+
+    // Provide concise strings for SwiftUI alerts and NSError bridging
+    public var errorDescription: String? {
+        switch self {
+        case let .bridgeError(info):
+            return info
+        case .bridgeTimeoutError:
+            return "Request timed out. Please try again."
+        case let .error(info):
+            return info
+        case let .notImplemented(feature):
+            return "Feature not implemented: \(feature)"
         }
     }
 }

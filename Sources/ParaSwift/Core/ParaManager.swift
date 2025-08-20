@@ -10,7 +10,7 @@ import WebKit
 /// This class provides a comprehensive interface for applications to interact with Para wallet services.
 /// It handles authentication flows, wallet creation and management, and transaction signing operations.
 @MainActor
-public class ParaManager: NSObject, ObservableObject, ErrorTrackable {
+public class ParaManager: NSObject, ObservableObject {
     // MARK: - Properties
 
     /// Current package version.
@@ -29,9 +29,6 @@ public class ParaManager: NSObject, ObservableObject, ErrorTrackable {
         didSet {
             passkeysManager.relyingPartyIdentifier = environment.relyingPartyId
             
-            // Reinitialize error reporting client when environment changes
-            let apiBaseURL = deriveApiBaseURL(from: environment)
-            errorReportingClient = ErrorReportingClient(baseURL: apiBaseURL, environment: environment.name)
         }
     }
 
@@ -51,16 +48,6 @@ public class ParaManager: NSObject, ObservableObject, ErrorTrackable {
     /// App scheme for authentication callbacks.
     let appScheme: String
     
-    // MARK: - Error Reporting Properties
-    
-    /// Error reporting client for tracking SDK errors
-    internal var errorReportingClient: ErrorReportingClient?
-    
-    /// Whether error tracking is enabled (always enabled - backend decides what to log)
-    internal var isErrorTrackingEnabled: Bool {
-        true
-    }
-
     // MARK: - Initialization
 
     /// Creates a new Para manager instance.
@@ -79,10 +66,6 @@ public class ParaManager: NSObject, ObservableObject, ErrorTrackable {
         self.appScheme = appScheme ?? Bundle.main.bundleIdentifier!
         
         super.init()
-        
-        // Initialize error reporting client
-        let apiBaseURL = deriveApiBaseURL(from: environment)
-        errorReportingClient = ErrorReportingClient(baseURL: apiBaseURL, environment: environment.name)
 
         Task { @MainActor in
             await waitForParaReady()
@@ -165,6 +148,28 @@ public class ParaManager: NSObject, ObservableObject, ErrorTrackable {
         do {
             let result: Any? = try await self.paraWebView.postMessage(method: method, payload: payload)
             return result
+        } catch let error as ParaWebViewError {
+            logger.error("Bridge error for \(method): \(error.localizedDescription)")
+            // Convert ParaWebViewError to ParaError for better user experience
+            switch error {
+            case .bridgeError(let message):
+                // Attempt to extract a concise message from a JSON payload produced by the bridge
+                if let data = message.data(using: .utf8),
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    let details = json["details"] as? [String: Any]
+                    let userMessage = (details?["message"] as? String)
+                        ?? (json["message"] as? String)
+                        ?? message
+                    throw ParaError.bridgeError(userMessage)
+                }
+                throw ParaError.bridgeError(message)
+            case .webViewNotReady:
+                throw ParaError.bridgeError("WebView is not ready")
+            case .requestTimeout:
+                throw ParaError.bridgeTimeoutError
+            case .invalidArguments(let message):
+                throw ParaError.error("Invalid arguments: \(message)")
+            }
         } catch {
             logger.error("Bridge error for \(method): \(error.localizedDescription)")
             throw error
@@ -285,29 +290,5 @@ public class ParaManager: NSObject, ObservableObject, ErrorTrackable {
             pfpUrl: authInfoDict["pfpUrl"] as? String,
             username: authInfoDict["username"] as? String,
         )
-    }
-    
-    // MARK: - Error Reporting Support
-    
-    /// Derive API base URL from environment
-    private func deriveApiBaseURL(from environment: ParaEnvironment) -> String {
-        switch environment {
-        case .dev:
-            return "http://localhost:8080"
-        case .sandbox:
-            return "https://api.sandbox.getpara.com"
-        case .beta:
-            return "https://api.beta.getpara.com"
-        case .prod:
-            return "https://api.getpara.com"
-        }
-    }
-    
-    /// Get current user ID for error reporting context
-    func getCurrentUserId() -> String? {
-        // This is a synchronous version to avoid async complications in error tracking
-        // Return the userId from the first wallet if available
-        // All wallets for a user should have the same userId
-        wallets.first?.userId
     }
 }
