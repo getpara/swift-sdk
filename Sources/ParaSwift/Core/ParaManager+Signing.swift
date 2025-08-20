@@ -54,32 +54,26 @@ public extension ParaManager {
     ///   - message: The message to sign (plain text).
     /// - Returns: A SignatureResult containing the signature and metadata.
     func signMessage(walletId: String, message: String) async throws -> SignatureResult {
-        try await withErrorTracking(
-            methodName: "formatAndSignMessage",
-            userId: getCurrentUserId(),
-            operation: {
-                try await ensureWebViewReady()
+        try await ensureWebViewReady()
 
-                let params = FormatAndSignMessageParams(
-                    walletId: walletId,
-                    message: message
-                )
+        let params = FormatAndSignMessageParams(
+            walletId: walletId,
+            message: message
+        )
 
-                let result = try await postMessage(method: "formatAndSignMessage", payload: params)
-                
-                // Parse the response from bridge
-                let dict = try decodeResult(result, expectedType: [String: Any].self, method: "formatAndSignMessage")
-                
-                let signature = dict["signature"] as? String ?? ""
-                let returnedWalletId = dict["walletId"] as? String ?? walletId
-                let walletType = dict["type"] as? String ?? "unknown"
-                
-                return SignatureResult(
-                    signature: signature,
-                    walletId: returnedWalletId,
-                    type: walletType
-                )
-            }
+        let result = try await postMessage(method: "formatAndSignMessage", payload: params)
+        
+        // Parse the response from bridge
+        let dict = try decodeResult(result, expectedType: [String: Any].self, method: "formatAndSignMessage")
+        
+        let signature = dict["signature"] as? String ?? ""
+        let returnedWalletId = dict["walletId"] as? String ?? walletId
+        let walletType = dict["type"] as? String ?? "unknown"
+        
+        return SignatureResult(
+            signature: signature,
+            walletId: returnedWalletId,
+            type: walletType
         )
     }
 
@@ -92,7 +86,6 @@ public extension ParaManager {
     ///   - walletId: The ID of the wallet to use for signing.
     ///   - transaction: The transaction parameters (EVMTransaction, SolanaTransaction, etc.).
     ///   - chainId: Optional chain ID (primarily for EVM chains).
-    /// - Parameters:
     ///   - rpcUrl: Optional RPC URL (required for Solana if recentBlockhash is not provided).
     /// - Returns: A SignatureResult containing the signature and metadata.
     func signTransaction<T: Encodable>(
@@ -101,39 +94,33 @@ public extension ParaManager {
         chainId: String? = nil,
         rpcUrl: String? = nil
     ) async throws -> SignatureResult {
-        try await withErrorTracking(
-            methodName: "formatAndSignTransaction",
-            userId: getCurrentUserId(),
-            operation: {
-                try await ensureWebViewReady()
+        try await ensureWebViewReady()
 
-                // Encode the transaction object to JSON
-                let encoder = JSONEncoder()
-                let transactionData = try encoder.encode(transaction)
-                let transactionDict = try JSONSerialization.jsonObject(with: transactionData, options: []) as? [String: Any] ?? [:]
-                
-                let params = FormatAndSignTransactionParams(
-                    walletId: walletId,
-                    transaction: transactionDict,
-                    chainId: chainId,
-                    rpcUrl: rpcUrl
-                )
+        // Encode the transaction object to JSON
+        let encoder = JSONEncoder()
+        let transactionData = try encoder.encode(transaction)
+        let transactionDict = try JSONSerialization.jsonObject(with: transactionData, options: []) as? [String: Any] ?? [:]
+        
+        let params = FormatAndSignTransactionParams(
+            walletId: walletId,
+            transaction: transactionDict,
+            chainId: chainId,
+            rpcUrl: rpcUrl
+        )
 
-                let result = try await postMessage(method: "formatAndSignTransaction", payload: params)
-                
-                // Parse the response from bridge
-                let dict = try decodeResult(result, expectedType: [String: Any].self, method: "formatAndSignTransaction")
-                
-                let signature = dict["signature"] as? String ?? ""
-                let returnedWalletId = dict["walletId"] as? String ?? walletId
-                let walletType = dict["type"] as? String ?? "unknown"
-                
-                return SignatureResult(
-                    signature: signature,
-                    walletId: returnedWalletId,
-                    type: walletType
-                )
-            }
+        let result = try await postMessage(method: "formatAndSignTransaction", payload: params)
+        
+        // Parse the response from bridge
+        let dict = try decodeResult(result, expectedType: [String: Any].self, method: "formatAndSignTransaction")
+        
+        let signature = dict["signature"] as? String ?? ""
+        let returnedWalletId = dict["walletId"] as? String ?? walletId
+        let walletType = dict["type"] as? String ?? "unknown"
+        
+        return SignatureResult(
+            signature: signature,
+            walletId: returnedWalletId,
+            type: walletType
         )
     }
     
@@ -150,32 +137,26 @@ public extension ParaManager {
     ///   - denom: Optional denom for Cosmos balances (e.g., "ujuno", "ustars").
     /// - Returns: The balance as a string (format depends on the chain).
     func getBalance(walletId: String, token: String? = nil, rpcUrl: String? = nil, chainPrefix: String? = nil, denom: String? = nil) async throws -> String {
-        try await withErrorTracking(
-            methodName: "getBalance",
-            userId: getCurrentUserId(),
-            operation: {
-                try await ensureWebViewReady()
+        try await ensureWebViewReady()
 
-                struct GetBalanceParams: Encodable {
-                    let walletId: String
-                    let token: String?
-                    let rpcUrl: String?
-                    let chainPrefix: String?
-                    let denom: String?
-                }
+        struct GetBalanceParams: Encodable {
+            let walletId: String
+            let token: String?
+            let rpcUrl: String?
+            let chainPrefix: String?
+            let denom: String?
+        }
 
-                let params = GetBalanceParams(
-                    walletId: walletId,
-                    token: token,
-                    rpcUrl: rpcUrl,
-                    chainPrefix: chainPrefix,
-                    denom: denom
-                )
-
-                let result = try await postMessage(method: "getBalance", payload: params)
-                return try decodeResult(result, expectedType: String.self, method: "getBalance")
-            }
+        let params = GetBalanceParams(
+            walletId: walletId,
+            token: token,
+            rpcUrl: rpcUrl,
+            chainPrefix: chainPrefix,
+            denom: denom
         )
+
+        let result = try await postMessage(method: "getBalance", payload: params)
+        return try decodeResult(result, expectedType: String.self, method: "getBalance")
     }
     
     /// High-level transfer method for any wallet type.
@@ -195,29 +176,23 @@ public extension ParaManager {
         amount: String,
         token: String? = nil
     ) async throws -> String {
-        try await withErrorTracking(
-            methodName: "transfer",
-            userId: getCurrentUserId(),
-            operation: {
-                try await ensureWebViewReady()
+        try await ensureWebViewReady()
 
-                struct TransferParams: Encodable {
-                    let walletId: String
-                    let to: String
-                    let amount: String
-                    let token: String?
-                }
+        struct TransferParams: Encodable {
+            let walletId: String
+            let to: String
+            let amount: String
+            let token: String?
+        }
 
-                let params = TransferParams(
-                    walletId: walletId,
-                    to: to,
-                    amount: amount,
-                    token: token
-                )
-
-                let result = try await postMessage(method: "transfer", payload: params)
-                return try decodeResult(result, expectedType: String.self, method: "transfer")
-            }
+        let params = TransferParams(
+            walletId: walletId,
+            to: to,
+            amount: amount,
+            token: token
         )
+
+        let result = try await postMessage(method: "transfer", payload: params)
+        return try decodeResult(result, expectedType: String.self, method: "transfer")
     }
 }
