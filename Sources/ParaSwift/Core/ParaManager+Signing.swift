@@ -18,6 +18,28 @@ public struct SignatureResult {
     }
 }
 
+/// Result of a transfer operation
+public struct TransferResult {
+    /// The transaction hash
+    public let hash: String
+    /// The sender address
+    public let from: String
+    /// The recipient address
+    public let to: String
+    /// The amount transferred (in wei for EVM)
+    public let amount: String
+    /// The chain ID
+    public let chainId: String
+    
+    public init(hash: String, from: String, to: String, amount: String, chainId: String) {
+        self.hash = hash
+        self.from = from
+        self.to = to
+        self.amount = amount
+        self.chainId = chainId
+    }
+}
+
 // Helper structs for formatting methods
 struct FormatAndSignMessageParams: Encodable {
     let walletId: String
@@ -159,40 +181,52 @@ public extension ParaManager {
         return try decodeResult(result, expectedType: String.self, method: "getBalance")
     }
     
-    /// High-level transfer method for any wallet type.
+    /// High-level transfer method for EVM chains.
     ///
-    /// This convenience method handles token transfers across all supported chains.
-    /// The bridge handles the chain-specific transaction construction internally.
+    /// This method handles ETH/ERC20 transfers on EVM-compatible chains.
+    /// The bridge handles transaction construction, signing, and broadcasting.
     ///
     /// - Parameters:
-    ///   - walletId: The ID of the wallet to transfer from.
+    ///   - walletId: The ID of the EVM wallet to transfer from.
     ///   - to: The recipient address.
-    ///   - amount: The amount to transfer (as a string to handle large numbers).
-    ///   - token: Optional token identifier (contract address for EVM, mint address for Solana, etc.).
-    /// - Returns: The transaction hash.
+    ///   - amount: The amount to transfer in wei (as a string to handle large numbers).
+    ///   - chainId: Optional chain ID (auto-detected if not provided).
+    ///   - rpcUrl: Optional RPC URL (defaults to Ethereum mainnet if not provided).
+    /// - Returns: Transaction result containing hash and details.
     func transfer(
         walletId: String,
         to: String,
         amount: String,
-        token: String? = nil
-    ) async throws -> String {
+        chainId: String? = nil,
+        rpcUrl: String? = nil
+    ) async throws -> TransferResult {
         try await ensureWebViewReady()
 
         struct TransferParams: Encodable {
             let walletId: String
-            let to: String
+            let toAddress: String
             let amount: String
-            let token: String?
+            let chainId: String?
+            let rpcUrl: String?
         }
 
         let params = TransferParams(
             walletId: walletId,
-            to: to,
+            toAddress: to,
             amount: amount,
-            token: token
+            chainId: chainId,
+            rpcUrl: rpcUrl
         )
 
         let result = try await postMessage(method: "transfer", payload: params)
-        return try decodeResult(result, expectedType: String.self, method: "transfer")
+        let dict = try decodeResult(result, expectedType: [String: Any].self, method: "transfer")
+        
+        return TransferResult(
+            hash: dict["hash"] as? String ?? "",
+            from: dict["from"] as? String ?? "",
+            to: dict["to"] as? String ?? "",
+            amount: dict["amount"] as? String ?? "",
+            chainId: dict["chainId"] as? String ?? ""
+        )
     }
 }
