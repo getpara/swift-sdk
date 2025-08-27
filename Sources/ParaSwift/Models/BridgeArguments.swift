@@ -60,74 +60,18 @@ struct SignTransactionArgs: Encodable {
     let timeoutMs: Int?
 }
 
-// For Signers
-struct EthersSignerInitArgs: Encodable {
-    let walletId: String
-    let providerUrl: String // Matches bridge name
-}
-
-struct EthersSignMessageArgs: Encodable {
-    let message: String
-}
-
-struct EthersSignTransactionArgs: Encodable {
-    let b64EncodedTx: String
-}
-
-struct EthersSendTransactionArgs: Encodable {
-    let b64EncodedTx: String
-}
-
-// Solana bridge arguments
-struct SolanaSignerInitArgs: Encodable {
-    let walletId: String
-    let rpcUrl: String
-}
-
-struct SolanaSignTransactionArgs: Encodable {
-    let b64EncodedTx: String
-}
-
-struct SolanaSignVersionedTransactionArgs: Encodable {
-    let b64EncodedTx: String
-}
-
-struct SolanaSendTransactionArgs: Encodable {
-    let b64EncodedTx: String
-}
+// Signer-specific arguments removed - using unified API
 
 struct DistributeNewWalletShareArgs: Encodable {
     let walletId: String
     let userShare: String
 }
 
-// Cosmos bridge arguments
-struct CosmosSignerInitArgs: Encodable {
-    let walletId: String
-    let prefix: String
-    let messageSigningTimeoutMs: Int?
-}
+// Cosmos-specific arguments removed - using unified API
 
+// Keep only the generic display address args that might be used elsewhere
 struct GetDisplayAddressArgs: Encodable {
     let walletId: String
     let addressType: String
     let cosmosPrefix: String?
-}
-
-// Cosmos signing arguments for low-level bridge methods
-// Note: "Direct" == "Proto" signing in CosmJS terminology
-struct CosmJsSignDirectArgs: Encodable {
-    let signerAddress: String
-    let signDocBase64: String
-}
-
-struct CosmJsSignAminoArgs: Encodable {
-    let signerAddress: String
-    let signDocBase64: String
-}
-
-struct CosmJsGetBalanceArgs: Encodable {
-    let address: String
-    let denom: String
-    let rpcUrl: String
 }

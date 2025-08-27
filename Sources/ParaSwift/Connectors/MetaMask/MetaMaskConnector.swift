@@ -373,7 +373,8 @@ extension EVMTransaction {
         if let gasPrice = toHexString(gasPrice) { tx["gasPrice"] = gasPrice }
         if let maxPriorityFeePerGas = toHexString(maxPriorityFeePerGas) { tx["maxPriorityFeePerGas"] = maxPriorityFeePerGas }
         if let maxFeePerGas = toHexString(maxFeePerGas) { tx["maxFeePerGas"] = maxFeePerGas }
-        if let nonce = toHexString(nonce) { tx["nonce"] = nonce }
+        // Note: Nonce is intentionally excluded to let MetaMask handle it automatically
+        // This prevents "nonce too low" errors when the external wallet has transaction history
         if let type { tx["type"] = "0x" + String(type, radix: 16) }
         if let chainId = toHexString(chainId) { tx["chainId"] = chainId }
 

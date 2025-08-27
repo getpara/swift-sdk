@@ -26,7 +26,7 @@ public enum SolanaTransactionError: Error, LocalizedError {
 ///
 /// This abstraction provides a clean interface for creating Solana transactions
 /// without requiring direct SolanaSwift knowledge in application code.
-/// The ParaSolanaSigner converts this to proper SolanaSwift.Transaction internally.
+/// The bridge handles the conversion to proper Solana transaction format internally.
 ///
 /// **Current Support:**
 /// - SOL transfers with proper validation
@@ -109,9 +109,4 @@ public struct SolanaTransaction: Codable {
         try self.init(to: to, lamports: UInt64(sol * 1_000_000_000))
     }
 
-    /// Encodes the transaction as base64 for bridge communication
-    public func b64Encoded() -> String {
-        let encodedTransaction = try! JSONEncoder().encode(self)
-        return encodedTransaction.base64EncodedString()
-    }
 }
