@@ -1,3 +1,32 @@
+# Release 2.1.0 (Tue Aug 27 2025)
+
+### Breaking Changes
+- Removed chain-specific signer classes - `ParaEvmSigner`, `ParaSolanaWeb3Signer`, `ParaCosmosSigner` have been removed in favor of unified methods on `ParaManager` (#32)
+- Updated signing method signatures - `signMessage()` now returns `SignatureResult` instead of `String`, `signTransaction()` now accepts transaction model objects instead of RLP-encoded strings (#32)
+
+### Features
+- Unified wallet architecture - All signing and formatting logic moved to bridge, reducing SDK complexity (#32)
+- Type-safe transaction models - New `EVMTransaction`, `SolanaTransaction`, and `CosmosTransaction` classes with builders (#32)
+- Enhanced signature results - Signing methods now return metadata including wallet ID and type (#32)
+- Improved error messages - Clearer, actionable error descriptions without technical prefixes (#30)
+
+### Improvements
+- Reduced package size - Removed `solana-swift` dependency, all blockchain formatting handled by bridge (#32)
+
+### Fixes
+- Fixed password authentication wallet persistence issue (#31)
+
+### Migration Guide
+```swift
+// Signer classes migration:
+// Before: let evmSigner = ParaEvmSigner(...)
+// After: Use para.signTransaction() directly
+
+// Transaction signing:
+// Before: para.signTransaction(walletId, rlpEncodedTx, chainId)
+// After: para.signTransaction(walletId, EVMTransaction(...))
+```
+
 # Release 2.0.1 (Thu Aug 14 2025)
 
 ### Features
