@@ -47,6 +47,9 @@ public class ParaManager: NSObject, ObservableObject {
     let paraWebView: ParaWebView
     /// App scheme for authentication callbacks.
     let appScheme: String
+    /// Track whether transmission keyshares have been loaded for the current session.
+    /// This prevents unnecessary repeated calls to loadTransmissionKeyshares.
+    internal var transmissionKeysharesLoaded = false
     
     // MARK: - Initialization
 
@@ -248,6 +251,34 @@ public class ParaManager: NSObject, ObservableObject {
         // Reset state
         wallets = []
         sessionState = .inactive
+        // Reset transmission keyshares flag since we're logging out
+        transmissionKeysharesLoaded = false
+    }
+    
+    /// Ensures transmission keyshares are loaded for the current session.
+    /// This is automatically called by wallet-related operations to ensure
+    /// wallet signers are properly loaded from the backend.
+    /// - Note: This method is idempotent and tracks whether keyshares have already been loaded.
+    internal func ensureTransmissionKeysharesLoaded() async throws {
+        // Skip if already loaded in this session
+        if transmissionKeysharesLoaded {
+            logger.debug("Transmission keyshares already loaded, skipping.")
+            return
+        }
+        
+        logger.debug("Loading transmission keyshares for the first time in this session...")
+        
+        do {
+            // This method is defined in ParaManager+Auth.swift
+            let sharesLoaded = try await loadTransmissionKeyshares()
+            transmissionKeysharesLoaded = true
+            logger.debug("Successfully loaded \(sharesLoaded) transmission keyshares.")
+        } catch {
+            // Log the error but don't mark as loaded so it can be retried
+            logger.error("Failed to load transmission keyshares: \(error.localizedDescription)")
+            // Re-throw the error to let the caller handle it
+            throw error
+        }
     }
 
     /// Gets the current user's persisted authentication details.

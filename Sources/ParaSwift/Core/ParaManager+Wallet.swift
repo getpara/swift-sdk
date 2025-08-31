@@ -35,8 +35,20 @@ public extension ParaManager {
     /// Fetches all wallets associated with the current user.
     ///
     /// - Returns: Array of wallet objects.
+    /// - Note: This method automatically ensures transmission keyshares are loaded before fetching wallets.
     func fetchWallets() async throws -> [Wallet] {
         try await ensureWebViewReady()
+        
+        // Automatically load transmission keyshares if not already loaded
+        // This ensures wallet signers are properly populated from the backend
+        do {
+            try await ensureTransmissionKeysharesLoaded()
+        } catch {
+            // Log the error but continue with fetching wallets
+            // Some operations may still work without transmission keyshares
+            logger.warning("Failed to load transmission keyshares before fetching wallets: \(error.localizedDescription)")
+        }
+        
         let result = try await postMessage(method: "fetchWallets", payload: EmptyPayload())
         let walletsData = try decodeResult(result, expectedType: [[String: Any]].self, method: "fetchWallets")
         return walletsData.map { Wallet(result: $0) }

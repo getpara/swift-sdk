@@ -112,6 +112,10 @@ public extension ParaManager {
     /// - Returns: AuthState object containing information about the next steps
     internal func signUpOrLogIn(auth: Auth) async throws -> AuthState {
         try await ensureWebViewReady()
+        
+        // Reset transmission keyshares flag when starting a new auth session
+        // This ensures we'll load them fresh after authentication completes
+        transmissionKeysharesLoaded = false
 
         let payload = createSignUpOrLogInPayload(from: auth)
 
@@ -320,6 +324,10 @@ public extension ParaManager {
         if let _ = loginResult as? [String: Any] {
             logger.debug("loginWithPasskey bridge call returned wallet data")
         }
+        
+        // Mark transmission keyshares as loaded after successful passkey login
+        // Passkey authentication automatically loads them on the backend
+        transmissionKeysharesLoaded = true
 
         wallets = try await fetchWallets()
         sessionState = .activeLoggedIn
@@ -401,6 +409,15 @@ public extension ParaManager {
             let callbackURL = try await webAuthenticationSession.authenticate(using: finalPasswordUrl, callbackURLScheme: appScheme)
             // Normal callback URL completion (rare for password auth)
             logger.debug("Received callback URL from authentication session")
+            
+            // Ensure transmission keyshares are loaded after password auth
+            // This call is idempotent and won't reload if already loaded
+            do {
+                try await ensureTransmissionKeysharesLoaded()
+            } catch {
+                // Log the error but continue - some operations may still work
+                logger.warning("Failed to load transmission keyshares after password auth: \(error.localizedDescription)")
+            }
 
             wallets = try await fetchWallets()
 
@@ -454,6 +471,10 @@ public extension ParaManager {
                 throw parseError
             }
         }
+        
+        // Mark transmission keyshares as loaded after successful external wallet login
+        // External wallet authentication automatically loads them on the backend
+        transmissionKeysharesLoaded = true
 
         sessionState = .activeLoggedIn
     }
@@ -568,9 +589,13 @@ public extension ParaManager {
             if resultUrl != nil {
                 logger.debug("presentPasswordUrl successful for login.")
                 // Password login success path requires explicit state update and wallet fetch
-                // First load transmission keyshares
-                let sharesLoaded = try await loadTransmissionKeyshares()
-                logger.debug("Loaded \(sharesLoaded) transmission keyshares.")
+                // Ensure transmission keyshares are loaded (this is idempotent)
+                do {
+                    try await ensureTransmissionKeysharesLoaded()
+                } catch {
+                    // Log the error but continue - some wallets may work without transmission keyshares
+                    logger.warning("Failed to load transmission keyshares after password login: \(error.localizedDescription)")
+                }
                 // Then fetch the populated wallets
                 wallets = try await fetchWallets()
                 sessionState = .activeLoggedIn
@@ -717,6 +742,8 @@ public extension ParaManager {
                 authorizationController: authorizationController,
             )
             logger.debug("Passkey generated successfully.")
+            // Passkey signup - mark keyshares as loaded (they're loaded automatically)
+            transmissionKeysharesLoaded = true
 
         case .password:
             guard let passwordUrl = authState.passwordUrl else {
@@ -732,6 +759,10 @@ public extension ParaManager {
             // Check if the result indicates success
             if resultUrl != nil {
                 logger.debug("presentPasswordUrl successful for signup.")
+                // Load transmission keyshares after password signup
+                let sharesLoaded = try await loadTransmissionKeyshares()
+                logger.debug("Loaded \(sharesLoaded) transmission keyshares after signup.")
+                transmissionKeysharesLoaded = true
             } else {
                 logger.warning("Password signup flow seemed to fail (nil result from presentPasswordUrl).")
                 throw ParaError.error("Password setup failed or was cancelled.")

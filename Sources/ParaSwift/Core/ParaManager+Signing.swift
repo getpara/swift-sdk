@@ -77,6 +77,15 @@ public extension ParaManager {
     /// - Returns: A SignatureResult containing the signature and metadata.
     func signMessage(walletId: String, message: String) async throws -> SignatureResult {
         try await ensureWebViewReady()
+        
+        // Ensure transmission keyshares are loaded before signing
+        // This is critical for wallet operations to work properly
+        do {
+            try await ensureTransmissionKeysharesLoaded()
+        } catch {
+            // Log the error but continue - some wallets may work without transmission keyshares
+            logger.warning("Failed to load transmission keyshares before signing message: \(error.localizedDescription)")
+        }
 
         let params = FormatAndSignMessageParams(
             walletId: walletId,
@@ -110,6 +119,7 @@ public extension ParaManager {
     ///   - chainId: Optional chain ID (primarily for EVM chains).
     ///   - rpcUrl: Optional RPC URL (required for Solana if recentBlockhash is not provided).
     /// - Returns: A SignatureResult containing the signature and metadata.
+    /// - Note: This method automatically ensures transmission keyshares are loaded before signing.
     func signTransaction<T: Encodable>(
         walletId: String,
         transaction: T,
@@ -117,6 +127,15 @@ public extension ParaManager {
         rpcUrl: String? = nil
     ) async throws -> SignatureResult {
         try await ensureWebViewReady()
+        
+        // Ensure transmission keyshares are loaded before signing
+        // This is critical for wallet operations to work properly
+        do {
+            try await ensureTransmissionKeysharesLoaded()
+        } catch {
+            // Log the error but continue - some wallets may work without transmission keyshares
+            logger.warning("Failed to load transmission keyshares before signing transaction: \(error.localizedDescription)")
+        }
 
         // Encode the transaction object to JSON
         let encoder = JSONEncoder()
@@ -193,6 +212,7 @@ public extension ParaManager {
     ///   - chainId: Optional chain ID (auto-detected if not provided).
     ///   - rpcUrl: Optional RPC URL (defaults to Ethereum mainnet if not provided).
     /// - Returns: Transaction result containing hash and details.
+    /// - Note: This method automatically ensures transmission keyshares are loaded before transferring.
     func transfer(
         walletId: String,
         to: String,
@@ -201,6 +221,15 @@ public extension ParaManager {
         rpcUrl: String? = nil
     ) async throws -> TransferResult {
         try await ensureWebViewReady()
+        
+        // Ensure transmission keyshares are loaded before transferring
+        // This is critical for wallet operations to work properly
+        do {
+            try await ensureTransmissionKeysharesLoaded()
+        } catch {
+            // Log the error but continue - some wallets may work without transmission keyshares
+            logger.warning("Failed to load transmission keyshares before transfer: \(error.localizedDescription)")
+        }
 
         struct TransferParams: Encodable {
             let walletId: String
