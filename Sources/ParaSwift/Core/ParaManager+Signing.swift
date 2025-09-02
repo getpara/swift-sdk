@@ -102,15 +102,15 @@ public extension ParaManager {
         // Parse the response from bridge
         let dict = try decodeResult(result, expectedType: [String: Any].self, method: "formatAndSignMessage")
         
-        // Bridge returns signedTransaction for all chains
-        guard let signedTransaction = dict["signedTransaction"] as? String else {
-            throw ParaError.bridgeError("Missing signedTransaction in response")
+        // Message signing returns signature field
+        guard let signature = dict["signature"] as? String else {
+            throw ParaError.bridgeError("Missing signature in response")
         }
         let returnedWalletId = dict["walletId"] as? String ?? walletId
         let walletType = dict["type"] as? String ?? "unknown"
         
         return SignatureResult(
-            signedTransaction: signedTransaction,
+            signedTransaction: signature,  // Store signature in signedTransaction field for compatibility
             walletId: returnedWalletId,
             type: walletType
         )
@@ -162,9 +162,14 @@ public extension ParaManager {
         // Parse the response from bridge
         let dict = try decodeResult(result, expectedType: [String: Any].self, method: "formatAndSignTransaction")
         
-        // Bridge returns signedTransaction for all chains
-        guard let signedTransaction = dict["signedTransaction"] as? String else {
-            throw ParaError.bridgeError("Missing signedTransaction in response")
+        // Transaction signing returns signedTransaction (complete tx) or signature (when tx construction isn't possible)
+        let signedTransaction: String
+        if let tx = dict["signedTransaction"] as? String {
+            signedTransaction = tx  // Complete transaction ready to broadcast
+        } else if let sig = dict["signature"] as? String {
+            signedTransaction = sig  // Just signature (pre-serialized Solana, Cosmos fallback)
+        } else {
+            throw ParaError.bridgeError("Missing signedTransaction or signature in response")
         }
         let returnedWalletId = dict["walletId"] as? String ?? walletId
         let walletType = dict["type"] as? String ?? "unknown"
