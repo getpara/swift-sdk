@@ -4,28 +4,22 @@ import Foundation
 
 /// Result of a signing operation
 public struct SignatureResult {
-    /// The signature string
-    public let signature: String
-    /// The complete signed transaction (for EVM, includes full RLP-encoded transaction ready for eth_sendRawTransaction)
-    public let signedTransaction: String?
+    /// The signed transaction data (for EVM, complete RLP-encoded transaction; for others, the signature)
+    public let signedTransaction: String
     /// The wallet ID that signed
     public let walletId: String
     /// The wallet type (e.g., "evm", "solana", "cosmos")
     public let type: String
     
-    public init(signature: String, signedTransaction: String? = nil, walletId: String, type: String) {
-        self.signature = signature
+    public init(signedTransaction: String, walletId: String, type: String) {
         self.signedTransaction = signedTransaction
         self.walletId = walletId
         self.type = type
     }
     
     /// Returns the transaction data for broadcasting.
-    /// For EVM chains, returns signedTransaction if available (complete RLP-encoded transaction),
-    /// otherwise falls back to signature for backward compatibility.
-    /// For other chains, returns the signature.
     public var transactionData: String {
-        return signedTransaction ?? signature
+        return signedTransaction
     }
 }
 
@@ -108,13 +102,14 @@ public extension ParaManager {
         // Parse the response from bridge
         let dict = try decodeResult(result, expectedType: [String: Any].self, method: "formatAndSignMessage")
         
-        let signature = dict["signature"] as? String ?? ""
-        let signedTransaction = dict["signedTransaction"] as? String
+        // Bridge returns signedTransaction for all chains
+        guard let signedTransaction = dict["signedTransaction"] as? String else {
+            throw ParaError.bridgeError("Missing signedTransaction in response")
+        }
         let returnedWalletId = dict["walletId"] as? String ?? walletId
         let walletType = dict["type"] as? String ?? "unknown"
         
         return SignatureResult(
-            signature: signature,
             signedTransaction: signedTransaction,
             walletId: returnedWalletId,
             type: walletType
@@ -167,13 +162,14 @@ public extension ParaManager {
         // Parse the response from bridge
         let dict = try decodeResult(result, expectedType: [String: Any].self, method: "formatAndSignTransaction")
         
-        let signature = dict["signature"] as? String ?? ""
-        let signedTransaction = dict["signedTransaction"] as? String
+        // Bridge returns signedTransaction for all chains
+        guard let signedTransaction = dict["signedTransaction"] as? String else {
+            throw ParaError.bridgeError("Missing signedTransaction in response")
+        }
         let returnedWalletId = dict["walletId"] as? String ?? walletId
         let walletType = dict["type"] as? String ?? "unknown"
         
         return SignatureResult(
-            signature: signature,
             signedTransaction: signedTransaction,
             walletId: returnedWalletId,
             type: walletType
