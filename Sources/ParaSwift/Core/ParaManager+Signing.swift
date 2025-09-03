@@ -4,17 +4,22 @@ import Foundation
 
 /// Result of a signing operation
 public struct SignatureResult {
-    /// The signature string
-    public let signature: String
+    /// The signed transaction data (for EVM, complete RLP-encoded transaction; for others, the signature)
+    public let signedTransaction: String
     /// The wallet ID that signed
     public let walletId: String
     /// The wallet type (e.g., "evm", "solana", "cosmos")
     public let type: String
     
-    public init(signature: String, walletId: String, type: String) {
-        self.signature = signature
+    public init(signedTransaction: String, walletId: String, type: String) {
+        self.signedTransaction = signedTransaction
         self.walletId = walletId
         self.type = type
+    }
+    
+    /// Returns the transaction data for broadcasting.
+    public var transactionData: String {
+        return signedTransaction
     }
 }
 
@@ -97,12 +102,15 @@ public extension ParaManager {
         // Parse the response from bridge
         let dict = try decodeResult(result, expectedType: [String: Any].self, method: "formatAndSignMessage")
         
-        let signature = dict["signature"] as? String ?? ""
+        // Message signing returns signature field
+        guard let signature = dict["signature"] as? String else {
+            throw ParaError.bridgeError("Missing signature in response")
+        }
         let returnedWalletId = dict["walletId"] as? String ?? walletId
         let walletType = dict["type"] as? String ?? "unknown"
         
         return SignatureResult(
-            signature: signature,
+            signedTransaction: signature,  // Store signature in signedTransaction field for compatibility
             walletId: returnedWalletId,
             type: walletType
         )
@@ -154,12 +162,20 @@ public extension ParaManager {
         // Parse the response from bridge
         let dict = try decodeResult(result, expectedType: [String: Any].self, method: "formatAndSignTransaction")
         
-        let signature = dict["signature"] as? String ?? ""
+        // Transaction signing returns signedTransaction (complete tx) or signature (when tx construction isn't possible)
+        let signedTransaction: String
+        if let tx = dict["signedTransaction"] as? String {
+            signedTransaction = tx  // Complete transaction ready to broadcast
+        } else if let sig = dict["signature"] as? String {
+            signedTransaction = sig  // Just signature (pre-serialized Solana, Cosmos fallback)
+        } else {
+            throw ParaError.bridgeError("Missing signedTransaction or signature in response")
+        }
         let returnedWalletId = dict["walletId"] as? String ?? walletId
         let walletType = dict["type"] as? String ?? "unknown"
         
         return SignatureResult(
-            signature: signature,
+            signedTransaction: signedTransaction,
             walletId: returnedWalletId,
             type: walletType
         )
