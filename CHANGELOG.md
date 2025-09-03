@@ -1,3 +1,15 @@
+# Release 2.2.0 (Tue Jan 03 2025)
+
+### Features
+- Added support for returning complete RLP-encoded signed transactions for EVM chains, enabling direct submission to blockchain networks (#33)
+- Extended `SignatureResult` struct with `signedTransaction` field for full EVM transaction data (#33)
+
+### Fixes
+- Fixed duplicate loading of transmission keyshares which could cause performance issues
+
+### Changes
+- Enhanced EVM transaction signing to provide both signature and complete signed transaction while maintaining backward compatibility (#33)
+
 # Release 2.1.0 (Tue Aug 27 2025)
 
 ### Breaking Changes
