@@ -84,6 +84,8 @@ public enum AuthStage: String, Codable {
     case signup
     /// Login stage
     case login
+    /// Terminal stage used by SLO flows once the portal completes
+    case done
 }
 
 /// Authentication state returned by signUpOrLogIn
@@ -112,6 +114,14 @@ public struct AuthState: Codable {
     public let passwordUrl: String?
     /// Biometric hints for the user's devices
     public let biometricHints: [BiometricHint]?
+    /// URL to launch a web-based auth flow (SLO)
+    public let loginUrl: String?
+    /// Indicates the next stage after completing the current one (used by SLO)
+    public let nextStage: AuthStage?
+    /// Available login auth methods returned by the bridge
+    public let loginAuthMethods: [String]?
+    /// Available signup auth methods returned by the bridge
+    public let signupAuthMethods: [String]?
 
     /// Information about a biometric authentication device
     public struct BiometricHint: Codable {
@@ -147,7 +157,11 @@ public struct AuthState: Codable {
         passkeyId: String? = nil,
         passkeyKnownDeviceUrl: String? = nil,
         passwordUrl: String? = nil,
-        biometricHints: [BiometricHint]? = nil
+        biometricHints: [BiometricHint]? = nil,
+        loginUrl: String? = nil,
+        nextStage: AuthStage? = nil,
+        loginAuthMethods: [String]? = nil,
+        signupAuthMethods: [String]? = nil
     ) {
         self.stage = stage
         self.userId = userId
@@ -161,6 +175,10 @@ public struct AuthState: Codable {
         self.passkeyKnownDeviceUrl = passkeyKnownDeviceUrl
         self.passwordUrl = passwordUrl
         self.biometricHints = biometricHints
+        self.loginUrl = loginUrl
+        self.nextStage = nextStage
+        self.loginAuthMethods = loginAuthMethods
+        self.signupAuthMethods = signupAuthMethods
     }
 
     // MARK: - Codable implementation
@@ -170,6 +188,7 @@ public struct AuthState: Codable {
         case stage, userId, displayName, pfpUrl, username
         case email, phone
         case passkeyUrl, passkeyId, passkeyKnownDeviceUrl, passwordUrl, biometricHints
+        case loginUrl, nextStage, loginAuthMethods, signupAuthMethods
     }
 
     /// Initialize from decoder
@@ -191,5 +210,9 @@ public struct AuthState: Codable {
         passkeyKnownDeviceUrl = try container.decodeIfPresent(String.self, forKey: .passkeyKnownDeviceUrl)
         passwordUrl = try container.decodeIfPresent(String.self, forKey: .passwordUrl)
         biometricHints = try container.decodeIfPresent([BiometricHint].self, forKey: .biometricHints)
+        loginUrl = try container.decodeIfPresent(String.self, forKey: .loginUrl)
+        nextStage = try container.decodeIfPresent(AuthStage.self, forKey: .nextStage)
+        loginAuthMethods = try container.decodeIfPresent([String].self, forKey: .loginAuthMethods)
+        signupAuthMethods = try container.decodeIfPresent([String].self, forKey: .signupAuthMethods)
     }
 }
