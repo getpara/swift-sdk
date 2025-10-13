@@ -139,6 +139,10 @@ extension ParaManager {
         let displayName = resultDict["displayName"] as? String
         let pfpUrl = resultDict["pfpUrl"] as? String
         let username = resultDict["username"] as? String
+        let loginUrl = resultDict["loginUrl"] as? String
+        let nextStage = (resultDict["nextStage"] as? String).flatMap(AuthStage.init(rawValue:))
+        let loginAuthMethods = resultDict["loginAuthMethods"] as? [String]
+        let signupAuthMethods = resultDict["signupAuthMethods"] as? [String]
 
         // Extract email and phone directly from the response
         var email: String? = nil
@@ -167,6 +171,10 @@ extension ParaManager {
             passkeyKnownDeviceUrl: passkeyKnownDeviceUrl,
             passwordUrl: passwordUrl,
             biometricHints: biometricHints,
+            loginUrl: loginUrl,
+            nextStage: nextStage,
+            loginAuthMethods: loginAuthMethods,
+            signupAuthMethods: signupAuthMethods
         )
 
         // Update session state based on authentication stage
@@ -174,6 +182,8 @@ extension ParaManager {
         case .login, .signup, .verify:
             // For all OAuth stages, we set the state to active
             sessionState = .active
+        case .done:
+            sessionState = .activeLoggedIn
         }
 
         return authState
@@ -274,9 +284,11 @@ extension ParaManager {
             }
 
         case .verify:
-            // This shouldn't happen with OAuth
-            logger.error("Unexpected verify stage in OAuth flow")
-            throw ParaError.error("Unexpected authentication stage")
+            logger.debug("OAuth verify stage received; waiting for completion via portal")
+
+        case .done:
+            logger.debug("OAuth flow completed with DONE stage for user ID: \(authState.userId)")
+            sessionState = .activeLoggedIn
         }
     }
 }

@@ -42,6 +42,15 @@ extension ParaManager {
         let displayName = resultDict["displayName"] as? String
         let pfpUrl = resultDict["pfpUrl"] as? String
         let username = resultDict["username"] as? String
+        let loginUrl = resultDict["loginUrl"] as? String
+
+        var nextStage: AuthStage? = nil
+        if let nextStageString = resultDict["nextStage"] as? String {
+            nextStage = AuthStage(rawValue: nextStageString)
+        }
+
+        let loginAuthMethods = resultDict["loginAuthMethods"] as? [String]
+        let signupAuthMethods = resultDict["signupAuthMethods"] as? [String]
 
         // Extract biometric hints if available
         var biometricHints: [AuthState.BiometricHint]?
@@ -79,6 +88,10 @@ extension ParaManager {
             passkeyKnownDeviceUrl: passkeyKnownDeviceUrl,
             passwordUrl: passwordUrl,
             biometricHints: biometricHints,
+            loginUrl: loginUrl,
+            nextStage: nextStage,
+            loginAuthMethods: loginAuthMethods,
+            signupAuthMethods: signupAuthMethods
         )
     }
 }
@@ -86,6 +99,78 @@ extension ParaManager {
 // MARK: - Authentication Types and Methods
 
 public extension ParaManager {
+    private struct EmptyPayload: Encodable {}
+
+    private struct WaitPayload: Encodable {
+        let timeoutMs: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case timeoutMs
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            if let timeoutMs {
+                try container.encode(timeoutMs, forKey: .timeoutMs)
+            }
+        }
+    }
+
+    @discardableResult
+    func waitForSignup(timeoutMs: Int? = nil) async throws -> Bool {
+        try await ensureWebViewReady()
+
+        let payload = WaitPayload(timeoutMs: timeoutMs)
+        let result = try await postMessage(method: "waitForSignup", payload: payload)
+
+        if let boolResult = result as? Bool {
+            return boolResult
+        }
+
+        if let numberResult = result as? NSNumber {
+            return numberResult.boolValue
+        }
+
+        return true
+    }
+
+    @discardableResult
+    func waitForLogin(timeoutMs: Int? = nil) async throws -> [String: Any]? {
+        try await ensureWebViewReady()
+
+        let payload = WaitPayload(timeoutMs: timeoutMs)
+        let result = try await postMessage(method: "waitForLogin", payload: payload)
+        return result as? [String: Any]
+    }
+
+    func touchSession() async throws -> [String: Any]? {
+        try await ensureWebViewReady()
+        let result = try await postMessage(method: "touchSession", payload: EmptyPayload())
+        return result as? [String: Any]
+    }
+
+    private struct GetLoginUrlArgs: Encodable {
+        let authMethod: String
+        let shorten: Bool?
+
+        init(authMethod: String, shorten: Bool? = nil) {
+            self.authMethod = authMethod
+            self.shorten = shorten
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case authMethod
+            case shorten
+        }
+    }
+
+    func getLoginUrl(authMethod: String = "BASIC_LOGIN", shorten: Bool? = nil) async throws -> String {
+        try await ensureWebViewReady()
+        let payload = GetLoginUrlArgs(authMethod: authMethod, shorten: shorten)
+        let result = try await postMessage(method: "getLoginUrl", payload: payload)
+        return try decodeResult(result, expectedType: String.self, method: "getLoginUrl")
+    }
+
     /// Enum defining the possible methods for login when the stage is .login
     enum LoginMethod: String, CustomStringConvertible {
         case passkey
@@ -377,6 +462,20 @@ public extension ParaManager {
 // MARK: - Password Authentication
 
 public extension ParaManager {
+    @discardableResult
+    func presentAuthUrl(
+        _ url: String,
+        context: String,
+        webAuthenticationSession: WebAuthenticationSession
+    ) async throws -> URL? {
+        try await presentWebAuthenticationUrl(
+            url,
+            context: context,
+            loadTransmissionKeyshares: false,
+            webAuthenticationSession: webAuthenticationSession
+        )
+    }
+
     /// Presents a password URL using a web authentication session and verifies authentication completion.
     /// The caller is responsible for handling subsequent steps like wallet creation if needed.
     ///
@@ -385,46 +484,88 @@ public extension ParaManager {
     ///   - webAuthenticationSession: The session to use for presenting the URL
     /// - Returns: The callback URL if authentication was successful via direct callback, or a success placeholder URL if the window was closed (interpreted as success). Returns nil on failure.
     func presentPasswordUrl(_ url: String, webAuthenticationSession: WebAuthenticationSession) async throws -> URL? {
-        let logger = Logger(subsystem: "com.paraSwift", category: "PasswordAuth")
-        guard let originalPasswordUrl = URL(string: url) else {
-            throw ParaError.error("Invalid password authentication URL")
+        let callbackURL = try await presentWebAuthenticationUrl(
+            url,
+            context: "password",
+            loadTransmissionKeyshares: true,
+            webAuthenticationSession: webAuthenticationSession
+        )
+
+        do {
+            wallets = try await fetchWallets()
+        } catch {
+            logger.warning("Failed to refresh wallets after password auth: \(error.localizedDescription)")
         }
 
-        // Add nativeCallbackUrl query parameter for ASWebAuthenticationSession
-        var components = URLComponents(url: originalPasswordUrl, resolvingAgainstBaseURL: false)
-        let callbackQueryItem = URLQueryItem(name: "nativeCallbackUrl", value: appScheme + "://")
-        // Resolve overlapping access warning by modifying a local variable
+        return callbackURL
+    }
+}
+
+private extension ParaManager {
+    func presentWebAuthenticationUrl(
+        _ url: String,
+        context: String,
+        loadTransmissionKeyshares: Bool,
+        webAuthenticationSession: WebAuthenticationSession
+    ) async throws -> URL? {
+        let contextLogger = Logger(subsystem: "com.paraSwift", category: "WebAuthSession")
+
+        guard let originalUrl = URL(string: url) else {
+            throw ParaError.error("Invalid \(context) authentication URL")
+        }
+
+        var components = URLComponents(url: originalUrl, resolvingAgainstBaseURL: false)
+        let callbackValue: String
+        let callbackScheme: String
+        if appScheme.contains("://") {
+            callbackValue = appScheme
+            if let parsedScheme = URL(string: appScheme)?.scheme {
+                callbackScheme = parsedScheme
+            } else if let schemeRange = appScheme.range(of: "://") {
+                callbackScheme = String(appScheme[..<schemeRange.lowerBound])
+            } else {
+                callbackScheme = appScheme
+            }
+        } else {
+            callbackValue = appScheme + "://"
+            callbackScheme = appScheme
+        }
+        let callbackQueryItem = URLQueryItem(name: "nativeCallbackUrl", value: callbackValue)
         var currentQueryItems = components?.queryItems ?? []
         currentQueryItems.append(callbackQueryItem)
         components?.queryItems = currentQueryItems
 
-        guard let finalPasswordUrl = components?.url else {
-            throw ParaError.error("Failed to construct final password URL with callback parameter")
+        guard let finalUrl = components?.url else {
+            throw ParaError.error("Failed to construct \(context) URL with callback parameter")
         }
 
-        logger.debug("Presenting password authentication URL with native callback \(finalPasswordUrl.absoluteString)")
+        contextLogger.debug("Presenting \(context) authentication URL with native callback \(finalUrl.absoluteString)")
 
         do {
-            // Attempt to authenticate with the web session using the modified URL
-            let callbackURL = try await webAuthenticationSession.authenticate(using: finalPasswordUrl, callbackURLScheme: appScheme)
-            // Normal callback URL completion (rare for password auth)
-            logger.debug("Received callback URL from authentication session")
-            
-            // Ensure transmission keyshares are loaded after password auth
-            // This call is idempotent and won't reload if already loaded
-            do {
-                try await ensureTransmissionKeysharesLoaded()
-            } catch {
-                // Log the error but continue - some operations may still work
-                logger.warning("Failed to load transmission keyshares after password auth: \(error.localizedDescription)")
-            }
+            let callbackURL = try await webAuthenticationSession.authenticate(using: finalUrl, callbackURLScheme: callbackScheme)
+            contextLogger.debug("Received callback URL from \(context) authentication session")
 
-            wallets = try await fetchWallets()
+            if loadTransmissionKeyshares {
+                do {
+                    try await ensureTransmissionKeysharesLoaded()
+                } catch {
+                    contextLogger.warning("Failed to load transmission keyshares after \(context) auth: \(error.localizedDescription)")
+                }
+            }
 
             return callbackURL
         } catch {
-            logger.error("WebAuthenticationSession failed with unexpected error: \(error.localizedDescription)")
-            throw error // Rethrow the specific error
+            let nsError = error as NSError
+
+            if nsError.domain == ASWebAuthenticationSessionError.errorDomain,
+               nsError.code == ASWebAuthenticationSessionError.canceledLogin.rawValue
+            {
+                contextLogger.warning("\(context.capitalized) authentication was cancelled by the user")
+                throw ParaError.error("Authentication cancelled")
+            }
+
+            contextLogger.error("\(context.capitalized) authentication failed: \(error.localizedDescription)")
+            throw error
         }
     }
 }
