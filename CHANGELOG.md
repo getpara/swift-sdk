@@ -1,3 +1,11 @@
+# Release 2.3.0 (Tue Oct 14 2025)
+
+### Features
+- Added Single Logout (SLO) support with dedicated bridge layer architecture (#34)
+
+### Fixes
+- Fixed login URL encoding to properly handle special characters and query parameters
+
 # Release 2.2.0 (Tue Jan 03 2025)
 
 ### Features
