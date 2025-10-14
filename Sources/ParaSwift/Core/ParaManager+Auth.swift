@@ -501,6 +501,54 @@ public extension ParaManager {
     }
 }
 
+// Encode query values strictly so '+' never becomes space and special chars are preserved.
+private extension CharacterSet {
+    static var urlQueryValueAllowedStrict: CharacterSet = {
+        var cs = CharacterSet.urlQueryAllowed
+        // Remove characters that must be percent-encoded in query values
+        cs.remove(charactersIn: "+&=/:?")
+        return cs
+    }()
+}
+
+private extension URLComponents {
+    /// Replace a percent-encoded query item if it exists, otherwise append it.
+    mutating func setOrAppendPercentEncodedQueryItem(
+        name: String,
+        value: String,
+        valueAllowed: CharacterSet = .urlQueryValueAllowedStrict
+    ) {
+        let encodedName = name.addingPercentEncoding(withAllowedCharacters: valueAllowed) ?? name
+        let encodedValue = value.addingPercentEncoding(withAllowedCharacters: valueAllowed) ?? value
+
+        var pairs = (percentEncodedQuery ?? "")
+            .split(separator: "&", omittingEmptySubsequences: true)
+            .map(String.init)
+
+        var replaced = false
+        for i in pairs.indices {
+            if let eq = pairs[i].firstIndex(of: "=") {
+                let key = String(pairs[i][..<eq])
+                if key == encodedName {
+                    pairs[i] = "\(encodedName)=\(encodedValue)"
+                    replaced = true
+                    break
+                }
+            } else if pairs[i] == encodedName {
+                pairs[i] = "\(encodedName)=\(encodedValue)"
+                replaced = true
+                break
+            }
+        }
+
+        if !replaced {
+            pairs.append("\(encodedName)=\(encodedValue)")
+        }
+
+        percentEncodedQuery = pairs.joined(separator: "&")
+    }
+}
+
 private extension ParaManager {
     func presentWebAuthenticationUrl(
         _ url: String,
@@ -508,63 +556,62 @@ private extension ParaManager {
         loadTransmissionKeyshares: Bool,
         webAuthenticationSession: WebAuthenticationSession
     ) async throws -> URL? {
-        let contextLogger = Logger(subsystem: "com.paraSwift", category: "WebAuthSession")
+        let logger = Logger(subsystem: "com.paraSwift", category: "WebAuthSession")
 
         guard let originalUrl = URL(string: url) else {
             throw ParaError.error("Invalid \(context) authentication URL")
         }
 
-        var components = URLComponents(url: originalUrl, resolvingAgainstBaseURL: false)
-        let callbackValue: String
-        let callbackScheme: String
-        if appScheme.contains("://") {
-            callbackValue = appScheme
-            if let parsedScheme = URL(string: appScheme)?.scheme {
-                callbackScheme = parsedScheme
-            } else if let schemeRange = appScheme.range(of: "://") {
-                callbackScheme = String(appScheme[..<schemeRange.lowerBound])
-            } else {
-                callbackScheme = appScheme
-            }
-        } else {
-            callbackValue = appScheme + "://"
-            callbackScheme = appScheme
-        }
-        let callbackQueryItem = URLQueryItem(name: "nativeCallbackUrl", value: callbackValue)
-        var currentQueryItems = components?.queryItems ?? []
-        currentQueryItems.append(callbackQueryItem)
-        components?.queryItems = currentQueryItems
+        // Build callback value/scheme without touching other existing query params.
+        let callbackValue: String = appScheme.contains("://") ? appScheme : (appScheme + "://")
+        let callbackScheme: String =
+            URL(string: callbackValue)?.scheme
+            ?? callbackValue.split(separator: ":").first.map(String.init)
+            ?? appScheme
 
-        guard let finalUrl = components?.url else {
+        // Preserve existing percent-encoding; only add/replace nativeCallbackUrl.
+        var components = URLComponents(url: originalUrl, resolvingAgainstBaseURL: false)!
+        components.setOrAppendPercentEncodedQueryItem(
+            name: "nativeCallbackUrl",
+            value: callbackValue
+        )
+
+        guard let finalUrl = components.url else {
             throw ParaError.error("Failed to construct \(context) URL with callback parameter")
         }
 
-        contextLogger.debug("Presenting \(context) authentication URL with native callback \(finalUrl.absoluteString)")
+        // Avoid logging full query with secrets.
+        if let host = finalUrl.host {
+            logger.debug("Presenting \(context) URL host=\(host, privacy: .public) path=\(finalUrl.path, privacy: .public)")
+        } else {
+            logger.debug("Presenting \(context) URL path=\(finalUrl.absoluteString, privacy: .private)")
+        }
 
         do {
-            let callbackURL = try await webAuthenticationSession.authenticate(using: finalUrl, callbackURLScheme: callbackScheme)
-            contextLogger.debug("Received callback URL from \(context) authentication session")
+            let callbackURL = try await webAuthenticationSession.authenticate(
+                using: finalUrl,
+                callbackURLScheme: callbackScheme
+            )
+            logger.debug("Received callback URL from \(context) authentication session")
 
             if loadTransmissionKeyshares {
                 do {
                     try await ensureTransmissionKeysharesLoaded()
                 } catch {
-                    contextLogger.warning("Failed to load transmission keyshares after \(context) auth: \(error.localizedDescription)")
+                    logger.warning("Failed to load transmission keyshares after \(context) auth: \(error.localizedDescription, privacy: .public)")
                 }
             }
 
             return callbackURL
         } catch {
             let nsError = error as NSError
-
             if nsError.domain == ASWebAuthenticationSessionError.errorDomain,
-               nsError.code == ASWebAuthenticationSessionError.canceledLogin.rawValue
-            {
-                contextLogger.warning("\(context.capitalized) authentication was cancelled by the user")
+               nsError.code == ASWebAuthenticationSessionError.canceledLogin.rawValue {
+                logger.warning("\(context.capitalized) authentication was cancelled by the user")
                 throw ParaError.error("Authentication cancelled")
             }
 
-            contextLogger.error("\(context.capitalized) authentication failed: \(error.localizedDescription)")
+            logger.error("\(context.capitalized) authentication failed: \(error.localizedDescription, privacy: .public)")
             throw error
         }
     }
