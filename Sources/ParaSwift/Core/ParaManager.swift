@@ -23,12 +23,16 @@ public class ParaManager: NSObject, ObservableObject {
     /// Current state of the Para Manager session.
     @Published public var sessionState: ParaSessionState = .unknown
     /// API key for Para services.
-    public var apiKey: String
+    public var apiKey: String {
+        didSet {
+            sessionPersistence.update(environment: environment, apiKey: apiKey)
+        }
+    }
     /// Para environment configuration.
     public var environment: ParaEnvironment {
         didSet {
             passkeysManager.relyingPartyIdentifier = environment.relyingPartyId
-            
+            sessionPersistence.update(environment: environment, apiKey: apiKey)
         }
     }
 
@@ -50,6 +54,12 @@ public class ParaManager: NSObject, ObservableObject {
     /// Track whether transmission keyshares have been loaded for the current session.
     /// This prevents unnecessary repeated calls to loadTransmissionKeyshares.
     internal var transmissionKeysharesLoaded = false
+    /// Controller responsible for persisting session snapshots.
+    private var sessionPersistence: SessionPersistenceStoring
+    /// Last serialized session we saved locally to avoid redundant writes.
+    private var lastPersistedSession: String?
+    /// Tracks whether we already attempted to restore a stored session.
+    private var attemptedSessionRestore = false
     
     // MARK: - Initialization
 
@@ -59,7 +69,12 @@ public class ParaManager: NSObject, ObservableObject {
     ///   - environment: The Para environment configuration.
     ///   - apiKey: Your Para API key.
     ///   - appScheme: Optional app scheme for authentication callbacks. Defaults to the app's bundle identifier.
-    public init(environment: ParaEnvironment, apiKey: String, appScheme: String? = nil) {
+    ///   - sessionPersistence: Optional persistence controller for session snapshots.
+    public init(
+        environment: ParaEnvironment,
+        apiKey: String,
+        appScheme: String? = nil
+    ) {
         logger.info("ParaManager init: \(environment.name)")
 
         self.environment = environment
@@ -67,8 +82,11 @@ public class ParaManager: NSObject, ObservableObject {
         passkeysManager = PasskeysManager(relyingPartyIdentifier: environment.relyingPartyId)
         paraWebView = ParaWebView(environment: environment, apiKey: apiKey)
         self.appScheme = appScheme ?? Bundle.main.bundleIdentifier!
+        self.sessionPersistence = SessionPersistenceController()
         
         super.init()
+
+        self.sessionPersistence.update(environment: environment, apiKey: apiKey)
 
         Task { @MainActor in
             await waitForParaReady()
@@ -106,6 +124,13 @@ public class ParaManager: NSObject, ObservableObject {
             return
         }
 
+        if !attemptedSessionRestore {
+            attemptedSessionRestore = true
+            if await restorePersistedSession() {
+                return
+            }
+        }
+
         if let active = try? await isSessionActive(), active {
             if let loggedIn = try? await isFullyLoggedIn(), loggedIn {
                 logger.info("Session active and user logged in")
@@ -113,6 +138,7 @@ public class ParaManager: NSObject, ObservableObject {
                     self.objectWillChange.send()
                     self.sessionState = .activeLoggedIn
                 }
+                await persistCurrentSession(reason: "waitForParaReady-activeLoggedIn")
             } else {
                 logger.info("Session active but user not fully logged in")
                 await MainActor.run {
@@ -126,6 +152,7 @@ public class ParaManager: NSObject, ObservableObject {
                 self.objectWillChange.send()
                 self.sessionState = .inactive
             }
+            lastPersistedSession = nil
         }
     }
 
@@ -230,12 +257,143 @@ public class ParaManager: NSObject, ObservableObject {
         return try decodeResult(result, expectedType: Bool.self, method: "isSessionActive")
     }
 
+    /// Attempts to refresh the server-side session cookie without reauthenticating.
+    /// - Returns: `true` when the session was refreshed successfully.
+    public func keepSessionAlive() async throws -> Bool {
+        try await ensureWebViewReady()
+        let result = try await postMessage(method: "keepSessionAlive", payload: EmptyPayload())
+
+        if let boolResult = result as? Bool {
+            return boolResult
+        }
+
+        if let numberResult = result as? NSNumber {
+            return numberResult.boolValue
+        }
+
+        if let stringResult = result as? String {
+            let normalized = stringResult.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if ["true", "1"].contains(normalized) {
+                return true
+            }
+            if ["false", "0"].contains(normalized) {
+                return false
+            }
+        }
+
+        logger.error("Unexpected keepSessionAlive response: \(String(describing: result))")
+        throw ParaError.bridgeError("Invalid keepSessionAlive response")
+    }
+
+    private struct ExportSessionArgs: Encodable {
+        let excludeSigners: Bool
+    }
+
     /// Export the current session for backup or transfer
     /// - Returns: Session data as a string
-    public func exportSession() async throws -> String {
+    public func exportSession(excludeSigners: Bool = false) async throws -> String {
         try await ensureWebViewReady()
-        let result = try await postMessage(method: "exportSession", payload: EmptyPayload())
+        let payload = ExportSessionArgs(excludeSigners: excludeSigners)
+        let result = try await postMessage(method: "exportSession", payload: payload)
         return try decodeResult(result, expectedType: String.self, method: "exportSession")
+    }
+
+    /// Imports a previously exported session.
+    /// - Parameter serializedSession: The base64-encoded session payload.
+    public func importSession(_ serializedSession: String) async throws {
+        let trimmed = serializedSession.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw ParaError.error("Serialized session cannot be empty")
+        }
+
+        try await ensureWebViewReady()
+        _ = try await postMessage(method: "importSession", payload: trimmed)
+
+        transmissionKeysharesLoaded = false
+        do {
+            try await ensureTransmissionKeysharesLoaded()
+        } catch {
+            logger.warning("Failed to reload transmission keyshares after import: \(error.localizedDescription)")
+        }
+
+        lastPersistedSession = trimmed
+    }
+
+    /// Restores a session snapshot from persistence if it exists.
+    /// - Returns: `true` when a snapshot was found and imported successfully.
+    @discardableResult
+    public func restorePersistedSession(refreshSession: Bool = true) async -> Bool {
+        sessionState = .restoring
+
+        do {
+            guard let snapshot = try await sessionPersistence.load() else {
+                logger.debug("No persisted session snapshot to restore")
+                sessionState = .inactive
+                return false
+            }
+
+            guard snapshot.environmentName == environment.name, snapshot.apiKey == apiKey else {
+                logger.warning("Persisted session metadata mismatch; clearing snapshot")
+                try? await sessionPersistence.clear()
+                sessionState = .inactive
+                return false
+            }
+
+            do {
+                try await importSession(snapshot.session)
+            } catch {
+                logger.error("Failed to import persisted session: \(error.localizedDescription)")
+                try? await sessionPersistence.clear()
+                sessionState = .inactive
+                return false
+            }
+
+            if refreshSession {
+                do {
+                    _ = try await touchSession()
+                } catch {
+                    logger.warning("touchSession failed during restore: \(error.localizedDescription)")
+                }
+            }
+
+            var restoredAuthState: AuthState?
+            if let details = try? await getCurrentUserAuthDetails() {
+                restoredAuthState = details
+            }
+
+            do {
+                let restoredWallets = try await fetchWallets()
+                wallets = restoredWallets
+            } catch {
+                logger.warning("Fetching wallets after restore failed: \(error.localizedDescription)")
+            }
+
+            let isLoggedIn: Bool
+            if restoredAuthState?.userId != nil {
+                isLoggedIn = true
+            } else if let fullyLoggedIn = try? await isFullyLoggedIn(), fullyLoggedIn {
+                isLoggedIn = true
+            } else {
+                isLoggedIn = false
+            }
+
+            sessionState = isLoggedIn ? .activeLoggedIn : .active
+            lastPersistedSession = snapshot.session
+            logger.info("Session restored from persistence")
+            await persistCurrentSession(reason: "restorePersistedSession")
+            return true
+        } catch SessionPersistenceError.misconfigured {
+            logger.warning("Session persistence misconfigured; skipping restore")
+        } catch SessionPersistenceError.keychainError(let status) {
+            logger.error("Keychain error during session restore: \(status, privacy: .public)")
+        } catch SessionPersistenceError.decoding(let error) {
+            logger.error("Failed to decode persisted session: \(error.localizedDescription, privacy: .public)")
+        } catch {
+            logger.error("Unexpected restore error: \(error.localizedDescription, privacy: .public)")
+        }
+
+        sessionState = .inactive
+        return false
     }
 
     /// Logs out the current user and clears all session data
@@ -253,6 +411,43 @@ public class ParaManager: NSObject, ObservableObject {
         sessionState = .inactive
         // Reset transmission keyshares flag since we're logging out
         transmissionKeysharesLoaded = false
+        lastPersistedSession = nil
+        try? await sessionPersistence.clear()
+    }
+
+    /// Persists the current session snapshot if it differs from the last saved copy.
+    func persistCurrentSession(reason: String) async {
+        guard paraWebView.isReady else {
+            logger.debug("Skipping session persist (\(reason)) - web view not ready")
+            return
+        }
+
+        do {
+            let serializedSession = try await exportSession()
+            if serializedSession == lastPersistedSession {
+                logger.debug("Skipping session persist (\(reason)) - snapshot unchanged")
+                return
+            }
+
+            var userId: String?
+            if let authDetails = try? await getCurrentUserAuthDetails() {
+                userId = authDetails.userId
+            }
+
+            let snapshot = SessionSnapshot(
+                session: serializedSession,
+                savedAt: Date(),
+                environmentName: environment.name,
+                apiKey: apiKey,
+                userId: userId
+            )
+
+            try await sessionPersistence.save(snapshot: snapshot)
+            lastPersistedSession = serializedSession
+            logger.debug("Session snapshot persisted (\(reason))")
+        } catch {
+            logger.error("Failed to persist session (\(reason)): \(error.localizedDescription)")
+        }
     }
     
     /// Ensures transmission keyshares are loaded for the current session.

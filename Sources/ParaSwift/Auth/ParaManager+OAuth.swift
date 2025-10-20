@@ -270,6 +270,7 @@ extension ParaManager {
             // Update session state after successful signup
             wallets = try await fetchWallets()
             sessionState = .activeLoggedIn
+            await persistCurrentSession(reason: "oauth-signup")
 
             // Synchronize required wallets for new OAuth users
             logger.info("Synchronizing required wallets for new OAuth user...")
@@ -289,6 +290,7 @@ extension ParaManager {
         case .done:
             logger.debug("OAuth flow completed with DONE stage for user ID: \(authState.userId)")
             sessionState = .activeLoggedIn
+            await persistCurrentSession(reason: "oauth-done")
         }
     }
 }

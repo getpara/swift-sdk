@@ -416,6 +416,7 @@ public extension ParaManager {
 
         wallets = try await fetchWallets()
         sessionState = .activeLoggedIn
+        await persistCurrentSession(reason: "loginWithPasskey")
     }
 
     /// Generate a new passkey for authentication
@@ -665,6 +666,7 @@ public extension ParaManager {
         transmissionKeysharesLoaded = true
 
         sessionState = .activeLoggedIn
+        await persistCurrentSession(reason: "loginExternalWallet")
     }
 
     /// Logs in with an external wallet address (legacy version)
@@ -787,6 +789,7 @@ public extension ParaManager {
                 // Then fetch the populated wallets
                 wallets = try await fetchWallets()
                 sessionState = .activeLoggedIn
+                await persistCurrentSession(reason: "handleLoginWithPassword")
             } else {
                 // Should only happen if webAuthenticationSession throws internally and presentPasswordUrl catches/returns nil
                 logger.warning("Password login flow seemed to fail (nil result from presentPasswordUrl).")
@@ -960,6 +963,7 @@ public extension ParaManager {
         // Common success path for both methods: Update state and fetch wallets
         wallets = try await fetchWallets()
         sessionState = .activeLoggedIn
+        await persistCurrentSession(reason: "handleSignup")
         logger.info("Signup successful via \(method.description). Session active.")
 
         // Synchronize required wallets for new users

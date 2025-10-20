@@ -26,6 +26,7 @@ public extension ParaManager {
         // Update the local wallets list with the complete fetched data
         wallets = allWallets
         sessionState = .activeLoggedIn // Update state as wallet creation implies login
+        await persistCurrentSession(reason: "createWallet")
 
         logger.debug("Wallet list refreshed after creation. Found \(allWallets.count) wallets.")
 
@@ -97,6 +98,7 @@ public extension ParaManager {
             logger.info("Created \(newWallets.count) required wallets")
             // Update local wallets list
             wallets = try await fetchWallets()
+            await persistCurrentSession(reason: "synchronizeRequiredWallets")
         } else {
             logger.info("No new wallets created - all required types already exist")
         }
