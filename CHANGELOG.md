@@ -1,3 +1,8 @@
+# Release 2.4.0 (Mon Oct 20 2025)
+
+### Features
+- Added automatic session persistence across app launches, allowing users to remain authenticated after closing and reopening the app (#35)
+
 # Release 2.3.0 (Tue Oct 14 2025)
 
 ### Features
