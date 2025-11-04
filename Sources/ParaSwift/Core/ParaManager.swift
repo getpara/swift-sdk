@@ -400,16 +400,27 @@ public class ParaManager: NSObject, ObservableObject {
     public func logout() async throws {
         _ = try await postMessage(method: "logout", payload: EmptyPayload())
 
+        await clearLocalSessionState()
+    }
+
+    /// Permanently deletes the currently authenticated user and clears all session data.
+    /// - Throws: ``ParaError`` if the delete request fails or no user is authenticated.
+    public func deleteAccount() async throws {
+        _ = try await postMessage(method: "deleteAccount", payload: EmptyPayload())
+
+        await clearLocalSessionState()
+    }
+
+    /// Clears local session artifacts from the web view, in-memory state, and persistence.
+    private func clearLocalSessionState() async {
         // Clear web data store
         let dataStore = WKWebsiteDataStore.default()
         let dataTypes = WKWebsiteDataStore.allWebsiteDataTypes()
         let dateFrom = Date(timeIntervalSince1970: 0)
         await dataStore.removeData(ofTypes: dataTypes, modifiedSince: dateFrom)
 
-        // Reset state
         wallets = []
         sessionState = .inactive
-        // Reset transmission keyshares flag since we're logging out
         transmissionKeysharesLoaded = false
         lastPersistedSession = nil
         try? await sessionPersistence.clear()
