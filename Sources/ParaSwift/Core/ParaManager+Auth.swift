@@ -96,6 +96,29 @@ extension ParaManager {
     }
 }
 
+private extension AuthState {
+    func hostedFlowCompleted() -> AuthState {
+        AuthState(
+            stage: .done,
+            userId: userId,
+            email: email,
+            phone: phone,
+            displayName: displayName,
+            pfpUrl: pfpUrl,
+            username: username,
+            passkeyUrl: passkeyUrl,
+            passkeyId: passkeyId,
+            passkeyKnownDeviceUrl: passkeyKnownDeviceUrl,
+            passwordUrl: passwordUrl,
+            biometricHints: biometricHints,
+            loginUrl: nil,
+            nextStage: nil,
+            loginAuthMethods: loginAuthMethods,
+            signupAuthMethods: signupAuthMethods
+        )
+    }
+}
+
 // MARK: - Authentication Types and Methods
 
 public extension ParaManager {
@@ -219,11 +242,88 @@ public extension ParaManager {
     /// - Parameter auth: The authentication identifier (Email, Phone).
     /// - Returns: The `AuthState` indicating the next step (.verify for new users, .login for existing users).
     @MainActor
-    func initiateAuthFlow(auth: Auth) async throws -> AuthState {
+    func initiateAuthFlow(
+        auth: Auth,
+        webAuthenticationSession overrideSession: WebAuthenticationSession? = nil
+    ) async throws -> AuthState {
         logger.debug("Initiating auth flow with: \(auth.debugDescription)")
         let authState = try await signUpOrLogIn(auth: auth)
         logger.debug("Auth flow initiated. Resulting stage: \(authState.stage.rawValue)")
-        return authState
+
+        guard let loginUrl = authState.loginUrl else {
+            return authState
+        }
+
+        // Prefer the explicitly provided session, then fall back to a stored default.
+        guard let session = overrideSession ?? defaultWebAuthenticationSession else {
+            logger.warning("Hosted auth URL returned but no WebAuthenticationSession configured. Returning state for host handling.")
+            return authState
+        }
+
+        logger.debug("Hosted auth URL detected. Handling automatically via ParaManager.")
+
+        do {
+            _ = try await presentAuthUrl(
+                loginUrl,
+                context: "One Click Login",
+                webAuthenticationSession: session
+            )
+
+            try await waitForHostedAuthCompletion(initialStage: authState.stage)
+            await finalizeHostedAuthFlow(initialStage: authState.stage)
+
+            return authState.hostedFlowCompleted()
+        } catch {
+            logger.error("Hosted auth flow failed: \(error.localizedDescription)")
+            throw error
+        }
+    }
+
+    /// Waits for the hosted authentication session to complete based on the initial stage.
+    private func waitForHostedAuthCompletion(initialStage: AuthStage) async throws {
+        switch initialStage {
+        case .login:
+            let result = try await waitForLogin()
+            if result == nil {
+                logger.debug("waitForLogin returned nil payload after hosted auth flow.")
+            }
+        case .signup, .verify:
+            let completed = try await waitForSignup()
+            if !completed {
+                logger.warning("waitForSignup reported incomplete state after hosted auth flow.")
+            }
+        case .done:
+            logger.debug("Hosted auth flow started in .done stage; skipping wait.")
+        }
+    }
+
+    /// Finalizes Para state after a hosted authentication flow succeeds.
+    private func finalizeHostedAuthFlow(initialStage: AuthStage) async {
+        do {
+            try await ensureTransmissionKeysharesLoaded()
+        } catch {
+            logger.warning("Failed to load transmission keyshares after hosted auth: \(error.localizedDescription)")
+        }
+
+        do {
+            wallets = try await fetchWallets()
+        } catch {
+            logger.warning("Failed to refresh wallets after hosted auth: \(error.localizedDescription)")
+        }
+
+        sessionState = .activeLoggedIn
+        await persistCurrentSession(reason: "initiateAuthFlow-hostedAuth")
+
+        if initialStage == .signup || initialStage == .verify {
+            do {
+                let newWallets = try await synchronizeRequiredWallets()
+                if !newWallets.isEmpty {
+                    logger.info("Created \(newWallets.count) required wallets during hosted signup flow.")
+                }
+            } catch {
+                logger.error("Failed to synchronize required wallets after hosted signup: \(error.localizedDescription)")
+            }
+        }
     }
 
     /// Check if a specific login method is available for the given authentication state.
@@ -467,13 +567,23 @@ public extension ParaManager {
     func presentAuthUrl(
         _ url: String,
         context: String,
-        webAuthenticationSession: WebAuthenticationSession
+        webAuthenticationSession overrideSession: WebAuthenticationSession? = nil
     ) async throws -> URL? {
-        try await presentWebAuthenticationUrl(
+        let session: WebAuthenticationSession
+        if let overrideSession {
+            session = overrideSession
+        } else if let defaultSession = defaultWebAuthenticationSession {
+            session = defaultSession
+        } else {
+            logger.error("presentAuthUrl called without an available WebAuthenticationSession.")
+            throw ParaError.error("Missing WebAuthenticationSession. Call setDefaultWebAuthenticationSession(_:) or pass one in.")
+        }
+
+        return try await presentWebAuthenticationUrl(
             url,
             context: context,
             loadTransmissionKeyshares: false,
-            webAuthenticationSession: webAuthenticationSession
+            webAuthenticationSession: session
         )
     }
 
@@ -484,12 +594,25 @@ public extension ParaManager {
     ///   - url: The password authentication URL to present
     ///   - webAuthenticationSession: The session to use for presenting the URL
     /// - Returns: The callback URL if authentication was successful via direct callback, or a success placeholder URL if the window was closed (interpreted as success). Returns nil on failure.
-    func presentPasswordUrl(_ url: String, webAuthenticationSession: WebAuthenticationSession) async throws -> URL? {
+    func presentPasswordUrl(
+        _ url: String,
+        webAuthenticationSession overrideSession: WebAuthenticationSession? = nil
+    ) async throws -> URL? {
+        let session: WebAuthenticationSession
+        if let overrideSession {
+            session = overrideSession
+        } else if let defaultSession = defaultWebAuthenticationSession {
+            session = defaultSession
+        } else {
+            logger.error("presentPasswordUrl called without an available WebAuthenticationSession.")
+            throw ParaError.error("Missing WebAuthenticationSession. Call setDefaultWebAuthenticationSession(_:) or pass one in.")
+        }
+
         let callbackURL = try await presentWebAuthenticationUrl(
             url,
             context: "password",
             loadTransmissionKeyshares: true,
-            webAuthenticationSession: webAuthenticationSession
+            webAuthenticationSession: session
         )
 
         do {
@@ -743,7 +866,7 @@ public extension ParaManager {
         authState: AuthState,
         method: LoginMethod,
         authorizationController: AuthorizationController,
-        webAuthenticationSession: WebAuthenticationSession,
+        webAuthenticationSession overrideSession: WebAuthenticationSession? = nil
     ) async throws {
         guard authState.stage == .login else {
             logger.error("handleLoginWithMethod called with invalid stage: \(authState.stage.rawValue)")
@@ -772,7 +895,7 @@ public extension ParaManager {
             logger.debug("Calling presentPasswordUrl for login...")
             let resultUrl = try await presentPasswordUrl(
                 passwordUrl,
-                webAuthenticationSession: webAuthenticationSession,
+                webAuthenticationSession: overrideSession
             )
 
             // Check if the result indicates success
@@ -816,7 +939,7 @@ public extension ParaManager {
     func handleLogin(
         authState: AuthState,
         authorizationController: AuthorizationController,
-        webAuthenticationSession: WebAuthenticationSession,
+        webAuthenticationSession overrideSession: WebAuthenticationSession? = nil
     ) async throws {
         guard authState.stage == .login else {
             logger.error("handleLogin called with invalid stage: \(authState.stage.rawValue)")
@@ -836,7 +959,7 @@ public extension ParaManager {
             authState: authState,
             method: preferredMethod,
             authorizationController: authorizationController,
-            webAuthenticationSession: webAuthenticationSession,
+            webAuthenticationSession: overrideSession
         )
     }
 
@@ -899,7 +1022,7 @@ public extension ParaManager {
         authState: AuthState,
         method: SignupMethod,
         authorizationController: AuthorizationController,
-        webAuthenticationSession: WebAuthenticationSession,
+        webAuthenticationSession overrideSession: WebAuthenticationSession? = nil
     ) async throws {
         guard authState.stage == .signup else {
             logger.error("handleSignup called with invalid stage: \(authState.stage.rawValue)")
@@ -944,7 +1067,7 @@ public extension ParaManager {
             logger.debug("Calling presentPasswordUrl for signup...")
             let resultUrl = try await presentPasswordUrl(
                 passwordUrl,
-                webAuthenticationSession: webAuthenticationSession,
+                webAuthenticationSession: overrideSession
             )
 
             // Check if the result indicates success

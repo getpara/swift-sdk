@@ -51,14 +51,24 @@ extension ParaManager {
     /// - Throws: ParaError or other authentication-related errors
     public func handleOAuth(
         provider: OAuthProvider,
-        webAuthenticationSession: WebAuthenticationSession,
-        authorizationController: AuthorizationController,
+        webAuthenticationSession overrideSession: WebAuthenticationSession? = nil,
+        authorizationController: AuthorizationController
     ) async throws {
         let logger = Logger(subsystem: "com.paraSwift", category: "OAuth")
 
+        let session: WebAuthenticationSession
+        if let overrideSession {
+            session = overrideSession
+        } else if let defaultSession = defaultWebAuthenticationSession {
+            session = defaultSession
+        } else {
+            logger.error("No WebAuthenticationSession provided for OAuth flow.")
+            throw ParaError.error("Missing WebAuthenticationSession. Call setDefaultWebAuthenticationSession(_:) or pass one in.")
+        }
+
         // Step 1: Get OAuth verification
         logger.debug("Starting OAuth flow for provider: \(provider.rawValue)")
-        let authState = try await verifyOAuth(provider: provider, webAuthenticationSession: webAuthenticationSession)
+        let authState = try await verifyOAuth(provider: provider, webAuthenticationSession: session)
 
         // Step 2: Process the authentication state based on its stage
         try await processOAuthAuthState(

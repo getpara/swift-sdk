@@ -54,6 +54,8 @@ public class ParaManager: NSObject, ObservableObject {
     /// Track whether transmission keyshares have been loaded for the current session.
     /// This prevents unnecessary repeated calls to loadTransmissionKeyshares.
     internal var transmissionKeysharesLoaded = false
+    /// Default web authentication session used for hosted auth flows.
+    internal var defaultWebAuthenticationSession: WebAuthenticationSession?
     /// Controller responsible for persisting session snapshots.
     private var sessionPersistence: SessionPersistenceStoring
     /// Last serialized session we saved locally to avoid redundant writes.
@@ -165,6 +167,15 @@ public class ParaManager: NSObject, ObservableObject {
                 throw ParaError.bridgeError("WebView failed to initialize")
             }
         }
+    }
+
+    // MARK: - Configuration
+
+    /// Sets the default web authentication session to use for hosted Para auth flows.
+    ///
+    /// - Parameter session: The session instance to store. Pass `nil` to clear.
+    public func setDefaultWebAuthenticationSession(_ session: WebAuthenticationSession?) {
+        defaultWebAuthenticationSession = session
     }
 
     /// Posts a message to the Para bridge
