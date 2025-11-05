@@ -66,32 +66,94 @@ public class ParaWebView: NSObject, ObservableObject {
 
         // Add console logging support
         let consoleScript = """
-        console.originalLog = console.log;
-        console.originalError = console.error;
-        console.originalWarn = console.warn;
+        (function() {
+            if (window.__paraConsoleBridgeInstalled) {
+                return;
+            }
+            window.__paraConsoleBridgeInstalled = true;
 
-        console.log = function() {
-            console.originalLog.apply(console, arguments);
-            window.webkit.messageHandlers.console?.postMessage({level: 'log', message: Array.from(arguments).join(' ')});
-        };
+            const serializeArg = (arg) => {
+                if (arg instanceof Error) {
+                    const errorPayload = {
+                        name: arg.name,
+                        message: arg.message,
+                        stack: arg.stack
+                    };
+                    try {
+                        const enumerableKeys = Object.keys(arg);
+                        for (const key of enumerableKeys) {
+                            if (!(key in errorPayload)) {
+                                errorPayload[key] = arg[key];
+                            }
+                        }
+                    } catch (_) {}
+                    return JSON.stringify(errorPayload, null, 2);
+                }
 
-        console.error = function() {
-            console.originalError.apply(console, arguments);
-            window.webkit.messageHandlers.console?.postMessage({level: 'error', message: Array.from(arguments).join(' ')});
-        };
+                if (typeof arg === 'object' && arg !== null) {
+                    try {
+                        return JSON.stringify(arg, null, 2);
+                    } catch (_) {
+                        return Object.prototype.toString.call(arg);
+                    }
+                }
 
-        console.warn = function() {
-            console.originalWarn.apply(console, arguments);
-            window.webkit.messageHandlers.console?.postMessage({level: 'warn', message: Array.from(arguments).join(' ')});
-        };
+                return String(arg);
+            };
 
-        window.addEventListener('error', function(e) {
-            console.error('JavaScript Error:', e.message, 'at', e.filename + ':' + e.lineno);
-        });
+            const sendToNative = (level, args) => {
+                const formatted = Array.from(args).map(serializeArg).join(' ');
+                const handler = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.console;
+                if (handler && typeof handler.postMessage === 'function') {
+                    handler.postMessage({
+                        level,
+                        message: formatted
+                    });
+                }
+            };
 
-        window.addEventListener('unhandledrejection', function(e) {
-            console.error('Unhandled Promise Rejection:', e.reason);
-        });
+            const originalMethods = {
+                log: console.originalLog || (console.log ? console.log.bind(console) : function() {}),
+                info: console.originalInfo || (console.info ? console.info.bind(console) : (console.log ? console.log.bind(console) : function() {})),
+                debug: console.originalDebug || (console.debug ? console.debug.bind(console) : (console.log ? console.log.bind(console) : function() {})),
+                warn: console.originalWarn || (console.warn ? console.warn.bind(console) : (console.log ? console.log.bind(console) : function() {})),
+                error: console.originalError || (console.error ? console.error.bind(console) : (console.log ? console.log.bind(console) : function() {}))
+            };
+
+            console.originalLog = originalMethods.log;
+            console.originalInfo = originalMethods.info;
+            console.originalDebug = originalMethods.debug;
+            console.originalWarn = originalMethods.warn;
+            console.originalError = originalMethods.error;
+
+            const wrapConsole = (method, level) => {
+                const original = originalMethods[method];
+                console[method] = function(...args) {
+                    original(...args);
+                    sendToNative(level, args);
+                };
+            };
+
+            wrapConsole('log', 'log');
+            wrapConsole('info', 'info');
+            wrapConsole('debug', 'debug');
+            wrapConsole('warn', 'warn');
+            wrapConsole('error', 'error');
+
+            window.addEventListener('error', (e) => {
+                console.error('JavaScript Error:', {
+                    message: e.message,
+                    filename: e.filename,
+                    lineno: e.lineno,
+                    colno: e.colno,
+                    error: e.error
+                });
+            });
+
+            window.addEventListener('unhandledrejection', (e) => {
+                console.error('Unhandled Promise Rejection:', e.reason);
+            });
+        })();
         """
 
         let consoleUserScript = WKUserScript(source: consoleScript, injectionTime: .atDocumentStart, forMainFrameOnly: false)
