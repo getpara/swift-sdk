@@ -1,3 +1,14 @@
+# Release 2.5.0 (Tue Nov 05 2025)
+
+### Features
+- Added account deletion capability, allowing users to permanently delete their Para account and associated data (#36)
+- Simplified quick login flow by introducing optional default web authentication session, reducing boilerplate code for repeated OAuth operations
+
+### Changes
+- Migrated quick login logic from bridge to SDK for improved maintainability and direct control over authentication flows
+- Added `setDefaultWebAuthenticationSession()` method to set a default session for hosted auth flows
+- Made `webAuthenticationSession` parameter optional in `handleOAuth()` when a default session is configured
+
 # Release 2.4.0 (Mon Oct 20 2025)
 
 ### Features
