@@ -1,3 +1,9 @@
+# Release 2.6.0 (Thu Dec 11 2025)
+
+### Features
+- Added `issueJwt()` method for server-side authentication - issue JWTs that can be verified server-side using Para's JWKS endpoint at `/.well-known/jwks.json` (#37)
+- Added `JwtResponse` struct containing the signed token and key ID for JWKS lookup (#37)
+
 # Release 2.5.0 (Tue Nov 05 2025)
 
 ### Features
