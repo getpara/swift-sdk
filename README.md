@@ -6,6 +6,8 @@
 
 The Para Swift SDK provides a native interface to Para services, enabling seamless integration of passkey-based wallets, transaction signing, and external wallet connections within your iOS applications.
 
+> **Note:** The `2.0.0-alpha` branch has been merged into `main`. If you were using `branch: "2.0.0-alpha"` in your Package.swift, please update to `branch: "main"`. The `2.0.0-alpha` branch is now deprecated and will be removed in the future.
+
 ## Prerequisites
 
 ### Find your TeamID and Bundle Identifier
@@ -37,7 +39,7 @@ Once you have your Swift package set up, adding ParaSwift as a dependency is as 
 ```swift
 // Package.swift dependencies
 dependencies: [
-    .package(url: "https://github.com/getpara/swift-sdk.git", .upToNextMajor(from: "1.2.1")) // Use the latest appropriate version
+    .package(url: "https://github.com/getpara/swift-sdk.git", branch: "main")
 ]
 
 // Target dependencies
