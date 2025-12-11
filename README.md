@@ -39,7 +39,7 @@ Once you have your Swift package set up, adding ParaSwift as a dependency is as 
 ```swift
 // Package.swift dependencies
 dependencies: [
-    .package(url: "https://github.com/getpara/swift-sdk.git", branch: "main")
+    .package(url: "https://github.com/getpara/swift-sdk.git", .upToNextMajor(from: "2.0.0"))
 ]
 
 // Target dependencies
