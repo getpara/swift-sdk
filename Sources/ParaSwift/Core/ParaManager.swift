@@ -309,6 +309,40 @@ public class ParaManager: NSObject, ObservableObject {
         return try decodeResult(result, expectedType: String.self, method: "exportSession")
     }
 
+    // MARK: - JWT
+
+    /// Response from issuing a JWT for server-side authentication
+    public struct JwtResponse {
+        /// The signed JWT token
+        public let token: String
+        /// The key ID used to sign the token (for JWKS lookup)
+        public let keyId: String
+    }
+
+    private struct IssueJwtArgs: Encodable {
+        let keyIndex: Int
+    }
+
+    /// Issues a JWT for server-side authentication.
+    ///
+    /// The JWT can be sent to your backend server and verified using Para's JWKS endpoint
+    /// at `https://api.getpara.com/.well-known/jwks.json`.
+    ///
+    /// - Parameter keyIndex: The key index to use for signing (default: 0)
+    /// - Returns: A `JwtResponse` containing the signed token and key ID
+    /// - Throws: `ParaError` if the user is not logged in or the request fails
+    public func issueJwt(keyIndex: Int = 0) async throws -> JwtResponse {
+        try await ensureWebViewReady()
+        let result = try await postMessage(method: "issueJwt", payload: IssueJwtArgs(keyIndex: keyIndex))
+        let dict = try decodeResult(result, expectedType: [String: Any].self, method: "issueJwt")
+        guard let token = dict["token"] as? String,
+              let keyId = dict["keyId"] as? String
+        else {
+            throw ParaError.bridgeError("Invalid issueJwt response: missing token or keyId")
+        }
+        return JwtResponse(token: token, keyId: keyId)
+    }
+
     /// Imports a previously exported session.
     /// - Parameter serializedSession: The base64-encoded session payload.
     public func importSession(_ serializedSession: String) async throws {
