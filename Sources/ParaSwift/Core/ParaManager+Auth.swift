@@ -430,7 +430,7 @@ public extension ParaManager {
     ///   - authorizationController: The controller to handle authorization UI.
     ///   - email: Optional email address for authentication.
     ///   - phone: Optional phone number for authentication.
-    /// - Note: Either email or phone can be provided, but not both. If both are nil, the user will be prompted to select a passkey.
+    /// - Note: Either an email or a phone number can be provided, but not both. If both are nil, the user will be prompted to select a passkey.
     @MainActor
     func loginWithPasskey(
         authorizationController: AuthorizationController,
