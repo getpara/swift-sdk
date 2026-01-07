@@ -137,7 +137,7 @@ final class PasskeysManager: NSObject, ASAuthorizationControllerDelegate {
     /// - Returns: Array of authorization requests
     private func signInRequests(challenge: String, allowedPublicKeys: [String]) async -> [ASAuthorizationRequest] {
         // Only include passkey authentication request
-        // This ensures the system directly uses the passkey picker without offering password alternative
+        // This ensures the system directly uses the passkey picker without offering a password alternative
         await [passkeyAssertionRequest(challenge: challenge, allowedPublicKeys: allowedPublicKeys)]
     }
 
