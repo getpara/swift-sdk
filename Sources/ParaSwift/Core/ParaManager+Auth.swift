@@ -407,10 +407,6 @@ public extension ParaManager {
         let newState = try await verifyNewAccount(verificationCode: verificationCode)
         logger.debug("Verification code handled. Resulting stage: \(newState.stage.rawValue)")
 
-        guard newState.stage == .signup else {
-            logger.error("Verification completed but resulted in unexpected stage: \(newState.stage.rawValue)")
-            throw ParaError.bridgeError("Verification resulted in unexpected state.")
-        }
         return newState
     }
 
