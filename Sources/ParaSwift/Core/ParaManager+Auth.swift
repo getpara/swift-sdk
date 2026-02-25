@@ -250,6 +250,12 @@ public extension ParaManager {
         let authState = try await signUpOrLogIn(auth: auth)
         logger.debug("Auth flow initiated. Resulting stage: \(authState.stage.rawValue)")
 
+        if authState.stage == .done {
+            logger.debug("Auth flow returned .done stage (SLO/enclave user). Finalizing session.")
+            await finalizeHostedAuthFlow(initialStage: .done)
+            return authState
+        }
+
         guard let loginUrl = authState.loginUrl else {
             return authState
         }
