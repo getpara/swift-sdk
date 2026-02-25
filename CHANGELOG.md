@@ -1,3 +1,12 @@
+# Release 2.6.1 (Tue Feb 25 2026)
+
+### Fixes
+- Fixed authentication flow for SLO/enclave users where `initiateAuthFlow` did not handle `stage: .done`, causing apps to fall through to verification UI and trigger "Account already exists" errors (#39)
+- Fixed `handleVerificationCode` to return auth state for all stages instead of throwing when the resulting stage is not `.signup`, allowing apps to route appropriately (#39)
+
+### Documentation
+- Updated SPM install instructions to use semver-based version pinning
+
 # Release 2.6.0 (Thu Dec 11 2025)
 
 ### Features
