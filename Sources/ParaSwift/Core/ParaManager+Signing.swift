@@ -10,13 +10,13 @@ public struct SignatureResult {
     public let walletId: String
     /// The wallet type (e.g., "evm", "solana", "cosmos")
     public let type: String
-    
+
     public init(signedTransaction: String, walletId: String, type: String) {
         self.signedTransaction = signedTransaction
         self.walletId = walletId
         self.type = type
     }
-    
+
     /// Returns the transaction data for broadcasting.
     public var transactionData: String {
         return signedTransaction
@@ -35,7 +35,7 @@ public struct TransferResult {
     public let amount: String
     /// The chain ID
     public let chainId: String
-    
+
     public init(hash: String, from: String, to: String, amount: String, chainId: String) {
         self.hash = hash
         self.from = from
@@ -71,63 +71,51 @@ struct FormatAndSignTransactionParams: Encodable {
 }
 
 public extension ParaManager {
+    /// Sets a global handler for transaction review URLs. When a signing operation
+    /// requires user approval (due to permissions policies), the SDK calls this
+    /// handler with the review URL before throwing ``ParaError/transactionDenied``.
+    ///
+    /// ```swift
+    /// paraManager.setTransactionReviewHandler { url in
+    ///     UIApplication.shared.open(URL(string: url)!)
+    /// }
+    /// ```
+    func setTransactionReviewHandler(_ handler: @escaping (String) -> Void) {
+        transactionReviewHandler = handler
+    }
+
     /// Signs a message with any wallet type.
     ///
-    /// This unified method works with all wallet types (EVM, Solana, Cosmos, etc.).
-    /// The bridge handles the chain-specific signing logic internally.
-    ///
-    /// - Parameters:
-    ///   - walletId: The ID of the wallet to use for signing.
-    ///   - message: The message to sign (plain text).
-    /// - Returns: A SignatureResult containing the signature and metadata.
+    /// - Throws: ``ParaError/transactionDenied`` if a permissions policy requires approval.
     func signMessage(walletId: String, message: String) async throws -> SignatureResult {
         try await ensureWebViewReady()
-        
-        // Ensure transmission keyshares are loaded before signing
-        // This is critical for wallet operations to work properly
+
         do {
             try await ensureTransmissionKeysharesLoaded()
         } catch {
-            // Log the error but continue - some wallets may work without transmission keyshares
             logger.warning("Failed to load transmission keyshares before signing message: \(error.localizedDescription)")
         }
 
-        let params = FormatAndSignMessageParams(
-            walletId: walletId,
-            message: message
-        )
-
+        let params = FormatAndSignMessageParams(walletId: walletId, message: message)
         let result = try await postMessage(method: "formatAndSignMessage", payload: params)
-        
-        // Parse the response from bridge
         let dict = try decodeResult(result, expectedType: [String: Any].self, method: "formatAndSignMessage")
-        
-        // Message signing returns signature field
+
+        try checkForTransactionDenial(dict)
+
         guard let signature = dict["signature"] as? String else {
             throw ParaError.bridgeError("Missing signature in response")
         }
-        let returnedWalletId = dict["walletId"] as? String ?? walletId
-        let walletType = dict["type"] as? String ?? "unknown"
-        
+
         return SignatureResult(
-            signedTransaction: signature,  // Store signature in signedTransaction field for compatibility
-            walletId: returnedWalletId,
-            type: walletType
+            signedTransaction: signature,
+            walletId: dict["walletId"] as? String ?? walletId,
+            type: dict["type"] as? String ?? "unknown"
         )
     }
 
     /// Signs a transaction with any wallet type.
     ///
-    /// This unified method works with all wallet types. It accepts transaction parameters
-    /// as an Encodable object that will be formatted by the bridge based on wallet type.
-    ///
-    /// - Parameters:
-    ///   - walletId: The ID of the wallet to use for signing.
-    ///   - transaction: The transaction parameters (EVMTransaction, SolanaTransaction, etc.).
-    ///   - chainId: Optional chain ID (primarily for EVM chains).
-    ///   - rpcUrl: Optional RPC URL (required for Solana if recentBlockhash is not provided).
-    /// - Returns: A SignatureResult containing the signature and metadata.
-    /// - Note: This method automatically ensures transmission keyshares are loaded before signing.
+    /// - Throws: ``ParaError/transactionDenied`` if a permissions policy requires approval.
     func signTransaction<T: Encodable>(
         walletId: String,
         transaction: T,
@@ -135,21 +123,17 @@ public extension ParaManager {
         rpcUrl: String? = nil
     ) async throws -> SignatureResult {
         try await ensureWebViewReady()
-        
-        // Ensure transmission keyshares are loaded before signing
-        // This is critical for wallet operations to work properly
+
         do {
             try await ensureTransmissionKeysharesLoaded()
         } catch {
-            // Log the error but continue - some wallets may work without transmission keyshares
             logger.warning("Failed to load transmission keyshares before signing transaction: \(error.localizedDescription)")
         }
 
-        // Encode the transaction object to JSON
         let encoder = JSONEncoder()
         let transactionData = try encoder.encode(transaction)
         let transactionDict = try JSONSerialization.jsonObject(with: transactionData, options: []) as? [String: Any] ?? [:]
-        
+
         let params = FormatAndSignTransactionParams(
             walletId: walletId,
             transaction: transactionDict,
@@ -158,41 +142,27 @@ public extension ParaManager {
         )
 
         let result = try await postMessage(method: "formatAndSignTransaction", payload: params)
-        
-        // Parse the response from bridge
         let dict = try decodeResult(result, expectedType: [String: Any].self, method: "formatAndSignTransaction")
-        
-        // Transaction signing returns signedTransaction (complete tx) or signature (when tx construction isn't possible)
+
+        try checkForTransactionDenial(dict)
+
         let signedTransaction: String
         if let tx = dict["signedTransaction"] as? String {
-            signedTransaction = tx  // Complete transaction ready to broadcast
+            signedTransaction = tx
         } else if let sig = dict["signature"] as? String {
-            signedTransaction = sig  // Just signature (pre-serialized Solana, Cosmos fallback)
+            signedTransaction = sig
         } else {
             throw ParaError.bridgeError("Missing signedTransaction or signature in response")
         }
-        let returnedWalletId = dict["walletId"] as? String ?? walletId
-        let walletType = dict["type"] as? String ?? "unknown"
-        
+
         return SignatureResult(
             signedTransaction: signedTransaction,
-            walletId: returnedWalletId,
-            type: walletType
+            walletId: dict["walletId"] as? String ?? walletId,
+            type: dict["type"] as? String ?? "unknown"
         )
     }
-    
+
     /// Gets the balance for any wallet type.
-    ///
-    /// This unified method works with all wallet types. For token balances,
-    /// provide the token contract address or symbol.
-    ///
-    /// - Parameters:
-    ///   - walletId: The ID of the wallet.
-    ///   - token: Optional token identifier (contract address for EVM, mint address for Solana, etc.).
-    ///   - rpcUrl: Optional RPC URL (recommended for Solana and Cosmos to avoid 403/CORS issues).
-    ///   - chainPrefix: Optional bech32 prefix for Cosmos (e.g., "juno", "stars").
-    ///   - denom: Optional denom for Cosmos balances (e.g., "ujuno", "ustars").
-    /// - Returns: The balance as a string (format depends on the chain).
     func getBalance(walletId: String, token: String? = nil, rpcUrl: String? = nil, chainPrefix: String? = nil, denom: String? = nil) async throws -> String {
         try await ensureWebViewReady()
 
@@ -204,31 +174,12 @@ public extension ParaManager {
             let denom: String?
         }
 
-        let params = GetBalanceParams(
-            walletId: walletId,
-            token: token,
-            rpcUrl: rpcUrl,
-            chainPrefix: chainPrefix,
-            denom: denom
-        )
-
+        let params = GetBalanceParams(walletId: walletId, token: token, rpcUrl: rpcUrl, chainPrefix: chainPrefix, denom: denom)
         let result = try await postMessage(method: "getBalance", payload: params)
         return try decodeResult(result, expectedType: String.self, method: "getBalance")
     }
-    
+
     /// High-level transfer method for EVM chains.
-    ///
-    /// This method handles ETH/ERC20 transfers on EVM-compatible chains.
-    /// The bridge handles transaction construction, signing, and broadcasting.
-    ///
-    /// - Parameters:
-    ///   - walletId: The ID of the EVM wallet to transfer from.
-    ///   - to: The recipient address.
-    ///   - amount: The amount to transfer in wei (as a string to handle large numbers).
-    ///   - chainId: Optional chain ID (auto-detected if not provided).
-    ///   - rpcUrl: Optional RPC URL (defaults to Ethereum mainnet if not provided).
-    /// - Returns: Transaction result containing hash and details.
-    /// - Note: This method automatically ensures transmission keyshares are loaded before transferring.
     func transfer(
         walletId: String,
         to: String,
@@ -237,13 +188,10 @@ public extension ParaManager {
         rpcUrl: String? = nil
     ) async throws -> TransferResult {
         try await ensureWebViewReady()
-        
-        // Ensure transmission keyshares are loaded before transferring
-        // This is critical for wallet operations to work properly
+
         do {
             try await ensureTransmissionKeysharesLoaded()
         } catch {
-            // Log the error but continue - some wallets may work without transmission keyshares
             logger.warning("Failed to load transmission keyshares before transfer: \(error.localizedDescription)")
         }
 
@@ -255,17 +203,10 @@ public extension ParaManager {
             let rpcUrl: String?
         }
 
-        let params = TransferParams(
-            walletId: walletId,
-            toAddress: to,
-            amount: amount,
-            chainId: chainId,
-            rpcUrl: rpcUrl
-        )
-
+        let params = TransferParams(walletId: walletId, toAddress: to, amount: amount, chainId: chainId, rpcUrl: rpcUrl)
         let result = try await postMessage(method: "transfer", payload: params)
         let dict = try decodeResult(result, expectedType: [String: Any].self, method: "transfer")
-        
+
         return TransferResult(
             hash: dict["hash"] as? String ?? "",
             from: dict["from"] as? String ?? "",
@@ -273,5 +214,16 @@ public extension ParaManager {
             amount: dict["amount"] as? String ?? "",
             chainId: dict["chainId"] as? String ?? ""
         )
+    }
+
+    // MARK: - Private
+
+    /// Checks a bridge response for pendingTransactionId (permissions denial).
+    /// Calls the transaction review handler if set, then throws.
+    private func checkForTransactionDenial(_ dict: [String: Any]) throws {
+        guard let pendingTransactionId = dict["pendingTransactionId"] as? String else { return }
+        let reviewUrl = dict["transactionReviewUrl"] as? String
+        if let reviewUrl { transactionReviewHandler?(reviewUrl) }
+        throw ParaError.transactionDenied(pendingTransactionId: pendingTransactionId, transactionReviewUrl: reviewUrl)
     }
 }

@@ -22,6 +22,8 @@ public enum ParaError: Error, CustomStringConvertible, LocalizedError {
     case error(String)
     /// Feature not implemented yet.
     case notImplemented(String)
+    /// A signing operation was denied by a permissions policy and requires user approval.
+    case transactionDenied(pendingTransactionId: String, transactionReviewUrl: String?)
 
     public var description: String {
         switch self {
@@ -33,6 +35,8 @@ public enum ParaError: Error, CustomStringConvertible, LocalizedError {
             "An error occurred: \(info)"
         case let .notImplemented(feature):
             "Feature not implemented: \(feature)"
+        case let .transactionDenied(id, _):
+            "Transaction requires approval (pending: \(id))"
         }
     }
 
@@ -47,6 +51,8 @@ public enum ParaError: Error, CustomStringConvertible, LocalizedError {
             return info
         case let .notImplemented(feature):
             return "Feature not implemented: \(feature)"
+        case let .transactionDenied(id, _):
+            return "Transaction requires approval (pending: \(id))"
         }
     }
 }
