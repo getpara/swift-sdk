@@ -23,14 +23,14 @@ public extension ParaManager {
     /// - Parameters:
     ///   - walletId: The ID of the Solana wallet to use for signing
     ///   - base64Tx: The base64-encoded serialized transaction
-    /// - Returns: A SignatureResult containing the signature
+    /// - Returns: A SigningResult — either `.success` with the signature or `.denied` with the review URL.
     /// - Throws: ParaWebViewError if signing fails
     func signSolanaSerializedTransaction(
         walletId: String,
         base64Tx: String
-    ) async throws -> SignatureResult {
+    ) async throws -> SigningResult {
         let transaction = PreSerializedTransaction(data: base64Tx)
-        
+
         return try await signTransaction(
             walletId: walletId,
             transaction: transaction

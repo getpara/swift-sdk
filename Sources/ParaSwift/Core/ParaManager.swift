@@ -56,6 +56,8 @@ public class ParaManager: NSObject, ObservableObject {
     internal var transmissionKeysharesLoaded = false
     /// Default web authentication session used for hosted auth flows.
     internal var defaultWebAuthenticationSession: WebAuthenticationSession?
+    /// Handler called when a signing operation requires user approval via a review URL.
+    internal var transactionReviewHandler: ((String) -> Void)?
     /// Controller responsible for persisting session snapshots.
     private var sessionPersistence: SessionPersistenceStoring
     /// Last serialized session we saved locally to avoid redundant writes.
