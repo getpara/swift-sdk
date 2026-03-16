@@ -4,14 +4,13 @@ Swift SDK for Para wallet infrastructure (iOS).
 
 ## Build Commands
 
-> **Note:** The main Xcode workspace lives one level above this folder at `~/para/Para.xcworkspace`. That workspace includes both `swift-sdk` and the example apps (`examples-hub`).
+> **Note:** The Xcode workspace (`ParaSwift.xcworkspace`) lives in the parent directory. It includes both `swift-sdk` and the example apps.
 
-### Build the Swift package for iOS 16.5
+### Build the Swift package
 
 ```bash
-cd ~/para
 xcodebuild \
-  -workspace ParaSwift.xcworkspace \
+  -workspace ../ParaSwift.xcworkspace \
   -scheme ParaSwift \
   -sdk iphonesimulator \
   -configuration Release \
@@ -21,7 +20,6 @@ xcodebuild \
 ### Format and Lint
 
 ```bash
-cd ~/para/swift-sdk
 swiftformat --swiftversion 6.1 .
 ```
 > Run `swiftformat` before committing.
@@ -29,28 +27,26 @@ swiftformat --swiftversion 6.1 .
 ## E2E Tests
 > Note: There are no unit tests for swift-sdk. E2E tests are preferred (see below).
 
-> **Location:**  
-> All E2E/XCTest UI tests for the iOS example app live under
-> `~/para/examples-hub/mobile/with-swift/exampleUITests`.
+> **Location:**
+> All E2E/XCTest UI tests live in the sibling `examples-hub` repo under
+> `examples-hub/mobile/with-swift/exampleUITests`.
 
-To run them from the root workspace:
+To run them from the parent workspace:
 
-1. **Run every E2E test**  
+1. **Run every E2E test**
    ```bash
-   cd ~/para
    xcodebuild \
-     -workspace ParaSwift.xcworkspace \
+     -workspace ../ParaSwift.xcworkspace \
      -scheme Example \
      -sdk iphonesimulator \
      -destination "platform=iOS Simulator,name=iPhone 16 Pro" \
      test
    ```
 
-2. **Run a single E2E test method**  
+2. **Run a single E2E test method**
    ```bash
-   cd ~/para
    xcodebuild \
-     -workspace ParaSwift.xcworkspace \
+     -workspace ../ParaSwift.xcworkspace \
      -scheme Example \
      -sdk iphonesimulator \
      -destination "platform=iOS Simulator,name=iPhone 16 Pro" \
@@ -59,7 +55,7 @@ To run them from the root workspace:
    ```
 
 ## Code Guidelines
-- Swift version: 6.10+
+- Swift tools version: 5.10 (see Package.swift for current target)
 - Platform support: iOS only (no macOS, watchOS, or tvOS support needed)
 - Follow Swift API Design Guidelines (https://swift.org/documentation/api-design-guidelines/)
 - Avoid force unwrapping (`!`) except in tests; use proper error handling in production code
