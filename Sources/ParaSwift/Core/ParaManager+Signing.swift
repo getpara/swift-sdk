@@ -23,27 +23,6 @@ public struct SignatureResult {
     }
 }
 
-/// Result when a signing operation requires user approval via a permissions policy.
-public struct TransactionDeniedResult {
-    /// The ID of the pending transaction that requires approval.
-    public let pendingTransactionId: String
-    /// The URL to open for the user to review and approve the transaction.
-    public let transactionReviewUrl: String
-
-    public init(pendingTransactionId: String, transactionReviewUrl: String) {
-        self.pendingTransactionId = pendingTransactionId
-        self.transactionReviewUrl = transactionReviewUrl
-    }
-}
-
-/// The result of a signing operation, which can be either a success or a denial requiring approval.
-public enum SigningResult {
-    /// Signing succeeded and the signature is available.
-    case success(SignatureResult)
-    /// Signing was denied by a permissions policy and requires user approval.
-    case denied(TransactionDeniedResult)
-}
-
 /// Result of a transfer operation
 public struct TransferResult {
     /// The transaction hash
@@ -93,14 +72,12 @@ struct FormatAndSignTransactionParams: Encodable {
 
 public extension ParaManager {
     /// Sets a global handler for transaction review URLs. When a signing operation
-    /// requires user approval (e.g., due to permissions policies), the SDK calls this
-    /// handler with the review URL so you can open it in an in-app browser.
-    ///
-    /// - Parameter handler: A closure that receives the review URL string.
+    /// requires user approval (due to permissions policies), the SDK calls this
+    /// handler with the review URL before throwing ``ParaError/transactionDenied``.
     ///
     /// ```swift
     /// paraManager.setTransactionReviewHandler { url in
-    ///     // Open url in ASWebAuthenticationSession or SFSafariViewController
+    ///     UIApplication.shared.open(URL(string: url)!)
     /// }
     /// ```
     func setTransactionReviewHandler(_ handler: @escaping (String) -> Void) {
@@ -109,19 +86,8 @@ public extension ParaManager {
 
     /// Signs a message with any wallet type.
     ///
-    /// This unified method works with all wallet types (EVM, Solana, Cosmos, etc.).
-    /// The bridge handles the chain-specific signing logic internally.
-    ///
-    /// When a partner has permissions policies enabled, the backend may return a
-    /// `pendingTransactionId` instead of a signature. In that case, this method returns
-    /// `.denied` with the review URL. If a transaction review handler is set, it will
-    /// be called automatically with the URL.
-    ///
-    /// - Parameters:
-    ///   - walletId: The ID of the wallet to use for signing.
-    ///   - message: The message to sign (plain text).
-    /// - Returns: A `SigningResult` — either `.success` with the signature or `.denied` with the review URL.
-    func signMessage(walletId: String, message: String) async throws -> SigningResult {
+    /// - Throws: ``ParaError/transactionDenied`` if a permissions policy requires approval.
+    func signMessage(walletId: String, message: String) async throws -> SignatureResult {
         try await ensureWebViewReady()
 
         do {
@@ -130,59 +96,32 @@ public extension ParaManager {
             logger.warning("Failed to load transmission keyshares before signing message: \(error.localizedDescription)")
         }
 
-        let params = FormatAndSignMessageParams(
-            walletId: walletId,
-            message: message
-        )
-
+        let params = FormatAndSignMessageParams(walletId: walletId, message: message)
         let result = try await postMessage(method: "formatAndSignMessage", payload: params)
         let dict = try decodeResult(result, expectedType: [String: Any].self, method: "formatAndSignMessage")
 
-        // Check for pending transaction (permissions policy requires approval)
-        if let pendingTransactionId = dict["pendingTransactionId"] as? String,
-           let transactionReviewUrl = dict["transactionReviewUrl"] as? String {
-            let denied = TransactionDeniedResult(
-                pendingTransactionId: pendingTransactionId,
-                transactionReviewUrl: transactionReviewUrl
-            )
-            transactionReviewHandler?(transactionReviewUrl)
-            return .denied(denied)
-        }
+        try checkForTransactionDenial(dict)
 
         guard let signature = dict["signature"] as? String else {
             throw ParaError.bridgeError("Missing signature in response")
         }
-        let returnedWalletId = dict["walletId"] as? String ?? walletId
-        let walletType = dict["type"] as? String ?? "unknown"
 
-        return .success(SignatureResult(
+        return SignatureResult(
             signedTransaction: signature,
-            walletId: returnedWalletId,
-            type: walletType
-        ))
+            walletId: dict["walletId"] as? String ?? walletId,
+            type: dict["type"] as? String ?? "unknown"
+        )
     }
 
     /// Signs a transaction with any wallet type.
     ///
-    /// This unified method works with all wallet types. It accepts transaction parameters
-    /// as an Encodable object that will be formatted by the bridge based on wallet type.
-    ///
-    /// When a partner has permissions policies enabled, the backend may return a
-    /// `pendingTransactionId` instead of a signature. In that case, this method returns
-    /// `.denied` with the review URL.
-    ///
-    /// - Parameters:
-    ///   - walletId: The ID of the wallet to use for signing.
-    ///   - transaction: The transaction parameters (EVMTransaction, SolanaTransaction, etc.).
-    ///   - chainId: Optional chain ID (primarily for EVM chains).
-    ///   - rpcUrl: Optional RPC URL (required for Solana if recentBlockhash is not provided).
-    /// - Returns: A `SigningResult` — either `.success` with the signature or `.denied` with the review URL.
+    /// - Throws: ``ParaError/transactionDenied`` if a permissions policy requires approval.
     func signTransaction<T: Encodable>(
         walletId: String,
         transaction: T,
         chainId: String? = nil,
         rpcUrl: String? = nil
-    ) async throws -> SigningResult {
+    ) async throws -> SignatureResult {
         try await ensureWebViewReady()
 
         do {
@@ -205,16 +144,7 @@ public extension ParaManager {
         let result = try await postMessage(method: "formatAndSignTransaction", payload: params)
         let dict = try decodeResult(result, expectedType: [String: Any].self, method: "formatAndSignTransaction")
 
-        // Check for pending transaction (permissions policy requires approval)
-        if let pendingTransactionId = dict["pendingTransactionId"] as? String,
-           let transactionReviewUrl = dict["transactionReviewUrl"] as? String {
-            let denied = TransactionDeniedResult(
-                pendingTransactionId: pendingTransactionId,
-                transactionReviewUrl: transactionReviewUrl
-            )
-            transactionReviewHandler?(transactionReviewUrl)
-            return .denied(denied)
-        }
+        try checkForTransactionDenial(dict)
 
         let signedTransaction: String
         if let tx = dict["signedTransaction"] as? String {
@@ -224,25 +154,15 @@ public extension ParaManager {
         } else {
             throw ParaError.bridgeError("Missing signedTransaction or signature in response")
         }
-        let returnedWalletId = dict["walletId"] as? String ?? walletId
-        let walletType = dict["type"] as? String ?? "unknown"
 
-        return .success(SignatureResult(
+        return SignatureResult(
             signedTransaction: signedTransaction,
-            walletId: returnedWalletId,
-            type: walletType
-        ))
+            walletId: dict["walletId"] as? String ?? walletId,
+            type: dict["type"] as? String ?? "unknown"
+        )
     }
 
     /// Gets the balance for any wallet type.
-    ///
-    /// - Parameters:
-    ///   - walletId: The ID of the wallet.
-    ///   - token: Optional token identifier (contract address for EVM, mint address for Solana, etc.).
-    ///   - rpcUrl: Optional RPC URL (recommended for Solana and Cosmos to avoid 403/CORS issues).
-    ///   - chainPrefix: Optional bech32 prefix for Cosmos (e.g., "juno", "stars").
-    ///   - denom: Optional denom for Cosmos balances (e.g., "ujuno", "ustars").
-    /// - Returns: The balance as a string (format depends on the chain).
     func getBalance(walletId: String, token: String? = nil, rpcUrl: String? = nil, chainPrefix: String? = nil, denom: String? = nil) async throws -> String {
         try await ensureWebViewReady()
 
@@ -254,27 +174,12 @@ public extension ParaManager {
             let denom: String?
         }
 
-        let params = GetBalanceParams(
-            walletId: walletId,
-            token: token,
-            rpcUrl: rpcUrl,
-            chainPrefix: chainPrefix,
-            denom: denom
-        )
-
+        let params = GetBalanceParams(walletId: walletId, token: token, rpcUrl: rpcUrl, chainPrefix: chainPrefix, denom: denom)
         let result = try await postMessage(method: "getBalance", payload: params)
         return try decodeResult(result, expectedType: String.self, method: "getBalance")
     }
 
     /// High-level transfer method for EVM chains.
-    ///
-    /// - Parameters:
-    ///   - walletId: The ID of the EVM wallet to transfer from.
-    ///   - to: The recipient address.
-    ///   - amount: The amount to transfer in wei (as a string to handle large numbers).
-    ///   - chainId: Optional chain ID (auto-detected if not provided).
-    ///   - rpcUrl: Optional RPC URL (defaults to Ethereum mainnet if not provided).
-    /// - Returns: Transaction result containing hash and details.
     func transfer(
         walletId: String,
         to: String,
@@ -298,14 +203,7 @@ public extension ParaManager {
             let rpcUrl: String?
         }
 
-        let params = TransferParams(
-            walletId: walletId,
-            toAddress: to,
-            amount: amount,
-            chainId: chainId,
-            rpcUrl: rpcUrl
-        )
-
+        let params = TransferParams(walletId: walletId, toAddress: to, amount: amount, chainId: chainId, rpcUrl: rpcUrl)
         let result = try await postMessage(method: "transfer", payload: params)
         let dict = try decodeResult(result, expectedType: [String: Any].self, method: "transfer")
 
@@ -316,5 +214,16 @@ public extension ParaManager {
             amount: dict["amount"] as? String ?? "",
             chainId: dict["chainId"] as? String ?? ""
         )
+    }
+
+    // MARK: - Private
+
+    /// Checks a bridge response for pendingTransactionId (permissions denial).
+    /// Calls the transaction review handler if set, then throws.
+    private func checkForTransactionDenial(_ dict: [String: Any]) throws {
+        guard let pendingTransactionId = dict["pendingTransactionId"] as? String else { return }
+        let reviewUrl = dict["transactionReviewUrl"] as? String
+        if let reviewUrl { transactionReviewHandler?(reviewUrl) }
+        throw ParaError.transactionDenied(pendingTransactionId: pendingTransactionId, transactionReviewUrl: reviewUrl)
     }
 }
