@@ -54,6 +54,7 @@ public extension ParaManager {
         walletId: String? = nil
     ) async throws -> SmartAccountInfo {
         try await ensureWebViewReady()
+        try await ensureTransmissionKeysharesLoaded()
 
         let params = CreateSmartAccountParams(
             provider: provider,
@@ -87,6 +88,7 @@ public extension ParaManager {
         provider: String = "ALCHEMY"
     ) async throws -> AATransactionReceipt {
         try await ensureWebViewReady()
+        try await ensureTransmissionKeysharesLoaded()
 
         let params = SendSmartAccountTransactionParams(
             provider: provider,
@@ -116,6 +118,7 @@ public extension ParaManager {
         provider: String = "ALCHEMY"
     ) async throws -> AATransactionReceipt {
         try await ensureWebViewReady()
+        try await ensureTransmissionKeysharesLoaded()
 
         let params = SendSmartAccountBatchTransactionParams(
             provider: provider,
@@ -154,6 +157,12 @@ public extension ParaManager {
 
     private func decodeReceipt(_ result: Any?, method: String) throws -> AATransactionReceipt {
         let dict = try decodeResult(result, expectedType: [String: Any].self, method: method)
+
+        if let pendingTransactionId = dict["pendingTransactionId"] as? String {
+            let reviewUrl = dict["transactionReviewUrl"] as? String
+            if let reviewUrl { transactionReviewHandler?(reviewUrl) }
+            throw ParaError.transactionDenied(pendingTransactionId: pendingTransactionId, transactionReviewUrl: reviewUrl)
+        }
 
         guard let transactionHash = dict["transactionHash"] as? String else {
             throw ParaError.bridgeError("KEY_ERROR<\(method)-transactionHash>: Missing transactionHash in response")
