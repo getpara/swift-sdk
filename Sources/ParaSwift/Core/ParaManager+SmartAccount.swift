@@ -162,21 +162,12 @@ public extension ParaManager {
         return AATransactionReceipt(
             transactionHash: transactionHash,
             blockHash: dict["blockHash"] as? String ?? "",
-            blockNumber: stringifyNumeric(dict["blockNumber"]),
+            blockNumber: dict["blockNumber"] as? String ?? "",
             from: dict["from"] as? String ?? "",
             to: dict["to"] as? String,
             status: dict["status"] as? String ?? "",
-            gasUsed: stringifyNumeric(dict["gasUsed"]),
-            effectiveGasPrice: stringifyNumeric(dict["effectiveGasPrice"])
+            gasUsed: dict["gasUsed"] as? String ?? "",
+            effectiveGasPrice: dict["effectiveGasPrice"] as? String ?? ""
         )
-    }
-
-    /// Bridge may return numeric fields as String, Int, or NSNumber depending on marshalling.
-    /// Normalize to String for consistency and to preserve `uint256` precision.
-    private func stringifyNumeric(_ value: Any?) -> String {
-        if let s = value as? String { return s }
-        if let n = value as? NSNumber { return n.stringValue }
-        if let i = value as? Int { return String(i) }
-        return ""
     }
 }
