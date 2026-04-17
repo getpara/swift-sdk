@@ -40,8 +40,8 @@ public class ParaWebView: NSObject, ObservableObject {
     /// - Parameters:
     ///   - environment: The Para environment configuration
     ///   - apiKey: The API key for Para services
-    ///   - requestTimeout: The timeout duration for requests in seconds (default: 30.0)
-    public init(environment: ParaEnvironment, apiKey: String, requestTimeout: TimeInterval = 30.0) {
+    ///   - requestTimeout: The timeout duration for requests in seconds (default: 120.0, accommodates AA UserOp inclusion)
+    public init(environment: ParaEnvironment, apiKey: String, requestTimeout: TimeInterval = 120.0) {
         logger.info("ParaWebView init: \(environment.name), bridge: \(environment.jsBridgeUrl.absoluteString)")
 
         self.environment = environment
