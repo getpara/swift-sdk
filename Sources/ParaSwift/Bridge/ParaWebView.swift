@@ -40,8 +40,8 @@ public class ParaWebView: NSObject, ObservableObject {
     /// - Parameters:
     ///   - environment: The Para environment configuration
     ///   - apiKey: The API key for Para services
-    ///   - requestTimeout: The timeout duration for requests in seconds (default: 30.0)
-    public init(environment: ParaEnvironment, apiKey: String, requestTimeout: TimeInterval = 30.0) {
+    ///   - requestTimeout: The timeout duration for requests in seconds (default: 120.0, accommodates AA UserOp inclusion)
+    public init(environment: ParaEnvironment, apiKey: String, requestTimeout: TimeInterval = 120.0) {
         logger.info("ParaWebView init: \(environment.name), bridge: \(environment.jsBridgeUrl.absoluteString)")
 
         self.environment = environment
@@ -213,7 +213,7 @@ public class ParaWebView: NSObject, ObservableObject {
             }
 
             let timeoutTask: Task<Void, Never> = Task { [weak self] in
-                let duration = self?.requestTimeout ?? 30.0
+                let duration = self?.requestTimeout ?? 120.0
                 do {
                     try await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
                     self?.logger.warning("Request timed out: method=\(method) requestId=\(requestId)")
