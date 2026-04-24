@@ -12,6 +12,7 @@ private struct CreateSmartAccountParams: Encodable {
     let gasPolicyId: String?
     let mode: String
     let walletId: String?
+    let address: String?
 }
 
 private struct SendSmartAccountTransactionParams: Encodable {
@@ -43,7 +44,9 @@ public extension ParaManager {
     ///   - chainId: EVM chain ID to deploy the account on (e.g. `11155111` for Sepolia).
     ///   - gasPolicyId: Optional Alchemy gas manager policy ID used to sponsor gas.
     ///   - mode: `"4337"` (default) or `"7702"`.
-    ///   - walletId: Optional Para wallet ID to use as the signer. Defaults to the active EVM wallet.
+    ///   - walletId: Optional Para wallet ID to use as the signer.
+    ///   - address: Optional wallet address to use as the signer. Takes precedence over `walletId`
+    ///     when both are supplied. If neither is provided, defaults to the active EVM wallet.
     /// - Returns: Metadata describing the smart account.
     func createSmartAccount(
         provider: String = "ALCHEMY",
@@ -51,7 +54,8 @@ public extension ParaManager {
         chainId: Int,
         gasPolicyId: String? = nil,
         mode: String = "4337",
-        walletId: String? = nil
+        walletId: String? = nil,
+        address: String? = nil
     ) async throws -> SmartAccountInfo {
         try await ensureWebViewReady()
         try await ensureTransmissionKeysharesLoaded()
@@ -62,7 +66,8 @@ public extension ParaManager {
             chainId: chainId,
             gasPolicyId: gasPolicyId,
             mode: mode,
-            walletId: walletId
+            walletId: walletId,
+            address: address
         )
 
         let result = try await postMessage(method: "createSmartAccount", payload: params)
@@ -72,7 +77,7 @@ public extension ParaManager {
     /// Sends a single sponsored transaction through the smart account.
     ///
     /// - Parameters:
-    ///   - smartAccountAddress: The address returned by ``createSmartAccount(provider:apiKey:chainId:gasPolicyId:mode:walletId:)``.
+    ///   - smartAccountAddress: The address returned by ``createSmartAccount(provider:apiKey:chainId:gasPolicyId:mode:walletId:address:)``.
     ///   - chainId: EVM chain ID.
     ///   - to: Destination address.
     ///   - value: Amount in wei as a decimal string. Omit for zero-value calls.
@@ -106,7 +111,7 @@ public extension ParaManager {
     /// Sends multiple calls atomically through the smart account as a single UserOperation.
     ///
     /// - Parameters:
-    ///   - smartAccountAddress: The address returned by ``createSmartAccount(provider:apiKey:chainId:gasPolicyId:mode:walletId:)``.
+    ///   - smartAccountAddress: The address returned by ``createSmartAccount(provider:apiKey:chainId:gasPolicyId:mode:walletId:address:)``.
     ///   - chainId: EVM chain ID.
     ///   - calls: Ordered list of calls to batch.
     ///   - provider: AA provider identifier. Defaults to `"ALCHEMY"`.
