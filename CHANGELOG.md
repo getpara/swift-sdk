@@ -1,3 +1,19 @@
+# Release 2.8.0 (Fri Apr 24 2026)
+
+### Features
+- Added Account Abstraction support via Alchemy — `createSmartAccount(...)` provisions an EIP-4337 (or EIP-7702) smart account for a Para wallet, then `sendSmartAccountTransaction(...)` and `sendSmartAccountBatchTransaction(...)` dispatch sponsored (gasless) transactions on EVM chains (#42)
+- Added `SmartAccountInfo`, `AATransactionReceipt`, and `SmartAccountCall` types for AA flows (#42)
+- `createSmartAccount(...)` accepts either `walletId` or `address` to select the EOA signer; falls back to the active EVM wallet when neither is provided (#42)
+
+### Changes
+- `ParaWebView` default request timeout raised from 30s to 120s to accommodate AA UserOp inclusion times (~75s observed on Sepolia). Per-request, so non-AA calls finish in their usual time; pass a custom `requestTimeout` to `ParaWebView.init` to keep the previous bound (#42)
+
+# Release 2.7.0 (Wed Mar 26 2026)
+
+### Features
+- Added `setTransactionReviewHandler()` to register a callback that auto-opens the transaction review URL when a permissions policy blocks a signing operation (#41)
+- Added `ParaError.transactionDenied` error case with `pendingTransactionId` and `transactionReviewUrl` — thrown when signing is denied by a permissions policy, making denial handling straightforward with standard `do/catch` (#41)
+
 # Release 2.6.1 (Tue Feb 25 2026)
 
 ### Fixes
