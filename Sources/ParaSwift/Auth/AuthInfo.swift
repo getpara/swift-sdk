@@ -8,6 +8,8 @@ public enum ExternalWalletType: String, Codable {
     case solana = "SOLANA"
     /// Cosmos wallet
     case cosmos = "COSMOS"
+    /// Stellar wallet
+    case stellar = "STELLAR"
 }
 
 /// Information about an external wallet

@@ -15,6 +15,8 @@ public enum WalletType: String {
     case solana = "SOLANA"
     /// Cosmos blockchain wallet
     case cosmos = "COSMOS"
+    /// Stellar blockchain wallet
+    case stellar = "STELLAR"
 }
 
 /// Represents a cryptocurrency wallet in the Para system
@@ -23,7 +25,7 @@ public struct Wallet {
     public let id: String
     /// ID of the user who owns the wallet
     public let userId: String?
-    /// Type of the wallet (EVM, Solana, Cosmos)
+    /// Type of the wallet (EVM, Solana, Cosmos, Stellar)
     public let type: WalletType?
     /// Identifier for pre-generated wallet
     public let pregenIdentifier: String?
