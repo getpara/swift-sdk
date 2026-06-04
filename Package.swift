@@ -27,5 +27,9 @@ let package = Package(
                 "PhoneNumberKit",
             ],
         ),
+        .testTarget(
+            name: "ParaSwiftTests",
+            dependencies: ["ParaSwift"],
+        ),
     ],
 )
