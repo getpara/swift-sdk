@@ -1,3 +1,10 @@
+# Release 2.9.0 (Fri Jun 05 2026)
+
+### Features
+- Added Stellar wallet support — `STELLAR` is now a recognized wallet and external-wallet type, so bridge-backed Stellar wallets decode correctly and can be created, displayed, and signed with through the existing signing path (#44)
+- Added Stellar address helpers that derive a Stellar `G...` address from an Ed25519 public key or a Solana-style base58 key (#44)
+- Added minimal Stellar transaction, memo, and network models that encode into the existing bridge signing flow, letting apps build and sign Stellar payloads without custom serialization (#44)
+
 # Release 2.8.0 (Fri Apr 24 2026)
 
 ### Features
