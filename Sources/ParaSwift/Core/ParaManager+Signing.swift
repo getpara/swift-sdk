@@ -68,25 +68,12 @@ struct FormatAndSignMessageParams<Message: Encodable>: Encodable {
     let chainType: BridgeChainType?
 }
 
-struct FormatAndSignTransactionParams: Encodable {
+struct FormatAndSignTransactionParams<Transaction: Encodable>: Encodable {
     let walletId: String
-    let transaction: [String: Any]
+    let transaction: Transaction
     let chainId: String?
     let chainType: BridgeChainType?
     let rpcUrl: String?
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(walletId, forKey: .walletId)
-        try container.encode(JSONValue(transaction), forKey: .transaction)
-        try container.encodeIfPresent(chainId, forKey: .chainId)
-        try container.encodeIfPresent(chainType, forKey: .chainType)
-        try container.encodeIfPresent(rpcUrl, forKey: .rpcUrl)
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case walletId, transaction, chainId, chainType, rpcUrl
-    }
 }
 
 public extension ParaManager {
@@ -120,9 +107,14 @@ public extension ParaManager {
     /// authorization entries, and Sui personal messages.
     func signMessage<Message: BridgeMessagePayload>(
         walletId: String,
-        message: Message
+        message: Message,
+        chainType: BridgeChainType? = nil
     ) async throws -> SignatureResult {
-        try await signBridgeMessage(walletId: walletId, message: message, chainType: message.chainType)
+        let resolvedChainType = try BridgeSigningValidation.resolveChainType(
+            payloadChainType: message.chainType,
+            explicitChainType: chainType
+        )
+        return try await signBridgeMessage(walletId: walletId, message: message, chainType: resolvedChainType)
     }
 
     /// Signs an EIP-7702 authorization for composition into a type-4 transaction.
@@ -179,6 +171,32 @@ public extension ParaManager {
         chainType: BridgeChainType? = nil,
         rpcUrl: String? = nil
     ) async throws -> SignatureResult {
+        let encoder = JSONEncoder()
+        let transactionData = try encoder.encode(transaction)
+        let transactionDict = try JSONSerialization.jsonObject(with: transactionData, options: []) as? [String: Any] ?? [:]
+        let embeddedChainId = transactionDict["chainId"] as? String
+        let embeddedChainType = (transactionDict["chainType"] as? String).flatMap(BridgeChainType.init(rawValue:))
+        let typedChainType = (transaction as? BridgeTransactionPayload)?.chainType
+        let resolvedChainType: BridgeChainType?
+        if let typedChainType {
+            resolvedChainType = try BridgeSigningValidation.resolveChainType(
+                payloadChainType: typedChainType,
+                explicitChainType: chainType
+            )
+        } else {
+            resolvedChainType = chainType ?? embeddedChainType
+        }
+        let resolvedChainId: String?
+        if let typedChainType, typedChainType == .evm || typedChainType == .cosmos {
+            resolvedChainId = try BridgeSigningValidation.resolveChainId(
+                chainType: typedChainType,
+                embeddedChainId: embeddedChainId,
+                explicitChainId: chainId
+            )
+        } else {
+            resolvedChainId = chainId ?? embeddedChainId
+        }
+
         try await ensureWebViewReady()
 
         do {
@@ -187,18 +205,11 @@ public extension ParaManager {
             logger.warning("Failed to load transmission keyshares before signing transaction: \(error.localizedDescription)")
         }
 
-        let encoder = JSONEncoder()
-        let transactionData = try encoder.encode(transaction)
-        let transactionDict = try JSONSerialization.jsonObject(with: transactionData, options: []) as? [String: Any] ?? [:]
-        let embeddedChainId = transactionDict["chainId"] as? String
-        let embeddedChainType = (transactionDict["chainType"] as? String).flatMap(BridgeChainType.init(rawValue:))
-        let typedChainType = (transaction as? BridgeTransactionPayload)?.chainType
-
         let params = FormatAndSignTransactionParams(
             walletId: walletId,
-            transaction: transactionDict,
-            chainId: chainId ?? embeddedChainId,
-            chainType: chainType ?? typedChainType ?? embeddedChainType,
+            transaction: transaction,
+            chainId: resolvedChainId,
+            chainType: resolvedChainType,
             rpcUrl: rpcUrl
         )
 

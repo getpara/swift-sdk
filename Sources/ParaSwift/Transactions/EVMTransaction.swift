@@ -186,6 +186,7 @@ public extension EVMTransaction {
     }
 
     func encode(to encoder: Encoder) throws {
+        try validateFieldCompatibility(encoder: encoder)
         var container = encoder.container(keyedBy: CodingKeys.self)
 
         // Helper function to encode BigUInt as hex string
@@ -213,5 +214,60 @@ public extension EVMTransaction {
         try container.encodeIfPresent(blobVersionedHashes, forKey: .blobVersionedHashes)
         try container.encodeIfPresent(authorizationList, forKey: .authorizationList)
         try container.encodeIfPresent(type, forKey: .type)
+    }
+
+    private func validateFieldCompatibility(encoder: Encoder) throws {
+        if let type, !(0 ... 4).contains(type) {
+            throw invalidFields("EVM transaction type must be between 0 and 4", encoder: encoder)
+        }
+
+        let hasAccessList = accessList?.isEmpty == false
+        let hasDynamicFees = maxPriorityFeePerGas != nil || maxFeePerGas != nil
+        let hasBlobFields = maxFeePerBlobGas != nil || blobVersionedHashes?.isEmpty == false
+        let hasAuthorizationFields = authorizationList?.isEmpty == false
+        let resolvedType = type ?? {
+            if hasAuthorizationFields {
+                return 4
+            }
+            if hasBlobFields {
+                return 3
+            }
+            if hasDynamicFees {
+                return 2
+            }
+            if hasAccessList {
+                return 1
+            }
+            return 0
+        }()
+
+        if resolvedType == 0, hasAccessList || hasDynamicFees || hasBlobFields || hasAuthorizationFields {
+            throw invalidFields(
+                "EVM type 0 transactions cannot include access-list, dynamic-fee, blob, or authorization fields",
+                encoder: encoder,
+            )
+        }
+        if resolvedType == 1, hasDynamicFees || hasBlobFields || hasAuthorizationFields {
+            throw invalidFields(
+                "EVM type 1 transactions cannot include dynamic-fee, blob, or authorization fields",
+                encoder: encoder,
+            )
+        }
+        if resolvedType >= 2, gasPrice != nil {
+            throw invalidFields("EVM type \(resolvedType) transactions cannot include gasPrice", encoder: encoder)
+        }
+        if resolvedType != 3, hasBlobFields {
+            throw invalidFields("EVM blob fields are only valid for type 3 transactions", encoder: encoder)
+        }
+        if resolvedType != 4, hasAuthorizationFields {
+            throw invalidFields("EVM authorizationList is only valid for type 4 transactions", encoder: encoder)
+        }
+    }
+
+    private func invalidFields(_ description: String, encoder: Encoder) -> EncodingError {
+        EncodingError.invalidValue(
+            self,
+            EncodingError.Context(codingPath: encoder.codingPath, debugDescription: description),
+        )
     }
 }

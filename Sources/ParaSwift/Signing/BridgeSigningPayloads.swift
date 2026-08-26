@@ -42,8 +42,37 @@ public enum BridgeJSONValue: Codable, Equatable {
         var container = encoder.singleValueContainer()
         switch self {
         case let .string(value): try container.encode(value)
-        case let .integer(value): try container.encode(value)
-        case let .decimal(value): try container.encode(value)
+        case let .integer(value):
+            guard abs(Double(value)) <= 9_007_199_254_740_991 else {
+                throw EncodingError.invalidValue(
+                    value,
+                    EncodingError.Context(
+                        codingPath: container.codingPath,
+                        debugDescription: "EIP-712 integers must be within JavaScript safe integer range; use .string for large integer values",
+                    ),
+                )
+            }
+            try container.encode(value)
+        case let .decimal(value):
+            guard value.isFinite else {
+                throw EncodingError.invalidValue(
+                    value,
+                    EncodingError.Context(
+                        codingPath: container.codingPath,
+                        debugDescription: "EIP-712 numbers must be finite",
+                    ),
+                )
+            }
+            guard abs(value) <= 9_007_199_254_740_991 else {
+                throw EncodingError.invalidValue(
+                    value,
+                    EncodingError.Context(
+                        codingPath: container.codingPath,
+                        debugDescription: "EIP-712 numbers must be within JavaScript safe integer range; use .string for large integer values",
+                    ),
+                )
+            }
+            try container.encode(value)
         case let .boolean(value): try container.encode(value)
         case .null: try container.encodeNil()
         case let .array(value): try container.encode(value)
@@ -64,9 +93,17 @@ public struct RawBridgeMessage: BridgeMessagePayload {
     public let data: String
     public let encoding = "base64"
 
-    public init(chainType: BridgeChainType, data: String) {
+    private init(chainType: BridgeChainType, data: String) {
         self.chainType = chainType
         self.data = data
+    }
+
+    public static func solana(_ data: String) -> RawBridgeMessage {
+        RawBridgeMessage(chainType: .solana, data: data)
+    }
+
+    public static func stellar(_ data: String) -> RawBridgeMessage {
+        RawBridgeMessage(chainType: .stellar, data: data)
     }
 
     private enum CodingKeys: String, CodingKey {
