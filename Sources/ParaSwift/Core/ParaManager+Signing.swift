@@ -118,9 +118,9 @@ public extension ParaManager {
     }
 
     /// Signs an EIP-7702 authorization for composition into a type-4 transaction.
-    func signAuthorization(
+    func signMessage(
         walletId: String,
-        authorization: EVMAuthorizationMessage
+        message: EVMAuthorizationMessage
     ) async throws -> EVMSignedAuthorization {
         try await ensureWebViewReady()
 
@@ -132,8 +132,8 @@ public extension ParaManager {
 
         let params = FormatAndSignMessageParams(
             walletId: walletId,
-            message: authorization,
-            chainType: authorization.chainType
+            message: message,
+            chainType: message.chainType
         )
         let result = try await postMessage(method: "formatAndSignMessage", payload: params)
         let dict = try decodeResult(result, expectedType: [String: Any].self, method: "formatAndSignMessage")

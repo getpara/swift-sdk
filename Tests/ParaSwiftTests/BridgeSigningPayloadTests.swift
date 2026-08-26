@@ -3,6 +3,17 @@ import BigInt
 import XCTest
 
 final class BridgeSigningPayloadTests: XCTestCase {
+    func testExistingSigningMethodsAcceptLegacyAndTypedPayloads() {
+        let contract: (
+            ParaManager,
+            EVMTypedDataMessage,
+            EVMAuthorizationMessage,
+            EVMTransaction
+        ) async throws -> Void = Self.acceptsLegacyAndTypedSigningInputs
+
+        XCTAssertNotNil(contract as Any)
+    }
+
     func testWalletTypeDecodesSui() {
         let wallet = Wallet(result: [
             "id": "sui-wallet",
@@ -297,5 +308,20 @@ final class BridgeSigningPayloadTests: XCTestCase {
             }
             XCTAssertTrue(context.debugDescription.contains(expectedMessage), file: file, line: line)
         }
+    }
+
+    private static func acceptsLegacyAndTypedSigningInputs(
+        manager: ParaManager,
+        message: EVMTypedDataMessage,
+        authorization: EVMAuthorizationMessage,
+        transaction: EVMTransaction
+    ) async throws {
+        _ = try await manager.signMessage(walletId: "wallet-id", message: "hello")
+        _ = try await manager.signMessage(walletId: "wallet-id", message: message)
+        let _: EVMSignedAuthorization = try await manager.signMessage(
+            walletId: "wallet-id",
+            message: authorization
+        )
+        _ = try await manager.signTransaction(walletId: "wallet-id", transaction: transaction)
     }
 }
