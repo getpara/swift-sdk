@@ -50,6 +50,8 @@ public struct SolanaTransaction: Codable {
     public let computeUnitLimit: UInt32?
     /// Compute unit price in micro-lamports (optional)
     public let computeUnitPrice: UInt64?
+    /// Optional memo instruction
+    public let memo: String?
     /// Transaction type - currently only supports "transfer"
     public let type: String
 
@@ -67,7 +69,8 @@ public struct SolanaTransaction: Codable {
         feePayer: String? = nil,
         recentBlockhash: String? = nil,
         computeUnitLimit: UInt32? = nil,
-        computeUnitPrice: UInt64? = nil
+        computeUnitPrice: UInt64? = nil,
+        memo: String? = nil
     ) throws {
         // Basic Solana address validation
         guard SolanaTransaction.isValidAddress(to) else {
@@ -90,6 +93,7 @@ public struct SolanaTransaction: Codable {
         self.recentBlockhash = recentBlockhash
         self.computeUnitLimit = computeUnitLimit
         self.computeUnitPrice = computeUnitPrice
+        self.memo = memo
         type = "transfer"
     }
 

@@ -7,12 +7,6 @@
 
 import Foundation
 
-// Helper struct for pre-serialized transactions
-private struct PreSerializedTransaction: Encodable {
-    let type = "serialized"
-    let data: String
-}
-
 public extension ParaManager {
     /// Sign a pre-serialized Solana transaction (for backward compatibility)
     /// 
@@ -29,7 +23,7 @@ public extension ParaManager {
         walletId: String,
         base64Tx: String
     ) async throws -> SignatureResult {
-        let transaction = PreSerializedTransaction(data: base64Tx)
+        let transaction = SerializedTransaction.solana(base64Tx)
         
         return try await signTransaction(
             walletId: walletId,

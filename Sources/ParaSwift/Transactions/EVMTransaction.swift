@@ -34,7 +34,18 @@ public struct EVMTransaction: Codable {
     public let smartContractFunctionArgs: [String]?
     /// Smart contract bytecode (if contract deployment)
     public let smartContractByteCode: String?
-    /// Transaction type (0 = legacy, 1 = access list, 2 = EIP-1559)
+    /// Raw transaction or contract-call data
+    public let data: String?
+    /// EIP-2930 access list used by type 1 and later transactions
+    public let accessList: [EVMAccessListEntry]?
+    /// EIP-4844 maximum blob fee
+    public let maxFeePerBlobGas: BigUInt?
+    /// EIP-4844 versioned blob hashes
+    public let blobVersionedHashes: [String]?
+    /// Signed EIP-7702 authorizations for a type-4 transaction
+    public let authorizationList: [EVMSignedAuthorization]?
+    /// Transaction type (0 = legacy, 1 = access list, 2 = EIP-1559,
+    /// 3 = EIP-4844 blob, 4 = EIP-7702 set-code)
     public let type: Int?
 
     /// Creates a new EVM transaction
@@ -65,6 +76,11 @@ public struct EVMTransaction: Codable {
         smartContractFunctionName: String? = nil,
         smartContractFunctionArgs: [String]? = nil,
         smartContractByteCode: String? = nil,
+        data: String? = nil,
+        accessList: [EVMAccessListEntry]? = nil,
+        maxFeePerBlobGas: BigUInt? = nil,
+        blobVersionedHashes: [String]? = nil,
+        authorizationList: [EVMSignedAuthorization]? = nil,
         type: Int? = nil
     ) {
         self.to = to
@@ -79,6 +95,11 @@ public struct EVMTransaction: Codable {
         self.smartContractFunctionName = smartContractFunctionName
         self.smartContractFunctionArgs = smartContractFunctionArgs
         self.smartContractByteCode = smartContractByteCode
+        self.data = data
+        self.accessList = accessList
+        self.maxFeePerBlobGas = maxFeePerBlobGas
+        self.blobVersionedHashes = blobVersionedHashes
+        self.authorizationList = authorizationList
         self.type = type
     }
 
@@ -131,7 +152,8 @@ public extension EVMTransaction {
     private enum CodingKeys: String, CodingKey {
         case to, value, gasLimit, gasPrice, maxPriorityFeePerGas, maxFeePerGas
         case nonce, chainId, smartContractAbi, smartContractFunctionName
-        case smartContractFunctionArgs, smartContractByteCode, type
+        case smartContractFunctionArgs, smartContractByteCode, data, accessList
+        case maxFeePerBlobGas, blobVersionedHashes, authorizationList, type
     }
 
     init(from decoder: Decoder) throws {
@@ -155,6 +177,11 @@ public extension EVMTransaction {
         smartContractFunctionName = try container.decodeIfPresent(String.self, forKey: .smartContractFunctionName)
         smartContractFunctionArgs = try container.decodeIfPresent([String].self, forKey: .smartContractFunctionArgs)
         smartContractByteCode = try container.decodeIfPresent(String.self, forKey: .smartContractByteCode)
+        data = try container.decodeIfPresent(String.self, forKey: .data)
+        accessList = try container.decodeIfPresent([EVMAccessListEntry].self, forKey: .accessList)
+        maxFeePerBlobGas = try decodeBigUInt(.maxFeePerBlobGas)
+        blobVersionedHashes = try container.decodeIfPresent([String].self, forKey: .blobVersionedHashes)
+        authorizationList = try container.decodeIfPresent([EVMSignedAuthorization].self, forKey: .authorizationList)
         type = try container.decodeIfPresent(Int.self, forKey: .type)
     }
 
@@ -180,6 +207,11 @@ public extension EVMTransaction {
         try container.encodeIfPresent(smartContractFunctionName, forKey: .smartContractFunctionName)
         try container.encodeIfPresent(smartContractFunctionArgs, forKey: .smartContractFunctionArgs)
         try container.encodeIfPresent(smartContractByteCode, forKey: .smartContractByteCode)
+        try container.encodeIfPresent(data, forKey: .data)
+        try container.encodeIfPresent(accessList, forKey: .accessList)
+        try encode(maxFeePerBlobGas, for: .maxFeePerBlobGas)
+        try container.encodeIfPresent(blobVersionedHashes, forKey: .blobVersionedHashes)
+        try container.encodeIfPresent(authorizationList, forKey: .authorizationList)
         try container.encodeIfPresent(type, forKey: .type)
     }
 }

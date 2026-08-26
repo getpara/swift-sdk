@@ -17,6 +17,8 @@ public enum WalletType: String {
     case cosmos = "COSMOS"
     /// Stellar blockchain wallet
     case stellar = "STELLAR"
+    /// Sui blockchain wallet
+    case sui = "SUI"
 }
 
 /// Represents a cryptocurrency wallet in the Para system
