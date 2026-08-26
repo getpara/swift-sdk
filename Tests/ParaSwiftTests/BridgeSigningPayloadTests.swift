@@ -15,13 +15,16 @@ final class BridgeSigningPayloadTests: XCTestCase {
     }
 
     func testWalletTypeDecodesSui() {
+        let suiAddress = "0x1111111111111111111111111111111111111111111111111111111111111111"
         let wallet = Wallet(result: [
             "id": "sui-wallet",
             "type": "SUI",
-            "address": "0x1234",
+            "address": "11111111111111111111111111111111",
+            "addressSui": suiAddress,
         ])
 
         XCTAssertEqual(wallet.type, .sui)
+        XCTAssertEqual(wallet.addressSui, suiAddress)
     }
 
     func testTypedDataEncodesCanonicalBridgePayload() throws {
