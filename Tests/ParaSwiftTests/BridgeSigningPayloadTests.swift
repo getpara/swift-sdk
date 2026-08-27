@@ -87,19 +87,151 @@ final class BridgeSigningPayloadTests: XCTestCase {
         )
     }
 
+    func testChainSpecificMessagesEncodeCanonicalBridgePayloads() throws {
+        XCTAssertEqual(
+            try encodedPayload(EVMAuthorizationMessage(
+                address: "0x0000000000000000000000000000000000007702",
+                chainId: 11_155_111,
+                nonce: 7,
+            )),
+            [
+                "type": .string("authorization"),
+                "data": .object([
+                    "address": .string("0x0000000000000000000000000000000000007702"),
+                    "chainId": .integer(11_155_111),
+                    "nonce": .integer(7),
+                ]),
+            ],
+        )
+        XCTAssertEqual(
+            try encodedPayload(StellarAuthEntryMessage(data: "stellar-auth-xdr")),
+            [
+                "type": .string("authEntry"),
+                "data": .string("stellar-auth-xdr"),
+            ],
+        )
+        XCTAssertEqual(
+            try encodedPayload(SuiPersonalMessage(data: "sui-message-bytes")),
+            [
+                "type": .string("suiPersonalMessage"),
+                "data": .string("sui-message-bytes"),
+            ],
+        )
+    }
+
     func testSerializedTransactionsEncodeChainAndSignMode() throws {
-        let solana = try encodedPayload(SerializedTransaction.solana("solana-bytes"))
-        XCTAssertEqual(solana["type"], .string("serialized"))
-        XCTAssertEqual(solana["chainType"], .string("SOLANA"))
-        XCTAssertEqual(solana["data"], .string("solana-bytes"))
+        XCTAssertEqual(
+            try encodedPayload(SerializedTransaction.solana("solana-bytes")),
+            [
+                "type": .string("serialized"),
+                "chainType": .string("SOLANA"),
+                "data": .string("solana-bytes"),
+            ],
+        )
+        XCTAssertEqual(
+            try encodedPayload(SerializedTransaction.cosmos("sign-doc", signMode: .direct)),
+            [
+                "type": .string("serialized"),
+                "chainType": .string("COSMOS"),
+                "data": .string("sign-doc"),
+                "format": .string("proto"),
+            ],
+        )
+        XCTAssertEqual(
+            try encodedPayload(SerializedTransaction.cosmos("amino-sign-doc", signMode: .amino)),
+            [
+                "type": .string("serialized"),
+                "chainType": .string("COSMOS"),
+                "data": .string("amino-sign-doc"),
+                "format": .string("amino"),
+            ],
+        )
+        XCTAssertEqual(
+            try encodedPayload(SerializedTransaction.stellar(
+                "stellar-envelope-xdr",
+                networkPassphrase: StellarNetwork.testnetPassphrase,
+            )),
+            [
+                "type": .string("serialized"),
+                "chainType": .string("STELLAR"),
+                "data": .string("stellar-envelope-xdr"),
+                "networkPassphrase": .string(StellarNetwork.testnetPassphrase),
+            ],
+        )
+        XCTAssertEqual(
+            try encodedPayload(SerializedTransaction.sui("sui-bcs")),
+            [
+                "type": .string("serialized"),
+                "chainType": .string("SUI"),
+                "data": .string("sui-bcs"),
+            ],
+        )
+    }
 
-        let cosmos = try encodedPayload(SerializedTransaction.cosmos("sign-doc", signMode: .direct))
-        XCTAssertEqual(cosmos["chainType"], .string("COSMOS"))
-        XCTAssertEqual(cosmos["format"], .string("proto"))
+    func testEVMTransactionTypesZeroThroughTwoEncodeCanonicalKeysAndValues() throws {
+        let address = "0x0000000000000000000000000000000000000770"
 
-        let sui = try encodedPayload(SerializedTransaction.sui("sui-bcs"))
-        XCTAssertEqual(sui["chainType"], .string("SUI"))
-        XCTAssertEqual(sui["data"], .string("sui-bcs"))
+        XCTAssertEqual(
+            try encodedPayload(EVMTransaction(
+                to: address,
+                value: 0,
+                gasLimit: 21000,
+                gasPrice: 1_000_000_000,
+                nonce: 0,
+                chainId: 11_155_111,
+                type: 0,
+            )),
+            [
+                "to": .string(address),
+                "value": .string("0x0"),
+                "gasLimit": .string("0x5208"),
+                "gasPrice": .string("0x3b9aca00"),
+                "nonce": .string("0x0"),
+                "chainId": .string("0xaa36a7"),
+                "type": .integer(0),
+            ],
+        )
+        XCTAssertEqual(
+            try encodedPayload(EVMTransaction(
+                to: address,
+                gasLimit: 21000,
+                gasPrice: 1_000_000_000,
+                chainId: 11_155_111,
+                accessList: [EVMAccessListEntry(address: address, storageKeys: [])],
+                type: 1,
+            )),
+            [
+                "to": .string(address),
+                "gasLimit": .string("0x5208"),
+                "gasPrice": .string("0x3b9aca00"),
+                "chainId": .string("0xaa36a7"),
+                "accessList": .array([
+                    .object([
+                        "address": .string(address),
+                        "storageKeys": .array([]),
+                    ]),
+                ]),
+                "type": .integer(1),
+            ],
+        )
+        XCTAssertEqual(
+            try encodedPayload(EVMTransaction(
+                to: address,
+                gasLimit: 21000,
+                maxPriorityFeePerGas: 1_000_000_000,
+                maxFeePerGas: 2_000_000_000,
+                chainId: 11_155_111,
+                type: 2,
+            )),
+            [
+                "to": .string(address),
+                "gasLimit": .string("0x5208"),
+                "maxPriorityFeePerGas": .string("0x3b9aca00"),
+                "maxFeePerGas": .string("0x77359400"),
+                "chainId": .string("0xaa36a7"),
+                "type": .integer(2),
+            ],
+        )
     }
 
     func testEVMTransactionRejectsUnsupportedTypesAndIncompatibleFeeFields() {
