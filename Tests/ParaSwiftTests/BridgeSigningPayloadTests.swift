@@ -14,7 +14,18 @@ final class BridgeSigningPayloadTests: XCTestCase {
         XCTAssertNotNil(contract as Any)
     }
 
-    func testWalletTypeDecodesSui() {
+    func testChainBasedWalletCreationIsAdditiveToTheExistingMethod() {
+        let contract: (ParaManager) async throws -> Void = Self.acceptsLegacyAndChainWalletCreation
+
+        XCTAssertNotNil(contract as Any)
+    }
+
+    func testSuiDecodesWithoutWideningTheExistingWalletTypeEnum() {
+        XCTAssertEqual(existingWalletTypeDescription(.evm), "EVM")
+        XCTAssertEqual(existingWalletTypeDescription(.solana), "SOLANA")
+        XCTAssertEqual(existingWalletTypeDescription(.cosmos), "COSMOS")
+        XCTAssertEqual(existingWalletTypeDescription(.stellar), "STELLAR")
+
         let suiAddress = "0x1111111111111111111111111111111111111111111111111111111111111111"
         let wallet = Wallet(result: [
             "id": "sui-wallet",
@@ -23,7 +34,8 @@ final class BridgeSigningPayloadTests: XCTestCase {
             "addressSui": suiAddress,
         ])
 
-        XCTAssertEqual(wallet.type, .sui)
+        XCTAssertNil(wallet.type)
+        XCTAssertEqual(wallet.chainType, .sui)
         XCTAssertEqual(wallet.addressSui, suiAddress)
     }
 
@@ -348,5 +360,20 @@ final class BridgeSigningPayloadTests: XCTestCase {
             message: authorization
         )
         _ = try await manager.signTransaction(walletId: "wallet-id", transaction: transaction)
+    }
+
+    @MainActor
+    private static func acceptsLegacyAndChainWalletCreation(manager: ParaManager) async throws {
+        try await manager.createWallet(type: .evm, skipDistributable: false)
+        try await manager.createWallet(chainType: .sui, skipDistributable: false)
+    }
+}
+
+private func existingWalletTypeDescription(_ type: WalletType) -> String {
+    switch type {
+    case .evm: "EVM"
+    case .solana: "SOLANA"
+    case .cosmos: "COSMOS"
+    case .stellar: "STELLAR"
     }
 }

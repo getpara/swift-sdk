@@ -17,8 +17,6 @@ public enum WalletType: String {
     case cosmos = "COSMOS"
     /// Stellar blockchain wallet
     case stellar = "STELLAR"
-    /// Sui blockchain wallet
-    case sui = "SUI"
 }
 
 /// Represents a cryptocurrency wallet in the Para system
@@ -27,8 +25,10 @@ public struct Wallet {
     public let id: String
     /// ID of the user who owns the wallet
     public let userId: String?
-    /// Type of the wallet (EVM, Solana, Cosmos, Stellar, or Sui)
+    /// Legacy wallet type used by existing integrations.
     public let type: WalletType?
+    /// Chain identity returned by Para, including Sui.
+    public let chainType: BridgeChainType?
     /// Identifier for pre-generated wallet
     public let pregenIdentifier: String?
     /// Type of pre-generated wallet identifier
@@ -75,6 +75,7 @@ public struct Wallet {
         self.address = address
         addressSecondary = nil
         addressSui = nil
+        chainType = nil
         scheme = nil
         self.publicKey = publicKey
         createdAt = nil
@@ -91,6 +92,7 @@ public struct Wallet {
 
         let typeString = result["type"] as? String
         type = typeString.flatMap(WalletType.init)
+        chainType = typeString.flatMap(BridgeChainType.init)
         pregenIdentifier = result["pregenIdentifier"] as? String
         pregenIdentifierType = result["pregenIdentifierType"] as? String
         keyGenComplete = result["keyGenComplete"] as? Bool
