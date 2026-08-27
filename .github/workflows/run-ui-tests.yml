@@ -32,6 +32,20 @@ jobs:
       - name: Verify Xcode version
         run: xcodebuild -version
 
+      - name: Select iOS simulator
+        run: |
+          SIMULATOR_ID=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          devices = json.load(sys.stdin)["devices"]
+          for runtime_devices in devices.values():
+              for device in runtime_devices:
+                  if device["name"].startswith("iPhone") and device.get("isAvailable", False):
+                      print(device["udid"])
+                      sys.exit(0)
+          sys.exit("No available iPhone simulator found")
+          ')
+          echo "SIMULATOR_ID=$SIMULATOR_ID" >> "$GITHUB_ENV"
+
       - name: Checkout examples-hub sample app
         uses: actions/checkout@v4
         with:
@@ -65,7 +79,7 @@ jobs:
           set -o pipefail
           xcodebuild \
             -scheme "Example" \
-            -destination 'platform=iOS Simulator,OS=latest,name=iPhone 16 Pro' \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
             -testPlan "Example" \
             -resultBundlePath TestResults \
             clean test \
