@@ -38,14 +38,7 @@ public struct EVMTransaction: Codable {
     public let data: String?
     /// EIP-2930 access list used by type 1 and later transactions
     public let accessList: [EVMAccessListEntry]?
-    /// EIP-4844 maximum blob fee
-    public let maxFeePerBlobGas: BigUInt?
-    /// EIP-4844 versioned blob hashes
-    public let blobVersionedHashes: [String]?
-    /// Signed EIP-7702 authorizations for a type-4 transaction
-    public let authorizationList: [EVMSignedAuthorization]?
-    /// Transaction type (0 = legacy, 1 = access list, 2 = EIP-1559,
-    /// 3 = EIP-4844 blob, 4 = EIP-7702 set-code)
+    /// Transaction type (0 = legacy, 1 = access list, 2 = EIP-1559)
     public let type: Int?
 
     /// Creates a new EVM transaction
@@ -78,9 +71,6 @@ public struct EVMTransaction: Codable {
         smartContractByteCode: String? = nil,
         data: String? = nil,
         accessList: [EVMAccessListEntry]? = nil,
-        maxFeePerBlobGas: BigUInt? = nil,
-        blobVersionedHashes: [String]? = nil,
-        authorizationList: [EVMSignedAuthorization]? = nil,
         type: Int? = nil
     ) {
         self.to = to
@@ -97,9 +87,6 @@ public struct EVMTransaction: Codable {
         self.smartContractByteCode = smartContractByteCode
         self.data = data
         self.accessList = accessList
-        self.maxFeePerBlobGas = maxFeePerBlobGas
-        self.blobVersionedHashes = blobVersionedHashes
-        self.authorizationList = authorizationList
         self.type = type
     }
 
@@ -153,7 +140,7 @@ public extension EVMTransaction {
         case to, value, gasLimit, gasPrice, maxPriorityFeePerGas, maxFeePerGas
         case nonce, chainId, smartContractAbi, smartContractFunctionName
         case smartContractFunctionArgs, smartContractByteCode, data, accessList
-        case maxFeePerBlobGas, blobVersionedHashes, authorizationList, type
+        case type
     }
 
     init(from decoder: Decoder) throws {
@@ -179,9 +166,6 @@ public extension EVMTransaction {
         smartContractByteCode = try container.decodeIfPresent(String.self, forKey: .smartContractByteCode)
         data = try container.decodeIfPresent(String.self, forKey: .data)
         accessList = try container.decodeIfPresent([EVMAccessListEntry].self, forKey: .accessList)
-        maxFeePerBlobGas = try decodeBigUInt(.maxFeePerBlobGas)
-        blobVersionedHashes = try container.decodeIfPresent([String].self, forKey: .blobVersionedHashes)
-        authorizationList = try container.decodeIfPresent([EVMSignedAuthorization].self, forKey: .authorizationList)
         type = try container.decodeIfPresent(Int.self, forKey: .type)
     }
 
@@ -210,28 +194,17 @@ public extension EVMTransaction {
         try container.encodeIfPresent(smartContractByteCode, forKey: .smartContractByteCode)
         try container.encodeIfPresent(data, forKey: .data)
         try container.encodeIfPresent(accessList, forKey: .accessList)
-        try encode(maxFeePerBlobGas, for: .maxFeePerBlobGas)
-        try container.encodeIfPresent(blobVersionedHashes, forKey: .blobVersionedHashes)
-        try container.encodeIfPresent(authorizationList, forKey: .authorizationList)
         try container.encodeIfPresent(type, forKey: .type)
     }
 
     private func validateFieldCompatibility(encoder: Encoder) throws {
-        if let type, !(0 ... 4).contains(type) {
-            throw invalidFields("EVM transaction type must be between 0 and 4", encoder: encoder)
+        if let type, !(0 ... 2).contains(type) {
+            throw invalidFields("EVM transaction type must be between 0 and 2", encoder: encoder)
         }
 
         let hasAccessList = accessList?.isEmpty == false
         let hasDynamicFees = maxPriorityFeePerGas != nil || maxFeePerGas != nil
-        let hasBlobFields = maxFeePerBlobGas != nil || blobVersionedHashes?.isEmpty == false
-        let hasAuthorizationFields = authorizationList?.isEmpty == false
         let resolvedType = type ?? {
-            if hasAuthorizationFields {
-                return 4
-            }
-            if hasBlobFields {
-                return 3
-            }
             if hasDynamicFees {
                 return 2
             }
@@ -241,26 +214,20 @@ public extension EVMTransaction {
             return 0
         }()
 
-        if resolvedType == 0, hasAccessList || hasDynamicFees || hasBlobFields || hasAuthorizationFields {
+        if resolvedType == 0, hasAccessList || hasDynamicFees {
             throw invalidFields(
-                "EVM type 0 transactions cannot include access-list, dynamic-fee, blob, or authorization fields",
+                "EVM type 0 transactions cannot include access-list or dynamic-fee fields",
                 encoder: encoder,
             )
         }
-        if resolvedType == 1, hasDynamicFees || hasBlobFields || hasAuthorizationFields {
+        if resolvedType == 1, hasDynamicFees {
             throw invalidFields(
-                "EVM type 1 transactions cannot include dynamic-fee, blob, or authorization fields",
+                "EVM type 1 transactions cannot include dynamic-fee fields",
                 encoder: encoder,
             )
         }
         if resolvedType >= 2, gasPrice != nil {
             throw invalidFields("EVM type \(resolvedType) transactions cannot include gasPrice", encoder: encoder)
-        }
-        if resolvedType != 3, hasBlobFields {
-            throw invalidFields("EVM blob fields are only valid for type 3 transactions", encoder: encoder)
-        }
-        if resolvedType != 4, hasAuthorizationFields {
-            throw invalidFields("EVM authorizationList is only valid for type 4 transactions", encoder: encoder)
         }
     }
 

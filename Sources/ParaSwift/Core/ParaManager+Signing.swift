@@ -117,7 +117,7 @@ public extension ParaManager {
         return try await signBridgeMessage(walletId: walletId, message: message, chainType: resolvedChainType)
     }
 
-    /// Signs an EIP-7702 authorization for composition into a type-4 transaction.
+    /// Signs an EIP-7702 authorization for a provider-managed account flow.
     func signMessage(
         walletId: String,
         message: EVMAuthorizationMessage

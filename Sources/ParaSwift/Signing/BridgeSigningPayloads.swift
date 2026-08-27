@@ -186,7 +186,7 @@ public struct EVMAuthorizationMessage: Encodable {
     }
 }
 
-/// A signed EIP-7702 authorization ready for a type-4 transaction.
+/// A signed EIP-7702 authorization returned for provider-managed account flows.
 public struct EVMSignedAuthorization: Codable {
     public let address: String
     public let chainId: Int

@@ -102,84 +102,9 @@ final class BridgeSigningPayloadTests: XCTestCase {
         XCTAssertEqual(sui["data"], .string("sui-bcs"))
     }
 
-    func testEVMTransactionEncodesValidTypeThreeFields() throws {
-        let transaction = EVMTransaction(
-            maxFeePerGas: BigUInt(10),
-            chainId: BigUInt(1),
-            accessList: [EVMAccessListEntry(address: "0x1234", storageKeys: ["0xabcd"])],
-            maxFeePerBlobGas: BigUInt(12),
-            blobVersionedHashes: ["0x0100"],
-            type: 3,
-        )
-
-        let encoded = try encodedPayload(transaction)
-
-        XCTAssertEqual(encoded["chainId"], BridgeJSONValue.string("0x1"))
-        XCTAssertEqual(encoded["maxFeePerGas"], BridgeJSONValue.string("0xa"))
-        XCTAssertEqual(encoded["maxFeePerBlobGas"], BridgeJSONValue.string("0xc"))
-        XCTAssertEqual(
-            encoded["blobVersionedHashes"],
-            BridgeJSONValue.array([BridgeJSONValue.string("0x0100")]),
-        )
-        XCTAssertEqual(encoded["type"], BridgeJSONValue.integer(3))
-    }
-
-    func testEVMTransactionEncodesValidTypeFourFields() throws {
-        let authorization = EVMSignedAuthorization(
-            address: "0x0000000000000000000000000000000000000770",
-            chainId: 1,
-            nonce: 7,
-            yParity: 0,
-            r: "0x11",
-            s: "0x22",
-        )
-        let transaction = EVMTransaction(
-            maxFeePerGas: BigUInt(10),
-            chainId: BigUInt(1),
-            accessList: [EVMAccessListEntry(address: "0x1234", storageKeys: ["0xabcd"])],
-            authorizationList: [authorization],
-            type: 4,
-        )
-
-        let encoded = try encodedPayload(transaction)
-
-        XCTAssertEqual(encoded["chainId"], BridgeJSONValue.string("0x1"))
-        XCTAssertEqual(encoded["maxFeePerGas"], BridgeJSONValue.string("0xa"))
-        guard case let .array(authorizations) = encoded["authorizationList"],
-              case let .object(authorizationPayload) = authorizations.first
-        else {
-            return XCTFail("Expected EIP-7702 authorization list")
-        }
-        XCTAssertEqual(authorizationPayload["nonce"], BridgeJSONValue.integer(7))
-        XCTAssertEqual(encoded["type"], BridgeJSONValue.integer(4))
-    }
-
-    func testEVMTransactionRejectsUnsupportedAndIncompatibleFields() {
-        assertEncodingError(EVMTransaction(type: 5), contains: "between 0 and 4")
-        assertEncodingError(
-            EVMTransaction(
-                maxFeePerBlobGas: BigUInt(12),
-                blobVersionedHashes: ["0x0100"],
-                type: 4,
-            ),
-            contains: "only valid for type 3",
-        )
-        assertEncodingError(
-            EVMTransaction(
-                authorizationList: [
-                    EVMSignedAuthorization(
-                        address: "0x0000000000000000000000000000000000000770",
-                        chainId: 1,
-                        nonce: 7,
-                        yParity: 0,
-                        r: "0x11",
-                        s: "0x22",
-                    ),
-                ],
-                type: 3,
-            ),
-            contains: "only valid for type 4",
-        )
+    func testEVMTransactionRejectsUnsupportedTypesAndIncompatibleFeeFields() {
+        assertEncodingError(EVMTransaction(type: 3), contains: "between 0 and 2")
+        assertEncodingError(EVMTransaction(type: 4), contains: "between 0 and 2")
         assertEncodingError(EVMTransaction(gasPrice: BigUInt(10), type: 2), contains: "cannot include gasPrice")
     }
 
@@ -212,41 +137,6 @@ final class BridgeSigningPayloadTests: XCTestCase {
                 explicitChainId: "COSMOSHUB-4",
             ),
         )
-    }
-
-    func testTransactionRequestEnvelopePreservesAuthorizationNumbers() throws {
-        let transaction = EVMTransaction(
-            chainId: BigUInt(1),
-            authorizationList: [
-                EVMSignedAuthorization(
-                    address: "0x0000000000000000000000000000000000000770",
-                    chainId: 1,
-                    nonce: 0,
-                    yParity: 1,
-                    r: "0x11",
-                    s: "0x22",
-                ),
-            ],
-            type: 4,
-        )
-        let params = FormatAndSignTransactionParams(
-            walletId: "wallet-id",
-            transaction: transaction,
-            chainId: "1",
-            chainType: .evm,
-            rpcUrl: nil,
-        )
-
-        let envelope = try encodedPayload(params)
-        guard case let .object(encodedTransaction) = envelope["transaction"],
-              case let .array(authorizations) = encodedTransaction["authorizationList"],
-              case let .object(authorization) = authorizations.first
-        else {
-            return XCTFail("Expected an authorization request envelope")
-        }
-        XCTAssertEqual(authorization["chainId"], .integer(1))
-        XCTAssertEqual(authorization["nonce"], .integer(0))
-        XCTAssertEqual(authorization["yParity"], .integer(1))
     }
 
     func testSolanaLargeNumericsEncodeAsStringsAndDecodeLegacyNumbers() throws {
