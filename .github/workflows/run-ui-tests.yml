@@ -35,14 +35,13 @@ jobs:
       - name: Checkout examples-hub sample app
         uses: actions/checkout@v4
         with:
-          repository: capsule-org/js-monorepo
-          token: ${{ secrets.CROSS_ORG_TOKEN }}
-          path: js-monorepo
-          ref: main
+          repository: getpara/examples-hub
+          path: examples-hub
+          ref: 3.0.0
 
       - name: Update swift-sdk branch in project.pbxproj
         if: ${{ github.event_name == 'pull_request' }}
-        working-directory: js-monorepo/examples-hub/mobile/with-swift
+        working-directory: examples-hub/mobile/with-swift
         env:
           PR_BRANCH: ${{ github.head_ref }}
         run: |
@@ -52,13 +51,13 @@ jobs:
           grep -A 5 'XCRemoteSwiftPackageReference "swift-sdk"' example.xcodeproj/project.pbxproj
 
       - name: Resolve Package Dependencies
-        working-directory: js-monorepo/examples-hub/mobile/with-swift
+        working-directory: examples-hub/mobile/with-swift
         run: |
           xcodebuild -resolvePackageDependencies
 
       - name: Run UI Tests on Simulator
         id: run-tests
-        working-directory: js-monorepo/examples-hub/mobile/with-swift
+        working-directory: examples-hub/mobile/with-swift
         env:
           PARA_API_KEY: ${{ secrets.PARA_API_KEY }}
           PARA_ENVIRONMENT: ${{ secrets.PARA_ENVIRONMENT }}
@@ -75,7 +74,7 @@ jobs:
       # This step always runs to list files, even if the tests fail.
       - name: List generated files (for debugging)
         if: ${{ always() }}
-        working-directory: js-monorepo/examples-hub/mobile/with-swift
+        working-directory: examples-hub/mobile/with-swift
         run: |
           echo "Listing top-level files in with-swift directory:"
           ls -al
@@ -89,12 +88,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: xcodebuild-log
-          path: js-monorepo/examples-hub/mobile/with-swift/xcodebuild.log
+          path: examples-hub/mobile/with-swift/xcodebuild.log
 
       # Rename the test results directory only if needed
       - name: Rename test results
         if: ${{ always() }}
-        working-directory: js-monorepo/examples-hub/mobile/with-swift
+        working-directory: examples-hub/mobile/with-swift
         run: |
           if [ -d "TestResults" ]; then
             echo "Renaming TestResults -> TestResults.xcresult"
@@ -109,4 +108,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: xcode-test-results
-          path: js-monorepo/examples-hub/mobile/with-swift/TestResults.xcresult
+          path: examples-hub/mobile/with-swift/TestResults.xcresult
