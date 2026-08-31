@@ -14,11 +14,22 @@ public extension ParaManager {
     ///   - skipDistributable: Whether to skip distributable shares.
     @MainActor
     func createWallet(type: WalletType, skipDistributable: Bool) async throws {
+        try await createWallet(rawType: type.rawValue, skipDistributable: skipDistributable)
+    }
+
+    /// Creates a wallet for a bridge chain without widening the legacy wallet-type enum.
+    @MainActor
+    func createWallet(chainType: BridgeChainType, skipDistributable: Bool) async throws {
+        try await createWallet(rawType: chainType.rawValue, skipDistributable: skipDistributable)
+    }
+
+    @MainActor
+    private func createWallet(rawType: String, skipDistributable: Bool) async throws {
         try await ensureWebViewReady()
         // Call createWallet but ignore the result as we fetch wallets separately
-        _ = try await postMessage(method: "createWallet", payload: CreateWalletArgs(type: type.rawValue, skipDistributable: skipDistributable))
+        _ = try await postMessage(method: "createWallet", payload: CreateWalletArgs(type: rawType, skipDistributable: skipDistributable))
 
-        logger.debug("Wallet creation initiated for type \(type.rawValue). Refreshing wallet list...")
+        logger.debug("Wallet creation initiated for type \(rawType). Refreshing wallet list...")
 
         // Fetch the complete list of wallets to update the list immediately
         let allWallets = try await fetchWallets()

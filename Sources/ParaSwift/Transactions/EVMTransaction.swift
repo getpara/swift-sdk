@@ -34,6 +34,10 @@ public struct EVMTransaction: Codable {
     public let smartContractFunctionArgs: [String]?
     /// Smart contract bytecode (if contract deployment)
     public let smartContractByteCode: String?
+    /// Raw transaction or contract-call data
+    public let data: String?
+    /// EIP-2930 access list used by type 1 and later transactions
+    public let accessList: [EVMAccessListEntry]?
     /// Transaction type (0 = legacy, 1 = access list, 2 = EIP-1559)
     public let type: Int?
 
@@ -65,6 +69,8 @@ public struct EVMTransaction: Codable {
         smartContractFunctionName: String? = nil,
         smartContractFunctionArgs: [String]? = nil,
         smartContractByteCode: String? = nil,
+        data: String? = nil,
+        accessList: [EVMAccessListEntry]? = nil,
         type: Int? = nil
     ) {
         self.to = to
@@ -79,6 +85,8 @@ public struct EVMTransaction: Codable {
         self.smartContractFunctionName = smartContractFunctionName
         self.smartContractFunctionArgs = smartContractFunctionArgs
         self.smartContractByteCode = smartContractByteCode
+        self.data = data
+        self.accessList = accessList
         self.type = type
     }
 
@@ -131,7 +139,8 @@ public extension EVMTransaction {
     private enum CodingKeys: String, CodingKey {
         case to, value, gasLimit, gasPrice, maxPriorityFeePerGas, maxFeePerGas
         case nonce, chainId, smartContractAbi, smartContractFunctionName
-        case smartContractFunctionArgs, smartContractByteCode, type
+        case smartContractFunctionArgs, smartContractByteCode, data, accessList
+        case type
     }
 
     init(from decoder: Decoder) throws {
@@ -155,10 +164,13 @@ public extension EVMTransaction {
         smartContractFunctionName = try container.decodeIfPresent(String.self, forKey: .smartContractFunctionName)
         smartContractFunctionArgs = try container.decodeIfPresent([String].self, forKey: .smartContractFunctionArgs)
         smartContractByteCode = try container.decodeIfPresent(String.self, forKey: .smartContractByteCode)
+        data = try container.decodeIfPresent(String.self, forKey: .data)
+        accessList = try container.decodeIfPresent([EVMAccessListEntry].self, forKey: .accessList)
         type = try container.decodeIfPresent(Int.self, forKey: .type)
     }
 
     func encode(to encoder: Encoder) throws {
+        try validateFieldCompatibility(encoder: encoder)
         var container = encoder.container(keyedBy: CodingKeys.self)
 
         // Helper function to encode BigUInt as hex string
@@ -180,6 +192,49 @@ public extension EVMTransaction {
         try container.encodeIfPresent(smartContractFunctionName, forKey: .smartContractFunctionName)
         try container.encodeIfPresent(smartContractFunctionArgs, forKey: .smartContractFunctionArgs)
         try container.encodeIfPresent(smartContractByteCode, forKey: .smartContractByteCode)
+        try container.encodeIfPresent(data, forKey: .data)
+        try container.encodeIfPresent(accessList, forKey: .accessList)
         try container.encodeIfPresent(type, forKey: .type)
+    }
+
+    private func validateFieldCompatibility(encoder: Encoder) throws {
+        if let type, !(0 ... 2).contains(type) {
+            throw invalidFields("EVM transaction type must be between 0 and 2", encoder: encoder)
+        }
+
+        let hasAccessList = accessList?.isEmpty == false
+        let hasDynamicFees = maxPriorityFeePerGas != nil || maxFeePerGas != nil
+        let resolvedType = type ?? {
+            if hasDynamicFees {
+                return 2
+            }
+            if hasAccessList {
+                return 1
+            }
+            return 0
+        }()
+
+        if resolvedType == 0, hasAccessList || hasDynamicFees {
+            throw invalidFields(
+                "EVM type 0 transactions cannot include access-list or dynamic-fee fields",
+                encoder: encoder,
+            )
+        }
+        if resolvedType == 1, hasDynamicFees {
+            throw invalidFields(
+                "EVM type 1 transactions cannot include dynamic-fee fields",
+                encoder: encoder,
+            )
+        }
+        if resolvedType >= 2, gasPrice != nil {
+            throw invalidFields("EVM type \(resolvedType) transactions cannot include gasPrice", encoder: encoder)
+        }
+    }
+
+    private func invalidFields(_ description: String, encoder: Encoder) -> EncodingError {
+        EncodingError.invalidValue(
+            self,
+            EncodingError.Context(codingPath: encoder.codingPath, debugDescription: description),
+        )
     }
 }

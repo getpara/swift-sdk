@@ -25,8 +25,10 @@ public struct Wallet {
     public let id: String
     /// ID of the user who owns the wallet
     public let userId: String?
-    /// Type of the wallet (EVM, Solana, Cosmos, Stellar)
+    /// Legacy wallet type used by existing integrations.
     public let type: WalletType?
+    /// Chain identity returned by Para, including Sui.
+    public let chainType: BridgeChainType?
     /// Identifier for pre-generated wallet
     public let pregenIdentifier: String?
     /// Type of pre-generated wallet identifier
@@ -43,6 +45,8 @@ public struct Wallet {
     public let address: String?
     /// Secondary address (e.g., Cosmos bech32 address for Cosmos wallets)
     public let addressSecondary: String?
+    /// Canonical Sui address derived from an Ed25519 wallet's public key
+    public let addressSui: String?
     /// Scheme used by the wallet
     public let scheme: String?
     /// Public key of the wallet
@@ -70,6 +74,8 @@ public struct Wallet {
         self.signer = signer
         self.address = address
         addressSecondary = nil
+        addressSui = nil
+        chainType = nil
         scheme = nil
         self.publicKey = publicKey
         createdAt = nil
@@ -86,6 +92,7 @@ public struct Wallet {
 
         let typeString = result["type"] as? String
         type = typeString.flatMap(WalletType.init)
+        chainType = typeString.flatMap(BridgeChainType.init)
         pregenIdentifier = result["pregenIdentifier"] as? String
         pregenIdentifierType = result["pregenIdentifierType"] as? String
         keyGenComplete = result["keyGenComplete"] as? Bool
@@ -95,6 +102,7 @@ public struct Wallet {
         signer = result["signer"] as? String
         address = result["address"] as? String
         addressSecondary = result["addressSecondary"] as? String
+        addressSui = result["addressSui"] as? String
         scheme = result["scheme"] as? String
         publicKey = result["publicKey"] as? String
         let createdAtString = result["createdAt"] as? String

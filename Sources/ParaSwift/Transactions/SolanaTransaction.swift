@@ -50,6 +50,8 @@ public struct SolanaTransaction: Codable {
     public let computeUnitLimit: UInt32?
     /// Compute unit price in micro-lamports (optional)
     public let computeUnitPrice: UInt64?
+    /// Optional memo instruction
+    public let memo: String?
     /// Transaction type - currently only supports "transfer"
     public let type: String
 
@@ -67,7 +69,8 @@ public struct SolanaTransaction: Codable {
         feePayer: String? = nil,
         recentBlockhash: String? = nil,
         computeUnitLimit: UInt32? = nil,
-        computeUnitPrice: UInt64? = nil
+        computeUnitPrice: UInt64? = nil,
+        memo: String? = nil
     ) throws {
         // Basic Solana address validation
         guard SolanaTransaction.isValidAddress(to) else {
@@ -90,6 +93,7 @@ public struct SolanaTransaction: Codable {
         self.recentBlockhash = recentBlockhash
         self.computeUnitLimit = computeUnitLimit
         self.computeUnitPrice = computeUnitPrice
+        self.memo = memo
         type = "transfer"
     }
 
@@ -109,4 +113,49 @@ public struct SolanaTransaction: Codable {
         try self.init(to: to, lamports: UInt64(sol * 1_000_000_000))
     }
 
+    private enum CodingKeys: String, CodingKey {
+        case to, lamports, feePayer, recentBlockhash, computeUnitLimit, computeUnitPrice, memo, type
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        to = try container.decode(String.self, forKey: .to)
+        lamports = try Self.decodeUInt64(from: container, forKey: .lamports)
+        feePayer = try container.decodeIfPresent(String.self, forKey: .feePayer)
+        recentBlockhash = try container.decodeIfPresent(String.self, forKey: .recentBlockhash)
+        computeUnitLimit = try container.decodeIfPresent(UInt32.self, forKey: .computeUnitLimit)
+        computeUnitPrice = try Self.decodeUInt64IfPresent(from: container, forKey: .computeUnitPrice)
+        memo = try container.decodeIfPresent(String.self, forKey: .memo)
+        type = try container.decode(String.self, forKey: .type)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(to, forKey: .to)
+        try container.encode(String(lamports), forKey: .lamports)
+        try container.encodeIfPresent(feePayer, forKey: .feePayer)
+        try container.encodeIfPresent(recentBlockhash, forKey: .recentBlockhash)
+        try container.encodeIfPresent(computeUnitLimit, forKey: .computeUnitLimit)
+        try container.encodeIfPresent(computeUnitPrice.map(String.init), forKey: .computeUnitPrice)
+        try container.encodeIfPresent(memo, forKey: .memo)
+        try container.encode(type, forKey: .type)
+    }
+
+    private static func decodeUInt64(
+        from container: KeyedDecodingContainer<CodingKeys>,
+        forKey key: CodingKeys,
+    ) throws -> UInt64 {
+        if let string = try? container.decode(String.self, forKey: key), let value = UInt64(string) {
+            return value
+        }
+        return try container.decode(UInt64.self, forKey: key)
+    }
+
+    private static func decodeUInt64IfPresent(
+        from container: KeyedDecodingContainer<CodingKeys>,
+        forKey key: CodingKeys,
+    ) throws -> UInt64? {
+        guard container.contains(key), try !container.decodeNil(forKey: key) else { return nil }
+        return try decodeUInt64(from: container, forKey: key)
+    }
 }

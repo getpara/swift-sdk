@@ -1,3 +1,10 @@
+# Release 2.10.0 (Mon Aug 31 2026)
+
+### Features
+- Expanded bridge-backed signing across EVM, Solana, Cosmos, Stellar, and Sui while preserving the existing `signMessage` and `signTransaction` entry points (#45)
+- Added typed payloads for EIP-712 data, standalone EIP-7702 authorizations, serialized transactions, Stellar Soroban authorizations, and Sui intent signing (#45)
+- Added support for EVM transaction types 0 through 2 and complete signature metadata, including the canonical Sui wallet address returned by Para (#45)
+
 # Release 2.9.0 (Fri Jun 05 2026)
 
 ### Features

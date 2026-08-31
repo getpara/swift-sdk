@@ -10,11 +10,27 @@ public struct SignatureResult {
     public let walletId: String
     /// The wallet type (e.g., "evm", "solana", "cosmos")
     public let type: String
+    /// Raw signature when the bridge returns it alongside transaction bytes
+    public let signature: String?
+    /// Original bytes returned by intent-aware message signing
+    public let bytes: String?
+    /// Chain-specific signer address returned with the signature
+    public let signerAddress: String?
 
-    public init(signedTransaction: String, walletId: String, type: String) {
+    public init(
+        signedTransaction: String,
+        walletId: String,
+        type: String,
+        signature: String? = nil,
+        bytes: String? = nil,
+        signerAddress: String? = nil
+    ) {
         self.signedTransaction = signedTransaction
         self.walletId = walletId
         self.type = type
+        self.signature = signature
+        self.bytes = bytes
+        self.signerAddress = signerAddress
     }
 
     /// Returns the transaction data for broadcasting.
@@ -46,28 +62,18 @@ public struct TransferResult {
 }
 
 // Helper structs for formatting methods
-struct FormatAndSignMessageParams: Encodable {
+struct FormatAndSignMessageParams<Message: Encodable>: Encodable {
     let walletId: String
-    let message: String
+    let message: Message
+    let chainType: BridgeChainType?
 }
 
-struct FormatAndSignTransactionParams: Encodable {
+struct FormatAndSignTransactionParams<Transaction: Encodable>: Encodable {
     let walletId: String
-    let transaction: [String: Any]
+    let transaction: Transaction
     let chainId: String?
+    let chainType: BridgeChainType?
     let rpcUrl: String?
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(walletId, forKey: .walletId)
-        try container.encode(JSONValue(transaction), forKey: .transaction)
-        try container.encodeIfPresent(chainId, forKey: .chainId)
-        try container.encodeIfPresent(rpcUrl, forKey: .rpcUrl)
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case walletId, transaction, chainId, rpcUrl
-    }
 }
 
 public extension ParaManager {
@@ -87,7 +93,35 @@ public extension ParaManager {
     /// Signs a message with any wallet type.
     ///
     /// - Throws: ``ParaError/transactionDenied`` if a permissions policy requires approval.
-    func signMessage(walletId: String, message: String) async throws -> SignatureResult {
+    func signMessage(
+        walletId: String,
+        message: String,
+        chainType: BridgeChainType? = nil
+    ) async throws -> SignatureResult {
+        try await signBridgeMessage(walletId: walletId, message: message, chainType: chainType)
+    }
+
+    /// Signs a structured chain-specific message.
+    ///
+    /// Supports raw Solana and Stellar bytes, EIP-712 typed data, Soroban
+    /// authorization entries, and Sui personal messages.
+    func signMessage<Message: BridgeMessagePayload>(
+        walletId: String,
+        message: Message,
+        chainType: BridgeChainType? = nil
+    ) async throws -> SignatureResult {
+        let resolvedChainType = try BridgeSigningValidation.resolveChainType(
+            payloadChainType: message.chainType,
+            explicitChainType: chainType
+        )
+        return try await signBridgeMessage(walletId: walletId, message: message, chainType: resolvedChainType)
+    }
+
+    /// Signs an EIP-7702 authorization for a provider-managed account flow.
+    func signMessage(
+        walletId: String,
+        message: EVMAuthorizationMessage
+    ) async throws -> EVMSignedAuthorization {
         try await ensureWebViewReady()
 
         do {
@@ -96,20 +130,34 @@ public extension ParaManager {
             logger.warning("Failed to load transmission keyshares before signing message: \(error.localizedDescription)")
         }
 
-        let params = FormatAndSignMessageParams(walletId: walletId, message: message)
+        let params = FormatAndSignMessageParams(
+            walletId: walletId,
+            message: message,
+            chainType: message.chainType
+        )
         let result = try await postMessage(method: "formatAndSignMessage", payload: params)
         let dict = try decodeResult(result, expectedType: [String: Any].self, method: "formatAndSignMessage")
 
         try checkForTransactionDenial(dict)
 
-        guard let signature = dict["signature"] as? String else {
-            throw ParaError.bridgeError("Missing signature in response")
+        guard
+            let address = dict["address"] as? String,
+            let chainId = dict["chainId"] as? Int,
+            let nonce = dict["nonce"] as? Int,
+            let yParity = dict["yParity"] as? Int,
+            let r = dict["r"] as? String,
+            let s = dict["s"] as? String
+        else {
+            throw ParaError.bridgeError("Missing signed authorization fields in response")
         }
 
-        return SignatureResult(
-            signedTransaction: signature,
-            walletId: dict["walletId"] as? String ?? walletId,
-            type: dict["type"] as? String ?? "unknown"
+        return EVMSignedAuthorization(
+            address: address,
+            chainId: chainId,
+            nonce: nonce,
+            yParity: yParity,
+            r: r,
+            s: s
         )
     }
 
@@ -120,8 +168,35 @@ public extension ParaManager {
         walletId: String,
         transaction: T,
         chainId: String? = nil,
+        chainType: BridgeChainType? = nil,
         rpcUrl: String? = nil
     ) async throws -> SignatureResult {
+        let encoder = JSONEncoder()
+        let transactionData = try encoder.encode(transaction)
+        let transactionDict = try JSONSerialization.jsonObject(with: transactionData, options: []) as? [String: Any] ?? [:]
+        let embeddedChainId = transactionDict["chainId"] as? String
+        let embeddedChainType = (transactionDict["chainType"] as? String).flatMap(BridgeChainType.init(rawValue:))
+        let typedChainType = (transaction as? BridgeTransactionPayload)?.chainType
+        let resolvedChainType: BridgeChainType?
+        if let typedChainType {
+            resolvedChainType = try BridgeSigningValidation.resolveChainType(
+                payloadChainType: typedChainType,
+                explicitChainType: chainType
+            )
+        } else {
+            resolvedChainType = chainType ?? embeddedChainType
+        }
+        let resolvedChainId: String?
+        if let typedChainType, typedChainType == .evm || typedChainType == .cosmos {
+            resolvedChainId = try BridgeSigningValidation.resolveChainId(
+                chainType: typedChainType,
+                embeddedChainId: embeddedChainId,
+                explicitChainId: chainId
+            )
+        } else {
+            resolvedChainId = chainId ?? embeddedChainId
+        }
+
         try await ensureWebViewReady()
 
         do {
@@ -130,14 +205,11 @@ public extension ParaManager {
             logger.warning("Failed to load transmission keyshares before signing transaction: \(error.localizedDescription)")
         }
 
-        let encoder = JSONEncoder()
-        let transactionData = try encoder.encode(transaction)
-        let transactionDict = try JSONSerialization.jsonObject(with: transactionData, options: []) as? [String: Any] ?? [:]
-
         let params = FormatAndSignTransactionParams(
             walletId: walletId,
-            transaction: transactionDict,
-            chainId: chainId,
+            transaction: transaction,
+            chainId: resolvedChainId,
+            chainType: resolvedChainType,
             rpcUrl: rpcUrl
         )
 
@@ -158,7 +230,10 @@ public extension ParaManager {
         return SignatureResult(
             signedTransaction: signedTransaction,
             walletId: dict["walletId"] as? String ?? walletId,
-            type: dict["type"] as? String ?? "unknown"
+            type: dict["type"] as? String ?? "unknown",
+            signature: dict["signature"] as? String,
+            bytes: dict["bytes"] as? String,
+            signerAddress: dict["signerAddress"] as? String
         )
     }
 
@@ -217,6 +292,39 @@ public extension ParaManager {
     }
 
     // MARK: - Private
+
+    private func signBridgeMessage<Message: Encodable>(
+        walletId: String,
+        message: Message,
+        chainType: BridgeChainType?
+    ) async throws -> SignatureResult {
+        try await ensureWebViewReady()
+
+        do {
+            try await ensureTransmissionKeysharesLoaded()
+        } catch {
+            logger.warning("Failed to load transmission keyshares before signing message: \(error.localizedDescription)")
+        }
+
+        let params = FormatAndSignMessageParams(walletId: walletId, message: message, chainType: chainType)
+        let result = try await postMessage(method: "formatAndSignMessage", payload: params)
+        let dict = try decodeResult(result, expectedType: [String: Any].self, method: "formatAndSignMessage")
+
+        try checkForTransactionDenial(dict)
+
+        guard let signature = dict["signature"] as? String else {
+            throw ParaError.bridgeError("Missing signature in response")
+        }
+
+        return SignatureResult(
+            signedTransaction: signature,
+            walletId: dict["walletId"] as? String ?? walletId,
+            type: dict["type"] as? String ?? "unknown",
+            signature: signature,
+            bytes: dict["bytes"] as? String,
+            signerAddress: dict["signerAddress"] as? String
+        )
+    }
 
     /// Checks a bridge response for pendingTransactionId (permissions denial).
     /// Calls the transaction review handler if set, then throws.

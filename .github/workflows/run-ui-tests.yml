@@ -13,37 +13,54 @@ jobs:
 
     steps:
       - name: Checkout swift-sdk (this repo)
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Get PR information
         if: ${{ github.event_name == 'pull_request' }}
+        env:
+          PR_BRANCH: ${{ github.head_ref }}
+          PR_COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          echo "PR Branch: ${{ github.head_ref }}"
-          echo "PR Commit SHA: ${{ github.event.pull_request.head.sha }}"
+          echo "PR Branch: $PR_BRANCH"
+          echo "PR Commit SHA: $PR_COMMIT_SHA"
 
       - name: Set up Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: '16.2'
+          xcode-version: latest-stable
 
       - name: Verify Xcode version
         run: xcodebuild -version
 
+      - name: Select iOS simulator
+        run: |
+          SIMULATOR_ID=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          devices = json.load(sys.stdin)["devices"]
+          for runtime_devices in devices.values():
+              for device in runtime_devices:
+                  if device["name"].startswith("iPhone") and device.get("isAvailable", False):
+                      print(device["udid"])
+                      sys.exit(0)
+          sys.exit("No available iPhone simulator found")
+          ')
+          echo "SIMULATOR_ID=$SIMULATOR_ID" >> "$GITHUB_ENV"
+
       - name: Checkout examples-hub sample app
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           repository: getpara/examples-hub
-          token: ${{ secrets.GITHUB_TOKEN }}
           path: examples-hub
-          ref: main
+          ref: 3.0.0
 
       - name: Update swift-sdk branch in project.pbxproj
         if: ${{ github.event_name == 'pull_request' }}
         working-directory: examples-hub/mobile/with-swift
+        env:
+          PR_BRANCH: ${{ github.head_ref }}
         run: |
-          PR_BRANCH="${{ github.head_ref }}"
           echo "Updating swift-sdk branch to $PR_BRANCH in project.pbxproj"
-          sed -i '' '/repositoryURL = "https:\/\/github.com\/getpara\/swift-sdk"/,/kind = branch;/ s|\(branch = \)[^;]*;|\1'"$PR_BRANCH"';|' example.xcodeproj/project.pbxproj
+          perl -0pi -e 's|(repositoryURL = "https://github.com/getpara/swift-sdk";\n\s+requirement = \{\n)\s+kind = upToNextMajorVersion;\n\s+minimumVersion = 2\.9\.0;|$1\t\t\t\tbranch = "'"$PR_BRANCH"'";\n\t\t\t\tkind = branch;|' example.xcodeproj/project.pbxproj
           echo "Updated swift-sdk dependency:"
           grep -A 5 'XCRemoteSwiftPackageReference "swift-sdk"' example.xcodeproj/project.pbxproj
 
@@ -62,7 +79,7 @@ jobs:
           set -o pipefail
           xcodebuild \
             -scheme "Example" \
-            -destination 'platform=iOS Simulator,OS=latest,name=iPhone 16 Pro' \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
             -testPlan "Example" \
             -resultBundlePath TestResults \
             clean test \
