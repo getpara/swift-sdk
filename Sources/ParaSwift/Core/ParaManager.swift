@@ -199,10 +199,6 @@ public class ParaManager: NSObject, ObservableObject {
                 // Attempt to extract a concise message from a JSON payload produced by the bridge
                 if let data = message.data(using: .utf8),
                    let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    // A typed refusal from the bridge: the passkey is the account's login second factor.
-                    if json["code"] as? String == "PASSKEY_IS_SECOND_FACTOR" {
-                        throw ParaError.passkeyIsSecondFactor
-                    }
                     let details = json["details"] as? [String: Any]
                     let userMessage = (details?["message"] as? String)
                         ?? (json["message"] as? String)
