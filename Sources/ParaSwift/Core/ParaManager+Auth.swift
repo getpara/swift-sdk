@@ -52,6 +52,19 @@ extension ParaManager {
         let loginAuthMethods = resultDict["loginAuthMethods"] as? [String]
         let signupAuthMethods = resultDict["signupAuthMethods"] as? [String]
 
+        // A login parked on its second factor carries the challenge under `mfa`; the portal hosts the ceremony.
+        var secondFactor: MfaChallenge? = nil
+        if let mfa = resultDict["mfa"] as? [String: Any],
+           let mode = mfa["mode"] as? String,
+           let step = mfa["step"] as? String {
+            secondFactor = MfaChallenge(
+                mode: mode,
+                step: step,
+                methods: mfa["methods"] as? [String],
+                attemptsRemaining: mfa["attemptsRemaining"] as? Int
+            )
+        }
+
         // Extract biometric hints if available
         var biometricHints: [AuthState.BiometricHint]?
         if let hintsArray = resultDict["biometricHints"] as? [[String: Any]] {
@@ -91,7 +104,8 @@ extension ParaManager {
             loginUrl: loginUrl,
             nextStage: nextStage,
             loginAuthMethods: loginAuthMethods,
-            signupAuthMethods: signupAuthMethods
+            signupAuthMethods: signupAuthMethods,
+            secondFactor: secondFactor
         )
     }
 }

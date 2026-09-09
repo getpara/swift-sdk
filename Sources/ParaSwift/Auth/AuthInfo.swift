@@ -88,6 +88,28 @@ public enum AuthStage: String, Codable {
     case login
     /// Terminal stage used by SLO flows once the portal completes
     case done
+    /// The first factor passed but the account owes a login second factor; the Para portal hosts the
+    /// ceremony (passkey / authenticator code / password / PIN) inside the web auth session.
+    case mfa
+}
+
+/// The login second-factor challenge carried on a `.mfa` auth state (ENG-6906).
+public struct MfaChallenge: Codable {
+    /// `enroll` = the account has no second factor yet (the portal sets one up); `verify` = satisfy an existing one.
+    public let mode: String
+    /// The step within the flow (`prompt`, `show_secret`, …).
+    public let step: String
+    /// verify: the factors the account holds (`passkey`, `totp`, `backup_code`, `password`, `pin`);
+    /// enroll: the methods the partner offers.
+    public let methods: [String]?
+    public let attemptsRemaining: Int?
+
+    public init(mode: String, step: String, methods: [String]? = nil, attemptsRemaining: Int? = nil) {
+        self.mode = mode
+        self.step = step
+        self.methods = methods
+        self.attemptsRemaining = attemptsRemaining
+    }
 }
 
 /// Authentication state returned by signUpOrLogIn
@@ -124,6 +146,8 @@ public struct AuthState: Codable {
     public let loginAuthMethods: [String]?
     /// Available signup auth methods returned by the bridge
     public let signupAuthMethods: [String]?
+    /// The login second-factor challenge, present while `stage == .mfa`
+    public let secondFactor: MfaChallenge?
 
     /// Information about a biometric authentication device
     public struct BiometricHint: Codable {
@@ -163,7 +187,8 @@ public struct AuthState: Codable {
         loginUrl: String? = nil,
         nextStage: AuthStage? = nil,
         loginAuthMethods: [String]? = nil,
-        signupAuthMethods: [String]? = nil
+        signupAuthMethods: [String]? = nil,
+        secondFactor: MfaChallenge? = nil
     ) {
         self.stage = stage
         self.userId = userId
@@ -181,6 +206,7 @@ public struct AuthState: Codable {
         self.nextStage = nextStage
         self.loginAuthMethods = loginAuthMethods
         self.signupAuthMethods = signupAuthMethods
+        self.secondFactor = secondFactor
     }
 
     // MARK: - Codable implementation
@@ -191,6 +217,7 @@ public struct AuthState: Codable {
         case email, phone
         case passkeyUrl, passkeyId, passkeyKnownDeviceUrl, passwordUrl, biometricHints
         case loginUrl, nextStage, loginAuthMethods, signupAuthMethods
+        case secondFactor = "mfa"
     }
 
     /// Initialize from decoder
@@ -216,5 +243,6 @@ public struct AuthState: Codable {
         nextStage = try container.decodeIfPresent(AuthStage.self, forKey: .nextStage)
         loginAuthMethods = try container.decodeIfPresent([String].self, forKey: .loginAuthMethods)
         signupAuthMethods = try container.decodeIfPresent([String].self, forKey: .signupAuthMethods)
+        secondFactor = try container.decodeIfPresent(MfaChallenge.self, forKey: .secondFactor)
     }
 }

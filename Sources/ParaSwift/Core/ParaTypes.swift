@@ -24,6 +24,10 @@ public enum ParaError: Error, CustomStringConvertible, LocalizedError {
     case notImplemented(String)
     /// A signing operation was denied by a permissions policy and requires user approval.
     case transactionDenied(pendingTransactionId: String, transactionReviewUrl: String?)
+    /// A native passkey login was refused because the passkey is the account's login SECOND factor (its key
+    /// share moved to the Para enclave). Sign the user in with email, phone or a social login; the portal then
+    /// asks for this passkey as the second step.
+    case passkeyIsSecondFactor
 
     public var description: String {
         switch self {
@@ -37,6 +41,8 @@ public enum ParaError: Error, CustomStringConvertible, LocalizedError {
             "Feature not implemented: \(feature)"
         case let .transactionDenied(id, _):
             "Transaction requires approval (pending: \(id))"
+        case .passkeyIsSecondFactor:
+            "This passkey is the account's second factor and cannot sign in on its own. Sign in with email, phone or a social login first."
         }
     }
 
@@ -53,6 +59,8 @@ public enum ParaError: Error, CustomStringConvertible, LocalizedError {
             return "Feature not implemented: \(feature)"
         case let .transactionDenied(id, _):
             return "Transaction requires approval (pending: \(id))"
+        case .passkeyIsSecondFactor:
+            return "Sign in with your email, phone or social account first, then verify with this passkey."
         }
     }
 }
