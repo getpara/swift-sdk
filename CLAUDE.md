@@ -4,18 +4,15 @@ Swift SDK for Para wallet infrastructure (iOS).
 
 ## Build Commands
 
-> **Note:** The Xcode workspace (`ParaSwift.xcworkspace`) lives in the parent directory. It includes both `swift-sdk` and the example apps.
-
 ### Build the Swift package
 
+Run from the SDK directory. Inspect available schemes with `xcodebuild -list`, then build the `ParaSwift` package scheme for an iOS Simulator:
+
 ```bash
-xcodebuild \
-  -workspace ../ParaSwift.xcworkspace \
-  -scheme ParaSwift \
-  -sdk iphonesimulator \
-  -configuration Release \
-  build
+xcodebuild -scheme ParaSwift -destination 'generic/platform=iOS Simulator' -configuration Release build
 ```
+
+A parent `ParaSwift.xcworkspace` is not part of this checkout and is not required.
 
 ### Format and Lint
 
@@ -24,35 +21,22 @@ swiftformat --swiftversion 6.1 .
 ```
 > Run `swiftformat` before committing.
 
-## E2E Tests
-> Note: There are no unit tests for swift-sdk. E2E tests are preferred (see below).
+## Tests
 
-> **Location:**
-> All E2E/XCTest UI tests live in the sibling `examples-hub` repo under
-> `examples-hub/mobile/with-swift/exampleUITests`.
+Unit tests live in `Tests/ParaSwiftTests/` and are declared by the `ParaSwiftTests` target in `Package.swift`. Use Xcode's package test scheme with an installed iOS Simulator; this package targets iOS rather than macOS.
 
-To run them from the parent workspace:
+E2E/XCTest UI tests live in the canonical sibling `web-sdk/examples-hub/mobile/with-swift/exampleUITests/`. The standalone `examples-hub` repo is a mirror; make example changes in `web-sdk`.
 
-1. **Run every E2E test**
-   ```bash
-   xcodebuild \
-     -workspace ../ParaSwift.xcworkspace \
-     -scheme Example \
-     -sdk iphonesimulator \
-     -destination "platform=iOS Simulator,name=iPhone 16 Pro" \
-     test
-   ```
+From `web-sdk/examples-hub/mobile/with-swift`, run:
 
-2. **Run a single E2E test method**
-   ```bash
-   xcodebuild \
-     -workspace ../ParaSwift.xcworkspace \
-     -scheme Example \
-     -sdk iphonesimulator \
-     -destination "platform=iOS Simulator,name=iPhone 16 Pro" \
-     test \
-     -only-testing:exampleUITests/ExampleUITests/<testMethodName>
-   ```
+```bash
+xcodebuild -project example.xcodeproj -scheme Example -testPlan Example \
+  -destination 'platform=iOS Simulator,id=<SIMULATOR_ID>' test
+```
+
+Choose an installed simulator using `xcrun simctl list devices available`. To select one test, add `-only-testing:exampleUITests/<TestClass>/<testMethodName>`. Test classes include `AuthenticationUITests`, `EVMWalletUITests`, `SolanaWalletUITests`, and `CosmosWalletUITests`.
+
+The example project references the SDK as a package dependency. Check that dependency points to the SDK revision you intend to test; see `.github/workflows/run-ui-tests.yml` for the CI setup.
 
 ## Code Guidelines
 - Swift tools version: 5.10 (see Package.swift for current target)
