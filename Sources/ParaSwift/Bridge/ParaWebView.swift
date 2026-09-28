@@ -169,10 +169,11 @@ public class ParaWebView: NSObject, ObservableObject {
     /// - Parameters:
     ///   - method: The method name to call
     ///   - payload: The payload object to pass to the method
+    ///   - timeout: Overrides the request timeout for a call that can legitimately run longer
     /// - Returns: The result from the JavaScript call
     /// - Throws: ParaWebViewError if the WebView is not ready or if the request fails
     @discardableResult
-    public func postMessage(method: String, payload: Encodable) async throws -> Any? {
+    public func postMessage(method: String, payload: Encodable, timeout: TimeInterval? = nil) async throws -> Any? {
         guard isReady else {
             logger.error("WebView not ready for \(method)")
             throw ParaWebViewError.webViewNotReady
@@ -213,7 +214,7 @@ public class ParaWebView: NSObject, ObservableObject {
             }
 
             let timeoutTask: Task<Void, Never> = Task { [weak self] in
-                let duration = self?.requestTimeout ?? 120.0
+                let duration = timeout ?? self?.requestTimeout ?? 120.0
                 do {
                     try await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
                     self?.logger.warning("Request timed out: method=\(method) requestId=\(requestId)")
@@ -267,6 +268,10 @@ public class ParaWebView: NSObject, ObservableObject {
         } else {
             finalArgs["isPasskeySupported"] = false
         }
+
+        // This SDK drives auth v2 through `authenticateWithEmailOrPhone`. The bridge keeps the stage-based methods
+        // on the legacy flow regardless, so declaring it changes nothing for apps that don't call that method.
+        finalArgs["supportsAuthV2"] = true
 
         guard let jsonData = try? JSONSerialization.data(withJSONObject: finalArgs, options: []),
               let jsonString = String(data: jsonData, encoding: .utf8)

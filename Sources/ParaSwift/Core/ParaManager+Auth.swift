@@ -28,6 +28,10 @@ extension ParaManager {
             throw ParaError.bridgeError("Invalid result format from authentication call")
         }
 
+        if resultDict["stage"] == nil, resultDict["verificationUrl"] != nil || resultDict["isCredentialSetup"] != nil {
+            throw ParaError.error("This sign-in is running on Para auth v2, which the stage-based methods don't support. Use authenticateWithEmailOrPhone.")
+        }
+
         guard let stageString = resultDict["stage"] as? String,
               let stage = AuthStage(rawValue: stageString),
               let userId = resultDict["userId"] as? String
@@ -249,7 +253,16 @@ public extension ParaManager {
         logger.debug("Initiating auth flow with: \(auth.debugDescription)")
         let authState = try await signUpOrLogIn(auth: auth)
         logger.debug("Auth flow initiated. Resulting stage: \(authState.stage.rawValue)")
+        return try await completeHostedAuthIfNeeded(authState, webAuthenticationSession: overrideSession)
+    }
 
+    /// Finishes a `signUpOrLogIn` result that needs no app UI: an already-complete (`.done`) flow, or a hosted
+    /// one-click flow when a web authentication session is available. Otherwise returns the state unchanged.
+    @MainActor
+    internal func completeHostedAuthIfNeeded(
+        _ authState: AuthState,
+        webAuthenticationSession overrideSession: WebAuthenticationSession?
+    ) async throws -> AuthState {
         if authState.stage == .done {
             logger.debug("Auth flow returned .done stage (SLO/enclave user). Finalizing session.")
             await finalizeHostedAuthFlow(initialStage: .done)
@@ -970,7 +983,7 @@ public extension ParaManager {
     ///
     /// - Parameter authState: The current authentication state
     /// - Returns: The recommended signup method to use
-    private func determinePreferredSignupMethod(authState: AuthState) -> SignupMethod? {
+    internal func determinePreferredSignupMethod(authState: AuthState) -> SignupMethod? {
         guard authState.stage == .signup else {
             logger.error("determinePreferredSignupMethod called with invalid stage: \(authState.stage.rawValue)")
             return nil

@@ -73,7 +73,6 @@ public class ParaManager: NSObject, ObservableObject {
     ///   - environment: The Para environment configuration.
     ///   - apiKey: Your Para API key.
     ///   - appScheme: Optional app scheme for authentication callbacks. Defaults to the app's bundle identifier.
-    ///   - sessionPersistence: Optional persistence controller for session snapshots.
     public init(
         environment: ParaEnvironment,
         apiKey: String,
@@ -184,12 +183,13 @@ public class ParaManager: NSObject, ObservableObject {
     /// - Parameters:
     ///   - method: The method name to call
     ///   - payload: The payload to pass
+    ///   - timeout: Overrides the bridge request timeout for a call that can legitimately run longer
     /// - Returns: The response from the bridge
-    func postMessage(method: String, payload: Encodable) async throws -> Any? {
+    func postMessage(method: String, payload: Encodable, timeout: TimeInterval? = nil) async throws -> Any? {
         logger.debug("Calling bridge method: \(method)")
 
         do {
-            let result: Any? = try await self.paraWebView.postMessage(method: method, payload: payload)
+            let result: Any? = try await self.paraWebView.postMessage(method: method, payload: payload, timeout: timeout)
             return result
         } catch let error as ParaWebViewError {
             logger.error("Bridge error for \(method): \(error.localizedDescription)")
