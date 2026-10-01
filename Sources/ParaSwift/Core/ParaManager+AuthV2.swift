@@ -407,11 +407,9 @@ extension ParaManager {
     /// Core has already created any wallets a new user needs, so this only syncs local state.
     @MainActor
     private func finishAuthV2(isNewUser: Bool) async throws -> AuthenticationResult {
-        do {
-            try await ensureTransmissionKeysharesLoaded()
-        } catch {
-            logger.warning("Failed to load transmission keyshares after auth v2: \(error.localizedDescription)")
-        }
+        // Core's wallet setup already loaded and decrypted the transmitted shares, then discarded the login
+        // key pair; loading them again here would fail on the missing key.
+        transmissionKeysharesLoaded = true
         do {
             wallets = try await fetchWallets()
         } catch {
