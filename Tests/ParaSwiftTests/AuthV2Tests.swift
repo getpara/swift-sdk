@@ -80,26 +80,60 @@ final class AuthV2Tests: XCTestCase {
         XCTAssertNil(AuthV2FirstStep.resolve(snapshot(info: ["isNewUser": true]), nativePasskeySupported: true))
     }
 
-    func testCredentialSetupPrefersThePasskeyCreatePage() {
+    func testCredentialSetupCreatesThePasskeyNatively() {
         let state = snapshot(info: [
             "isCredentialSetup": true,
+            "passkeyId": "bio-1",
             "passkeyUrl": "https://portal/createAuth?flowId=f1",
             "passwordUrl": "https://portal/createPassword?flowId=f1",
         ])
 
-        XCTAssertEqual(state.credentialSetupUrl, "https://portal/createAuth?flowId=f1")
+        XCTAssertEqual(state.credentialSetupStep, .nativePasskey(biometricsId: "bio-1"))
+    }
+
+    func testCredentialSetupWithOnlyAPendingPasskeyEndsTheWait() {
+        let state = snapshot(authPhase: "waiting_for_session", info: ["isCredentialSetup": true, "passkeyId": "bio-1"])
+
+        XCTAssertNotNil(state.credentialSetupStep)
+    }
+
+    func testCredentialSetupOpensThePasswordCreatePageWithoutAPendingPasskey() {
+        let state = snapshot(info: [
+            "isCredentialSetup": true,
+            "passkeyId": NSNull(),
+            "passwordUrl": "https://portal/createPassword?flowId=f1",
+            "pinUrl": "https://portal/createPIN?flowId=f1",
+        ])
+
+        XCTAssertEqual(
+            state.credentialSetupStep,
+            .portal(url: "https://portal/createPassword?flowId=f1", context: "password setup")
+        )
     }
 
     func testCredentialSetupFallsBackToThePinCreatePage() {
         let state = snapshot(info: ["isCredentialSetup": true, "pinUrl": "https://portal/createPIN?flowId=f1"])
 
-        XCTAssertEqual(state.credentialSetupUrl, "https://portal/createPIN?flowId=f1")
+        XCTAssertEqual(state.credentialSetupStep, .portal(url: "https://portal/createPIN?flowId=f1", context: "PIN setup"))
+    }
+
+    func testCredentialSetupUsesThePortalPasskeyPageOnlyAsALastResort() {
+        let state = snapshot(info: ["isCredentialSetup": true, "passkeyUrl": "https://portal/createAuth?flowId=f1"])
+
+        XCTAssertEqual(
+            state.credentialSetupStep,
+            .portal(url: "https://portal/createAuth?flowId=f1", context: "passkey setup")
+        )
     }
 
     func testNoCredentialSetupOutsideTheSetupProjection() {
-        let state = snapshot(info: ["isCredentialSetup": false, "passkeyUrl": "https://portal/loginAuth?flowId=f1"])
+        let state = snapshot(info: [
+            "isCredentialSetup": false,
+            "passkeyId": "bio-1",
+            "passkeyUrl": "https://portal/loginAuth?flowId=f1",
+        ])
 
-        XCTAssertNil(state.credentialSetupUrl)
+        XCTAssertNil(state.credentialSetupStep)
     }
 
     func testPhasesAndFailures() {

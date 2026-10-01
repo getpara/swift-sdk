@@ -16,6 +16,8 @@ struct AuthV2Snapshot {
     let hasPasskey: Bool
     let isCredentialSetup: Bool
     let passkeyUrl: String?
+    /// The pending passkey row core minted for a new user's credential setup; native creation completes it.
+    let passkeyId: String?
     let passwordUrl: String?
     let pinUrl: String?
     let verificationUrl: String?
@@ -29,6 +31,7 @@ struct AuthV2Snapshot {
         hasPasskey = info["hasPasskey"] as? Bool ?? false
         isCredentialSetup = info["isCredentialSetup"] as? Bool ?? false
         passkeyUrl = info["passkeyUrl"] as? String
+        passkeyId = info["passkeyId"] as? String
         passwordUrl = info["passwordUrl"] as? String
         pinUrl = info["pinUrl"] as? String
         verificationUrl = info["verificationUrl"] as? String
@@ -52,11 +55,29 @@ struct AuthV2Snapshot {
         return error ?? "Authentication failed"
     }
 
-    /// The portal create page for a new user's first credential, once the session is minted.
-    /// Passkey first, matching the legacy signup preference; PIN for partners that only offer PIN.
-    var credentialSetupUrl: String? {
-        guard isCredentialSetup else { return nil }
-        return passkeyUrl ?? passwordUrl ?? pinUrl
+    /// How a new user creates their first credential, once the session is minted.
+    var credentialSetupStep: AuthV2CredentialSetupStep? {
+        AuthV2CredentialSetupStep.resolve(self)
+    }
+}
+
+/// How a new user creates the first credential their account owes.
+enum AuthV2CredentialSetupStep: Equatable {
+    /// Create the passkey natively against the pending row core minted, as the legacy native signup does.
+    /// The portal's create page can't run WebAuthn inside a web authentication session.
+    case nativePasskey(biometricsId: String)
+    /// Open this portal create page.
+    case portal(url: String, context: String)
+
+    /// Passkey first, matching the legacy signup preference; then password, then PIN for partners that only
+    /// offer PIN. The portal passkey page is a last resort for a projection without a pending passkey row.
+    static func resolve(_ snapshot: AuthV2Snapshot) -> AuthV2CredentialSetupStep? {
+        guard snapshot.isCredentialSetup else { return nil }
+        if let id = snapshot.passkeyId { return .nativePasskey(biometricsId: id) }
+        if let url = snapshot.passwordUrl { return .portal(url: url, context: "password setup") }
+        if let url = snapshot.pinUrl { return .portal(url: url, context: "PIN setup") }
+        if let url = snapshot.passkeyUrl { return .portal(url: url, context: "passkey setup") }
+        return nil
     }
 }
 
@@ -94,8 +115,8 @@ public extension ParaManager {
     /// Signs a user up or in with their email or phone, running the whole flow to an authenticated session.
     ///
     /// Works on both Para auth flows. Where Para auth v2 is enabled, the user verifies in the Para portal (so a
-    /// `WebAuthenticationSession` is required) and creates their first credential there; returning passkey
-    /// users still sign in with their native passkey. Everywhere else this runs the legacy flow, asking
+    /// `WebAuthenticationSession` is required). A new user creates their first credential natively when it's a
+    /// passkey, and in the portal otherwise; returning passkey users still sign in with their native passkey. Everywhere else this runs the legacy flow, asking
     /// `verificationCodeProvider` for the code the user was sent.
     ///
     /// - Parameters:
@@ -308,10 +329,25 @@ extension ParaManager {
                 // After the portal closes the session is live, or a new user still owes their first credential.
                 // Allow for wallet creation, which runs before core reports authenticated.
                 let afterPortal = try await waitForAuthV2State(pending, timeout: 180) {
-                    $0.isAuthenticated || $0.credentialSetupUrl != nil
+                    $0.isAuthenticated || $0.credentialSetupStep != nil
                 }
-                if !afterPortal.isAuthenticated, let setupUrl = afterPortal.credentialSetupUrl {
-                    try await presentAuthV2Portal(setupUrl, context: "credential setup", session: session, pending: pending)
+                if !afterPortal.isAuthenticated, let setupStep = afterPortal.credentialSetupStep {
+                    switch setupStep {
+                    case let .nativePasskey(biometricsId):
+                        guard let identifier = auth.email ?? auth.phone else {
+                            throw ParaError.error("Missing user identifier for passkey setup.")
+                        }
+                        // Completing the pending row binds the passkey to this session, so core's session poll
+                        // finishes the flow. The passkey keeps device custody of the wallet key.
+                        try await generatePasskey(
+                            identifier: identifier,
+                            biometricsId: biometricsId,
+                            authorizationController: authorizationController
+                        )
+                    case let .portal(url, context):
+                        try await presentAuthV2Portal(url, context: context, session: session, pending: pending)
+                    }
+                    // Core creates the wallets once the credential is in place.
                     _ = try await waitForAuthV2State(pending, timeout: 180) { $0.isAuthenticated }
                 }
             }
@@ -344,7 +380,7 @@ extension ParaManager {
         } catch {
             try await Task.sleep(nanoseconds: 1_000_000_000)
             if let snapshot = try? await fetchAuthV2Snapshot(),
-               snapshot.isAuthenticated || snapshot.credentialSetupUrl != nil
+               snapshot.isAuthenticated || snapshot.credentialSetupStep != nil
             {
                 return
             }
