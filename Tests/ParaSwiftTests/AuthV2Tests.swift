@@ -26,6 +26,27 @@ final class AuthV2Tests: XCTestCase {
         XCTAssertNotNil(contract as Any)
     }
 
+    func testOwingCredentialSetupProvesVerificationButNotSetup() {
+        let owing = snapshot(authPhase: "waiting_for_session", info: [
+            "isNewUser": true, "isCredentialSetup": true, "passwordUrl": "https://portal/setup",
+        ])
+
+        // Closing the verification page once setup is owed carries on to setup...
+        XCTAssertTrue(owing.isPastVerification)
+        // ...but closing the setup page while it is still owed is a cancellation.
+        XCTAssertFalse(owing.isPastCredentialSetup)
+    }
+
+    func testCredentialSetupIsDoneOnceNoLongerOwedOnALiveFlow() {
+        let settled = snapshot(authPhase: "waiting_for_session", info: ["isNewUser": true])
+        let signedIn = snapshot(corePhase: "authenticated", authPhase: "authenticated", info: [:])
+        let cancelled = snapshot(authPhase: "unauthenticated", info: [:])
+
+        XCTAssertTrue(settled.isPastCredentialSetup)
+        XCTAssertTrue(signedIn.isPastCredentialSetup)
+        XCTAssertFalse(cancelled.isPastCredentialSetup)
+    }
+
     func testReturningPasskeyUserSignsInWithTheNativePasskey() {
         let state = snapshot(info: [
             "isNewUser": false,

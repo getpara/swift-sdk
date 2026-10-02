@@ -1,5 +1,6 @@
 import AuthenticationServices
 import Foundation
+import LocalAuthentication
 import SwiftUI
 
 // MARK: - Auth v2 state
@@ -65,6 +66,17 @@ struct AuthV2Snapshot {
     /// How a new user creates their first credential, once the session is minted.
     var credentialSetupStep: AuthV2CredentialSetupStep? {
         AuthV2CredentialSetupStep.resolve(self)
+    }
+
+    /// The portal finished its verification step: the session is live, or a credential setup became owed.
+    var isPastVerification: Bool {
+        isAuthenticated || credentialSetupStep != nil
+    }
+
+    /// The portal finished the credential-setup step: signed in, or no longer owing a credential while the flow is
+    /// still live. Setup is already owed before that page opens, so owing it proves nothing.
+    var isPastCredentialSetup: Bool {
+        isAuthenticated || (credentialSetupStep == nil && authPhase != "unauthenticated" && authPhase != "error")
     }
 }
 
@@ -311,8 +323,9 @@ extension ParaManager {
             }
 
             if !started.isAuthenticated {
-                // The package targets iOS 16.4+, where native passkeys are always available.
-                guard let step = AuthV2FirstStep.resolve(started, nativePasskeySupported: true) else {
+                // Like the legacy flow, returning passkey users sign in natively, but only where this device can run
+                // a native passkey; otherwise they unlock on the portal (e.g. with their password).
+                guard let step = AuthV2FirstStep.resolve(started, nativePasskeySupported: nativePasskeyAvailable()) else {
                     throw ParaError.error("No sign-in method is available for this account.")
                 }
 
@@ -361,25 +374,30 @@ extension ParaManager {
 
     /// Presents a v2 portal page and returns the deep link it closed on. If the user dismisses the sheet after the
     /// portal already finished its step, the sign-in carries on (returning nil) instead of being cancelled.
+    /// `stepFinished` says what proves that; the credential-setup page passes a stricter check than verification.
     @MainActor
     @discardableResult
     func presentAuthV2Portal(
         _ url: String,
         context: String,
         session: WebAuthenticationSession,
-        pending: PendingAuthCall
+        pending: PendingAuthCall,
+        stepFinished: (AuthV2Snapshot) -> Bool = { $0.isPastVerification }
     ) async throws -> URL? {
         do {
             return try await presentAuthUrl(url, context: context, webAuthenticationSession: session)
         } catch {
             try await Task.sleep(nanoseconds: 1_000_000_000)
-            if let snapshot = try? await fetchAuthV2Snapshot(),
-               snapshot.isAuthenticated || snapshot.credentialSetupStep != nil
-            {
+            if let snapshot = try? await fetchAuthV2Snapshot(), stepFinished(snapshot) {
                 return nil
             }
             throw error
         }
+    }
+
+    /// Whether this device can run a native passkey: passkeys need a device passcode.
+    func nativePasskeyAvailable() -> Bool {
+        LAContext().canEvaluatePolicy(.deviceOwnerAuthentication, error: nil)
     }
 
     /// The shared tail of every portal-verified v2 sign-in. After the portal closes the session is live, or a new
@@ -408,7 +426,13 @@ extension ParaManager {
                 authorizationController: authorizationController
             )
         case let .portal(url, context):
-            try await presentAuthV2Portal(url, context: context, session: session, pending: pending)
+            try await presentAuthV2Portal(
+                url,
+                context: context,
+                session: session,
+                pending: pending,
+                stepFinished: { $0.isPastCredentialSetup }
+            )
         }
         // Core creates the wallets once the credential is in place.
         _ = try await waitForAuthV2State(pending, timeout: 180) { $0.isAuthenticated }
