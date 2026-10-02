@@ -103,7 +103,7 @@ extension ParaManager {
         try await ensureWebViewReady()
 
         // Step 1: Prepare and get the OAuth URL
-        logger.debug("Getting OAuth URL for provider: \(provider.rawValue) and appScheme: \(appScheme)")
+        logger.debug("Getting OAuth URL for provider: \(provider.rawValue) and appScheme: \(self.appScheme)")
         let oAuthParams = OAuthUrlParams(method: provider.rawValue, appScheme: appScheme)
 
         let oAuthUrlResult = try await paraWebView.postMessage(method: "getOAuthUrl", payload: oAuthParams)
