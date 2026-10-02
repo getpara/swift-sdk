@@ -452,6 +452,25 @@ public extension ParaManager {
         email: String? = nil,
         phone: String? = nil,
     ) async throws {
+        try await loginWithPasskey(
+            authorizationController: authorizationController,
+            email: email,
+            phone: phone,
+            expectedUserId: nil
+        )
+    }
+}
+
+extension ParaManager {
+    /// Passkey login that, given `expectedUserId`, refuses a passkey belonging to any other account. Used where
+    /// the account is already known (an auth v2 flow parked on its passkey) but no email/phone narrows the list.
+    @MainActor
+    func loginWithPasskey(
+        authorizationController: AuthorizationController,
+        email: String?,
+        phone: String?,
+        expectedUserId: String?
+    ) async throws {
         if let email {
             logger.debug("Passkey login with email: \(email)")
         } else if let phone {
@@ -511,6 +530,12 @@ public extension ParaManager {
 
         let userId = try decodeResult(verifyWebChallengeResult, expectedType: String.self, method: "verifyWebChallenge")
 
+        if let expectedUserId, userId != expectedUserId {
+            // The challenge verification already bound this session to the other account; drop it.
+            try? await logout()
+            throw ParaError.error("That passkey belongs to a different account. Choose the passkey for this account.")
+        }
+
         let loginArgs = LoginWithPasskeyArgs(
             userId: userId,
             credentialsId: id,
@@ -533,7 +558,9 @@ public extension ParaManager {
         sessionState = .activeLoggedIn
         await persistCurrentSession(reason: "loginWithPasskey")
     }
+}
 
+public extension ParaManager {
     /// Generate a new passkey for authentication
     /// - Parameters:
     ///   - identifier: The user identifier
@@ -763,6 +790,25 @@ public extension ParaManager {
     /// - Parameters:
     ///   - wallet: Information about the external wallet
     func loginExternalWallet(wallet: ExternalWalletInfo) async throws {
+        try await performLoginExternalWallet(wallet: wallet)
+    }
+
+    /// Logs in with an external wallet address (legacy version)
+    /// - Parameters:
+    ///   - externalAddress: The external wallet address
+    ///   - type: The type of wallet (e.g. "EVM")
+    func loginExternalWallet(externalAddress: String, type: String) async throws {
+        let walletType = ExternalWalletType(rawValue: type) ?? .evm
+        let wallet = ExternalWalletInfo(address: externalAddress, type: walletType)
+        try await loginExternalWallet(wallet: wallet)
+    }
+}
+
+extension ParaManager {
+    /// The stage-based external wallet login behind `loginExternalWallet(wallet:)`. Returns the parsed auth state
+    /// for a sign-in wallet, nil for a connection-only one.
+    @discardableResult
+    func performLoginExternalWallet(wallet: ExternalWalletInfo) async throws -> AuthState? {
         try await ensureWebViewReady()
 
         // Create a payload with the wallet info wrapped in externalWallet property
@@ -778,6 +824,7 @@ public extension ParaManager {
         // Process the result
         // For connection-only wallets, the response is just { userId: "EXTERNAL_WALLET_CONNECTION_ONLY" }
         // For full auth wallets, it would be a full AuthState object
+        var authState: AuthState?
         if wallet.isConnectionOnly == true {
             // Connection-only mode - just verify we got a response
             if let resultDict = authStateResult as? [String: Any],
@@ -791,7 +838,7 @@ public extension ParaManager {
         } else {
             // Full auth mode - parse as AuthState
             do {
-                _ = try parseAuthStateFromResult(authStateResult)
+                authState = try parseAuthStateFromResult(authStateResult)
                 logger.debug("loginExternalWallet completed for address: \(wallet.address)")
             } catch let parseError {
                 logger.error("loginExternalWallet: Failed to parse result: \(parseError.localizedDescription)")
@@ -805,16 +852,7 @@ public extension ParaManager {
 
         sessionState = .activeLoggedIn
         await persistCurrentSession(reason: "loginExternalWallet")
-    }
-
-    /// Logs in with an external wallet address (legacy version)
-    /// - Parameters:
-    ///   - externalAddress: The external wallet address
-    ///   - type: The type of wallet (e.g. "EVM")
-    func loginExternalWallet(externalAddress: String, type: String) async throws {
-        let walletType = ExternalWalletType(rawValue: type) ?? .evm
-        let wallet = ExternalWalletInfo(address: externalAddress, type: walletType)
-        try await loginExternalWallet(wallet: wallet)
+        return authState
     }
 }
 

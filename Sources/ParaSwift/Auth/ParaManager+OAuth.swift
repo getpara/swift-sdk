@@ -66,6 +66,18 @@ extension ParaManager {
             throw ParaError.error("Missing WebAuthenticationSession. Call setDefaultWebAuthenticationSession(_:) or pass one in.")
         }
 
+        try await runLegacyOAuth(provider: provider, session: session, authorizationController: authorizationController)
+    }
+
+    /// The legacy OAuth flow behind `handleOAuth`. Returns whether it created the account.
+    @discardableResult
+    func runLegacyOAuth(
+        provider: OAuthProvider,
+        session: WebAuthenticationSession,
+        authorizationController: AuthorizationController
+    ) async throws -> Bool {
+        let logger = Logger(subsystem: "com.paraSwift", category: "OAuth")
+
         // Step 1: Get OAuth verification
         logger.debug("Starting OAuth flow for provider: \(provider.rawValue)")
         let authState = try await verifyOAuth(provider: provider, webAuthenticationSession: session)
@@ -76,6 +88,7 @@ extension ParaManager {
             authorizationController: authorizationController,
             logger: logger,
         )
+        return authState.stage == .signup
     }
 
     // MARK: - Private OAuth Helper Methods

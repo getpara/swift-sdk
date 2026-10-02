@@ -21,6 +21,10 @@ struct AuthV2Snapshot {
     let passwordUrl: String?
     let pinUrl: String?
     let verificationUrl: String?
+    /// The portal page that starts an OAuth provider round-trip.
+    let oauthUrl: String?
+    /// The account the flow resolved to, once known.
+    let userId: String?
 
     init(_ dict: [String: Any]) {
         let info = dict["authStateInfo"] as? [String: Any] ?? [:]
@@ -35,6 +39,9 @@ struct AuthV2Snapshot {
         passwordUrl = info["passwordUrl"] as? String
         pinUrl = info["pinUrl"] as? String
         verificationUrl = info["verificationUrl"] as? String
+        // The full URL never needs the shortener round-trip; the short one is only a fallback.
+        oauthUrl = info["oauthFullUrl"] as? String ?? info["oauthUrl"] as? String
+        userId = info["userId"] as? String
     }
 
     /// The whole flow — session and wallets — is done.
@@ -165,18 +172,18 @@ private struct AuthV2Payload: Encodable {
     }
 }
 
-private struct EmptyAuthV2Payload: Encodable {}
+struct EmptyAuthV2Payload: Encodable {}
 
-/// Tracks the pending `authenticateWithEmailOrPhone` bridge call. Completion is read from core state; the
-/// call's own result only matters when it fails.
+/// Tracks a pending long-running v2 bridge call (`authenticateWithEmailOrPhone`, `authenticateWithOAuth`).
+/// Completion is read from core state; the call's own result only matters when it fails.
 @MainActor
-private final class PendingAuthCall {
+final class PendingAuthCall {
     var failure: Error?
 }
 
 /// Upper bound for the long-running v2 bridge call. Core rejects it on its own well before this, so the native
 /// request timeout never fires mid sign-in.
-private let authV2CallTimeout: TimeInterval = 900
+let authV2CallTimeout: TimeInterval = 900
 
 /// Core's limit on retrying a rejected verification code before it fails the flow.
 private let maxVerificationRetries = 3
@@ -326,29 +333,15 @@ extension ParaManager {
             }
 
             if !started.isAuthenticated, !signedInWithNativePasskey {
-                // After the portal closes the session is live, or a new user still owes their first credential.
-                // Allow for wallet creation, which runs before core reports authenticated.
-                let afterPortal = try await waitForAuthV2State(pending, timeout: 180) {
-                    $0.isAuthenticated || $0.credentialSetupStep != nil
-                }
-                if !afterPortal.isAuthenticated, let setupStep = afterPortal.credentialSetupStep {
-                    switch setupStep {
-                    case let .nativePasskey(biometricsId):
-                        guard let identifier = auth.email ?? auth.phone else {
-                            throw ParaError.error("Missing user identifier for passkey setup.")
-                        }
-                        // Completing the pending row binds the passkey to this session, so core's session poll
-                        // finishes the flow. The passkey keeps device custody of the wallet key.
-                        try await generatePasskey(
-                            identifier: identifier,
-                            biometricsId: biometricsId,
-                            authorizationController: authorizationController
-                        )
-                    case let .portal(url, context):
-                        try await presentAuthV2Portal(url, context: context, session: session, pending: pending)
+                try await completeAuthV2AfterPortal(
+                    pending: pending,
+                    session: session,
+                    authorizationController: authorizationController
+                ) {
+                    guard let identifier = auth.email ?? auth.phone else {
+                        throw ParaError.error("Missing user identifier for passkey setup.")
                     }
-                    // Core creates the wallets once the credential is in place.
-                    _ = try await waitForAuthV2State(pending, timeout: 180) { $0.isAuthenticated }
+                    return identifier
                 }
             }
         } catch {
@@ -366,32 +359,65 @@ extension ParaManager {
         return try await finishAuthV2(isNewUser: finished?.isNewUser ?? started.isNewUser)
     }
 
-    /// Presents a v2 portal page. If the user dismisses the sheet after the portal already finished its step,
-    /// the sign-in carries on instead of being cancelled.
+    /// Presents a v2 portal page and returns the deep link it closed on. If the user dismisses the sheet after the
+    /// portal already finished its step, the sign-in carries on (returning nil) instead of being cancelled.
     @MainActor
-    private func presentAuthV2Portal(
+    @discardableResult
+    func presentAuthV2Portal(
         _ url: String,
         context: String,
         session: WebAuthenticationSession,
         pending: PendingAuthCall
-    ) async throws {
+    ) async throws -> URL? {
         do {
-            try await presentAuthUrl(url, context: context, webAuthenticationSession: session)
+            return try await presentAuthUrl(url, context: context, webAuthenticationSession: session)
         } catch {
             try await Task.sleep(nanoseconds: 1_000_000_000)
             if let snapshot = try? await fetchAuthV2Snapshot(),
                snapshot.isAuthenticated || snapshot.credentialSetupStep != nil
             {
-                return
+                return nil
             }
             throw error
         }
     }
 
+    /// The shared tail of every portal-verified v2 sign-in. After the portal closes the session is live, or a new
+    /// user still owes their first credential: a passkey is created natively against the pending row core minted,
+    /// anything else in the portal. Waits until core reports the whole flow (wallets included) authenticated.
+    @MainActor
+    func completeAuthV2AfterPortal(
+        pending: PendingAuthCall,
+        session: WebAuthenticationSession,
+        authorizationController: AuthorizationController,
+        passkeyIdentifier: @MainActor () async throws -> String
+    ) async throws {
+        // Allow for wallet creation, which runs before core reports authenticated.
+        let afterPortal = try await waitForAuthV2State(pending, timeout: 180) {
+            $0.isAuthenticated || $0.credentialSetupStep != nil
+        }
+        guard !afterPortal.isAuthenticated, let setupStep = afterPortal.credentialSetupStep else { return }
+
+        switch setupStep {
+        case let .nativePasskey(biometricsId):
+            // Completing the pending row binds the passkey to this session, so core's session poll finishes the
+            // flow. The passkey keeps device custody of the wallet key.
+            try await generatePasskey(
+                identifier: passkeyIdentifier(),
+                biometricsId: biometricsId,
+                authorizationController: authorizationController
+            )
+        case let .portal(url, context):
+            try await presentAuthV2Portal(url, context: context, session: session, pending: pending)
+        }
+        // Core creates the wallets once the credential is in place.
+        _ = try await waitForAuthV2State(pending, timeout: 180) { $0.isAuthenticated }
+    }
+
     /// Returns core to a clean state before a new sign-in: cancels any flow still in progress and refuses to
     /// start over a live session. Best effort on a bridge that predates `getCurrentState`.
     @MainActor
-    private func resetAuthFlowForNewSignIn() async throws {
+    func resetAuthFlowForNewSignIn() async throws {
         guard let snapshot = try? await fetchAuthV2Snapshot() else { return }
         // `authPhase` reaches authenticated before wallet setup finishes and `corePhase` follows.
         if snapshot.isAuthenticated || snapshot.authPhase == "authenticated" {
@@ -410,14 +436,14 @@ extension ParaManager {
         return snapshot.authPhase == "awaiting_account_verification"
     }
 
-    private func fetchAuthV2Snapshot() async throws -> AuthV2Snapshot {
+    func fetchAuthV2Snapshot() async throws -> AuthV2Snapshot {
         let result = try await postMessage(method: "getCurrentState", payload: EmptyAuthV2Payload())
         return AuthV2Snapshot(result as? [String: Any] ?? [:])
     }
 
     /// Polls core state until `isDone`, failing on a core error or a failed bridge call.
     @MainActor
-    private func waitForAuthV2State(
+    func waitForAuthV2State(
         _ pending: PendingAuthCall,
         timeout: TimeInterval = 60,
         failOnCoreError: Bool = true,
@@ -436,13 +462,13 @@ extension ParaManager {
         }
     }
 
-    private func cancelAuthV2Flow() async throws {
+    func cancelAuthV2Flow() async throws {
         _ = try await postMessage(method: "cancelAuthFlow", payload: EmptyAuthV2Payload())
     }
 
     /// Core has already created any wallets a new user needs, so this only syncs local state.
     @MainActor
-    private func finishAuthV2(isNewUser: Bool) async throws -> AuthenticationResult {
+    func finishAuthV2(isNewUser: Bool, reason: String = "authenticateWithEmailOrPhone-v2") async throws -> AuthenticationResult {
         // Core's wallet setup already loaded and decrypted the transmitted shares, then discarded the login
         // key pair; loading them again here would fail on the missing key.
         transmissionKeysharesLoaded = true
@@ -452,12 +478,12 @@ extension ParaManager {
             logger.warning("Failed to refresh wallets after auth v2: \(error.localizedDescription)")
         }
         sessionState = .activeLoggedIn
-        await persistCurrentSession(reason: "authenticateWithEmailOrPhone-v2")
+        await persistCurrentSession(reason: reason)
         return try await authenticationResult(isNewUser: isNewUser)
     }
 
-    private func authenticationResult(isNewUser: Bool) async throws -> AuthenticationResult {
-        guard let userId = try await getCurrentUserAuthDetails()?.userId else {
+    func authenticationResult(isNewUser: Bool, fallbackUserId: String? = nil) async throws -> AuthenticationResult {
+        guard let userId = try await getCurrentUserAuthDetails()?.userId ?? fallbackUserId else {
             throw ParaError.error("Authentication finished without an active session.")
         }
         return AuthenticationResult(userId: userId, isNewUser: isNewUser)

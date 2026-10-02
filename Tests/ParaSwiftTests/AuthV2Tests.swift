@@ -146,4 +146,66 @@ final class AuthV2Tests: XCTestCase {
         XCTAssertEqual(snapshot(authPhase: "error", error: "Flow expired", info: [:]).failure, "Flow expired")
         XCTAssertEqual(snapshot(corePhase: "error", info: [:]).failure, "Authentication failed")
     }
+
+    // MARK: OAuth and external wallet on auth v2
+
+    func testNewAuthenticateMethodsAndTheExistingOnesKeepTheirSignatures() {
+        let contract: (ParaManager, AuthorizationController) async throws -> Void = { manager, controller in
+            let _: AuthenticationResult = try await manager.authenticateWithOAuth(
+                provider: .google,
+                authorizationController: controller
+            )
+            let _: AuthenticationResult = try await manager.authenticateWithExternalWallet(
+                address: "0xabc",
+                type: .evm,
+                provider: "metamask",
+                chainId: "1"
+            ) { message in message }
+            try await manager.handleOAuth(provider: .apple, authorizationController: controller)
+            try await manager.loginExternalWallet(wallet: ExternalWalletInfo(address: "0xabc", type: .evm))
+            try await manager.loginWithPasskey(authorizationController: controller, email: "a@b.co")
+        }
+
+        XCTAssertNotNil(contract as Any)
+    }
+
+    func testOAuthSnapshotPrefersTheFullPortalUrl() {
+        let state = snapshot(info: [
+            "oauthUrl": "https://short/abc",
+            "oauthFullUrl": "https://portal/v2/login/google?flowId=f1",
+            "userId": "u1",
+        ])
+
+        XCTAssertEqual(state.oauthUrl, "https://portal/v2/login/google?flowId=f1")
+        XCTAssertEqual(state.userId, "u1")
+        XCTAssertEqual(snapshot(info: ["oauthUrl": "https://short/abc"]).oauthUrl, "https://short/abc")
+        XCTAssertNil(snapshot(info: ["oauthUrl": NSNull()]).oauthUrl)
+    }
+
+    func testPortalHandsAPasskeyParkBackToTheApp() {
+        XCTAssertEqual(
+            AuthV2PortalHandBack.resolve(URL(string: "myapp://?status=PASSKEY_REQUIRED&userId=u1")),
+            .nativePasskey(userId: "u1")
+        )
+        XCTAssertEqual(
+            AuthV2PortalHandBack.resolve(URL(string: "myapp://?status=PASSKEY_REQUIRED")),
+            .nativePasskey(userId: nil)
+        )
+    }
+
+    func testOrdinaryPortalReturnsAreNotHandBacks() {
+        XCTAssertNil(AuthV2PortalHandBack.resolve(nil))
+        XCTAssertNil(AuthV2PortalHandBack.resolve(URL(string: "myapp://")))
+        XCTAssertNil(AuthV2PortalHandBack.resolve(URL(string: "myapp://?status=COMPLETE")))
+        XCTAssertNil(AuthV2PortalHandBack.resolve(URL(string: "myapp://?status=NEW_USER")))
+    }
+
+    func testCapabilitiesDefaultToLegacy() {
+        XCTAssertEqual(NativeAuthV2Capabilities(nil), .none)
+        XCTAssertEqual(NativeAuthV2Capabilities(["oauth": true]), NativeAuthV2Capabilities(oauth: true, externalWallet: false))
+        XCTAssertEqual(
+            NativeAuthV2Capabilities(["oauth": true, "externalWallet": true]),
+            NativeAuthV2Capabilities(oauth: true, externalWallet: true)
+        )
+    }
 }
