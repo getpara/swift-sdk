@@ -103,6 +103,7 @@ extension ParaManager {
         try await ensureWebViewReady()
 
         // Step 1: Prepare and get the OAuth URL
+        // swiftformat:disable:next redundantSelf - Logger interpolation is an escaping autoclosure
         logger.debug("Getting OAuth URL for provider: \(provider.rawValue) and appScheme: \(self.appScheme)")
         let oAuthParams = OAuthUrlParams(method: provider.rawValue, appScheme: appScheme)
 
