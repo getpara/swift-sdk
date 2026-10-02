@@ -39,30 +39,16 @@ enum AuthV2PortalHandBack: Equatable {
     }
 }
 
-/// How an auth v2 external-wallet sign-in continues once the bridge has verified the wallet's signature.
-enum ExternalWalletV2Outcome: Equatable {
-    /// The session is live.
-    case authenticated(isNewUser: Bool)
-    /// A returning account whose wallet key is protected by its passkey: sign in with the native passkey, held to
-    /// this account.
-    case nativePasskey(userId: String)
-    /// A returning account protected by a password or PIN: the portal page resumes the sign-in to collect it.
-    case portal(url: String)
+/// The bridge's result for a finished auth v2 external-wallet sign-in.
+///
+/// The sign-in is verify-only, so the backend never parks it at a credential step: the only result is a live session.
+struct ExternalWalletV2Result: Equatable {
+    let isNewUser: Bool
 
-    /// Nil for a result this SDK doesn't understand.
-    static func resolve(_ result: Any?) -> ExternalWalletV2Outcome? {
-        guard let dict = result as? [String: Any] else { return nil }
-        let nonEmpty = { (key: String) in (dict[key] as? String).flatMap { $0.isEmpty ? nil : $0 } }
-        switch dict["status"] as? String {
-        case "authenticated":
-            return .authenticated(isNewUser: dict["isNewUser"] as? Bool ?? false)
-        case "passkey_required":
-            return nonEmpty("userId").map { .nativePasskey(userId: $0) }
-        case "portal_required":
-            return (nonEmpty("fullUrl") ?? nonEmpty("url")).map { .portal(url: $0) }
-        default:
-            return nil
-        }
+    /// Nil for any result other than a live session.
+    static func resolve(_ result: Any?) -> ExternalWalletV2Result? {
+        guard let dict = result as? [String: Any], dict["status"] as? String == "authenticated" else { return nil }
+        return ExternalWalletV2Result(isNewUser: dict["isNewUser"] as? Bool ?? false)
     }
 }
 
@@ -113,10 +99,10 @@ public extension ParaManager {
     /// is enabled.
     ///
     /// On auth v2 this signs a Sign-In With Ethereum style message with `signMessage` and verifies it, without
-    /// creating an embedded Para wallet. A returning account protected by a passkey then signs in with its native
-    /// passkey, and one protected by a password or PIN enters it on a Para portal page. Everywhere else it runs the
-    /// legacy external wallet login (``loginExternalWallet(wallet:)`` with `isConnectionOnly: false`), which doesn't
-    /// ask for a signature.
+    /// creating an embedded Para wallet. The sign-in is verify-only: every account, new or returning, is signed in as
+    /// soon as the signature checks out, and the session doesn't grant access to the account's embedded Para
+    /// wallets. Everywhere else it runs the legacy external wallet login (``loginExternalWallet(wallet:)`` with
+    /// `isConnectionOnly: false`), which doesn't ask for a signature.
     ///
     /// A connection-only session from an earlier connect (for example ``MetaMaskConnector/connect()``) is replaced.
     ///
@@ -126,8 +112,6 @@ public extension ParaManager {
     ///   - provider: The wallet provider, e.g. `"metamask"`.
     ///   - chainId: The chain id the message names (e.g. `"1"`). Optional.
     ///   - uri: The URI the sign-in message names. Defaults to the Para bridge origin.
-    ///   - authorizationController: Runs the native passkey sign-in for an account protected by a passkey.
-    ///   - webAuthenticationSession: Presents Para's password/PIN page. Falls back to the default session.
     ///   - signMessage: Signs the message with the wallet (for MetaMask, ``MetaMaskConnector/signMessage(_:account:)``)
     ///     and returns the signature. Throw to cancel.
     /// - Returns: The authenticated user.
@@ -138,8 +122,6 @@ public extension ParaManager {
         provider: String? = nil,
         chainId: String? = nil,
         uri: String? = nil,
-        authorizationController: AuthorizationController,
-        webAuthenticationSession overrideSession: WebAuthenticationSession? = nil,
         signMessage: @escaping @MainActor (_ message: String) async throws -> String
     ) async throws -> AuthenticationResult {
         try await ensureWebViewReady()
@@ -157,8 +139,6 @@ public extension ParaManager {
                 wallet: wallet,
                 chainId: chainId,
                 uri: uri,
-                authorizationController: authorizationController,
-                session: overrideSession ?? defaultWebAuthenticationSession,
                 signMessage: signMessage
             )
         }
@@ -292,13 +272,11 @@ extension ParaManager {
         wallet: ExternalWalletInfo,
         chainId: String?,
         uri: String?,
-        authorizationController: AuthorizationController,
-        session: WebAuthenticationSession?,
         signMessage: @MainActor (_ message: String) async throws -> String
     ) async throws -> AuthenticationResult {
         try await resetAuthFlowForNewSignIn()
 
-        let outcome: ExternalWalletV2Outcome
+        let finished: ExternalWalletV2Result
         do {
             let started = try await postMessage(
                 method: "startNativeExternalWalletAuth",
@@ -315,67 +293,29 @@ extension ParaManager {
 
             let signature = try await signMessage(message)
 
-            // Verifies the signature. Resolves once the session is live, or says how a returning account that
-            // still owes its credential finishes.
+            // Verifies the signature and waits for the session; a verify-only login has no wallets to create and
+            // no credential to collect.
             let result = try await postMessage(
                 method: "completeNativeExternalWalletAuth",
                 payload: CompleteExternalWalletV2Payload(signature: signature),
                 timeout: 180
             )
-            guard let resolved = ExternalWalletV2Outcome.resolve(result) else {
-                throw ParaError.bridgeError("Unexpected external wallet sign-in result.")
+            guard let resolved = ExternalWalletV2Result.resolve(result) else {
+                let status = (result as? [String: Any])?["status"] as? String ?? "none"
+                throw ParaError.bridgeError("External wallet sign-in didn't finish (status: \(status)).")
             }
-            outcome = resolved
-
-            switch outcome {
-            case .authenticated:
-                break
-
-            case let .nativePasskey(userId):
-                // Native passkeys stay on the legacy biometrics routes (and keep device custody), so drop the v2
-                // flow and sign in with the passkey, holding it to the account the wallet resolved to.
-                try await cancelAuthV2Flow()
-                try await loginWithPasskey(
-                    authorizationController: authorizationController,
-                    email: nil,
-                    phone: nil,
-                    expectedUserId: userId
-                )
-
-            case let .portal(url):
-                guard let session else {
-                    throw ParaError.error("Missing WebAuthenticationSession. Call setDefaultWebAuthenticationSession(_:) or pass one in.")
-                }
-                transmissionKeysharesLoaded = false
-                // Core is already polling for the session the portal mints once the password or PIN is in.
-                let pending = PendingAuthCall()
-                try await presentAuthV2Portal(url, context: "external wallet", session: session, pending: pending)
-                try await completeAuthV2AfterPortal(
-                    pending: pending,
-                    session: session,
-                    authorizationController: authorizationController
-                ) {
-                    try await self.passkeyIdentifierForCurrentSession()
-                }
-            }
+            finished = resolved
         } catch {
             try? await cancelAuthV2Flow()
             throw error
         }
 
-        switch outcome {
-        case let .authenticated(isNewUser):
-            // The wallet proved control of its address and nothing else: no Para wallet shares exist to load.
-            transmissionKeysharesLoaded = true
-            sessionState = .activeLoggedIn
-            await persistCurrentSession(reason: "authenticateWithExternalWallet-v2")
-            let snapshot = try? await fetchAuthV2Snapshot()
-            return try await authenticationResult(isNewUser: isNewUser, fallbackUserId: snapshot?.userId)
-        case .nativePasskey:
-            return try await authenticationResult(isNewUser: false)
-        case .portal:
-            return try await finishAuthV2(isNewUser: false, reason: "authenticateWithExternalWallet-v2")
-        }
+        // The wallet proved control of its address and nothing else: no Para wallet shares exist to load.
+        transmissionKeysharesLoaded = true
+        sessionState = .activeLoggedIn
+        await persistCurrentSession(reason: "authenticateWithExternalWallet-v2")
+        let snapshot = try? await fetchAuthV2Snapshot()
+        return try await authenticationResult(isNewUser: finished.isNewUser, fallbackUserId: snapshot?.userId)
     }
 
     /// Whether core is signed in without a Para account behind it: a connection-only external wallet.

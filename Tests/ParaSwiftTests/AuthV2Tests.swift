@@ -159,8 +159,7 @@ final class AuthV2Tests: XCTestCase {
                 address: "0xabc",
                 type: .evm,
                 provider: "metamask",
-                chainId: "1",
-                authorizationController: controller
+                chainId: "1"
             ) { message in message }
             try await manager.handleOAuth(provider: .apple, authorizationController: controller)
             try await manager.loginExternalWallet(wallet: ExternalWalletInfo(address: "0xabc", type: .evm))
@@ -201,37 +200,23 @@ final class AuthV2Tests: XCTestCase {
         XCTAssertNil(AuthV2PortalHandBack.resolve(URL(string: "myapp://?status=NEW_USER")))
     }
 
-    func testExternalWalletOutcomes() {
+    func testExternalWalletResult() {
         XCTAssertEqual(
-            ExternalWalletV2Outcome.resolve(["status": "authenticated", "isNewUser": true]),
-            .authenticated(isNewUser: true)
-        )
-        XCTAssertEqual(ExternalWalletV2Outcome.resolve(["status": "authenticated"]), .authenticated(isNewUser: false))
-        XCTAssertEqual(
-            ExternalWalletV2Outcome.resolve(["status": "passkey_required", "userId": "u1"]),
-            .nativePasskey(userId: "u1")
+            ExternalWalletV2Result.resolve(["status": "authenticated", "isNewUser": true]),
+            ExternalWalletV2Result(isNewUser: true)
         )
         XCTAssertEqual(
-            ExternalWalletV2Outcome.resolve([
-                "status": "portal_required",
-                "url": "https://short/w",
-                "fullUrl": "https://portal/wallet?flowId=f1",
-            ]),
-            .portal(url: "https://portal/wallet?flowId=f1")
-        )
-        XCTAssertEqual(
-            ExternalWalletV2Outcome.resolve(["status": "portal_required", "url": "https://short/w"]),
-            .portal(url: "https://short/w")
+            ExternalWalletV2Result.resolve(["status": "authenticated"]),
+            ExternalWalletV2Result(isNewUser: false)
         )
     }
 
-    func testUnusableExternalWalletOutcomesAreRejected() {
-        XCTAssertNil(ExternalWalletV2Outcome.resolve(nil))
-        XCTAssertNil(ExternalWalletV2Outcome.resolve(["isNewUser": true]))
-        XCTAssertNil(ExternalWalletV2Outcome.resolve(["status": "passkey_required"]))
-        XCTAssertNil(ExternalWalletV2Outcome.resolve(["status": "passkey_required", "userId": ""]))
-        XCTAssertNil(ExternalWalletV2Outcome.resolve(["status": "portal_required"]))
-        XCTAssertNil(ExternalWalletV2Outcome.resolve(["status": "needs_second_factor"]))
+    func testExternalWalletResultsOtherThanASessionAreRejected() {
+        XCTAssertNil(ExternalWalletV2Result.resolve(nil))
+        XCTAssertNil(ExternalWalletV2Result.resolve(["isNewUser": true]))
+        XCTAssertNil(ExternalWalletV2Result.resolve(["status": "passkey_required", "userId": "u1"]))
+        XCTAssertNil(ExternalWalletV2Result.resolve(["status": "portal_required", "url": "https://short/w"]))
+        XCTAssertNil(ExternalWalletV2Result.resolve(["status": "needs_second_factor"]))
     }
 
     func testCapabilitiesDefaultToLegacy() {
