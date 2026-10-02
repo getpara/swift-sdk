@@ -26,8 +26,11 @@ struct NativeAuthV2Capabilities: Equatable {
 /// Why a portal page closed on the app's deep link instead of finishing the step itself.
 enum AuthV2PortalHandBack: Equatable {
     /// The login is parked on the account's passkey, which only the app can use. Carries the account the flow
-    /// resolved to, when the portal passed it.
-    case nativePasskey(userId: String?)
+    /// resolved to, which the passkey must belong to.
+    case nativePasskey(userId: String)
+    /// A passkey hand-back that names no account. There is nothing to hold the passkey to, and any passkey on the
+    /// device would sign in, so the flow refuses it.
+    case missingAccount
 
     static func resolve(_ callbackURL: URL?) -> AuthV2PortalHandBack? {
         guard let callbackURL,
@@ -35,7 +38,8 @@ enum AuthV2PortalHandBack: Equatable {
         else { return nil }
         let value = { (name: String) in items.first { $0.name == name }?.value }
         guard value("status") == "PASSKEY_REQUIRED" else { return nil }
-        return .nativePasskey(userId: value("userId").flatMap { $0.isEmpty ? nil : $0 })
+        guard let userId = value("userId"), !userId.isEmpty else { return .missingAccount }
+        return .nativePasskey(userId: userId)
     }
 }
 
@@ -229,7 +233,11 @@ extension ParaManager {
                 }
                 let callbackURL = try await presentAuthV2Portal(url, context: "OAuth", session: session, pending: pending)
 
-                if case let .nativePasskey(userId) = AuthV2PortalHandBack.resolve(callbackURL) {
+                let handBack = AuthV2PortalHandBack.resolve(callbackURL)
+                if handBack == .missingAccount {
+                    throw ParaError.error("The sign-in page did not say which account to sign in to.")
+                }
+                if case let .nativePasskey(userId) = handBack {
                     // A returning account protected by its passkey. Native passkeys stay on the legacy biometrics
                     // routes (and keep device custody), so drop the v2 flow and sign in with the passkey, holding
                     // it to the account the provider resolved.
@@ -323,9 +331,11 @@ extension ParaManager {
         guard let snapshot = try? await fetchAuthV2Snapshot(),
               snapshot.isAuthenticated || snapshot.authPhase == "authenticated"
         else { return false }
-        let details = try await postMessage(method: "getCurrentSessionDetails", payload: EmptyAuthV2Payload())
-        let userId = (details as? [String: Any])?["userId"] as? String
-        return userId == nil || userId == connectionOnlyUserId
+        // Only an explicit connection-only session is replaceable: an account session missing a user id here is
+        // still someone's session, and must hit the already-signed-in error rather than be logged out.
+        guard let details = try? await postMessage(method: "getCurrentSessionDetails", payload: EmptyAuthV2Payload())
+        else { return false }
+        return (details as? [String: Any])?["userId"] as? String == connectionOnlyUserId
     }
 
     /// The name a new passkey is saved under: the account's email or phone when the session knows one (OAuth

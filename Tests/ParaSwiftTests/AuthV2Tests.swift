@@ -208,10 +208,9 @@ final class AuthV2Tests: XCTestCase {
             AuthV2PortalHandBack.resolve(URL(string: "myapp://?status=PASSKEY_REQUIRED&userId=u1")),
             .nativePasskey(userId: "u1")
         )
-        XCTAssertEqual(
-            AuthV2PortalHandBack.resolve(URL(string: "myapp://?status=PASSKEY_REQUIRED")),
-            .nativePasskey(userId: nil)
-        )
+        // Without the account there is nothing to hold the passkey to, so the flow refuses it.
+        XCTAssertEqual(AuthV2PortalHandBack.resolve(URL(string: "myapp://?status=PASSKEY_REQUIRED")), .missingAccount)
+        XCTAssertEqual(AuthV2PortalHandBack.resolve(URL(string: "myapp://?status=PASSKEY_REQUIRED&userId=")), .missingAccount)
     }
 
     func testOrdinaryPortalReturnsAreNotHandBacks() {
