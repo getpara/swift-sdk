@@ -92,10 +92,18 @@ enum AuthV2CredentialSetupStep: Equatable {
     /// offer PIN. The portal passkey page is a last resort for a projection without a pending passkey row.
     static func resolve(_ snapshot: AuthV2Snapshot) -> AuthV2CredentialSetupStep? {
         guard snapshot.isCredentialSetup else { return nil }
-        if let id = snapshot.passkeyId { return .nativePasskey(biometricsId: id) }
-        if let url = snapshot.passwordUrl { return .portal(url: url, context: "password setup") }
-        if let url = snapshot.pinUrl { return .portal(url: url, context: "PIN setup") }
-        if let url = snapshot.passkeyUrl { return .portal(url: url, context: "passkey setup") }
+        if let id = snapshot.passkeyId {
+            return .nativePasskey(biometricsId: id)
+        }
+        if let url = snapshot.passwordUrl {
+            return .portal(url: url, context: "password setup")
+        }
+        if let url = snapshot.pinUrl {
+            return .portal(url: url, context: "PIN setup")
+        }
+        if let url = snapshot.passkeyUrl {
+            return .portal(url: url, context: "passkey setup")
+        }
         return nil
     }
 }
@@ -113,9 +121,15 @@ enum AuthV2FirstStep: Equatable {
             return .nativePasskey
         }
         // Core leaves the OTP URL null for a returning user who unlocks with a credential instead.
-        if let url = snapshot.verificationUrl { return .portal(url: url, context: "verification") }
-        if let url = snapshot.passwordUrl { return .portal(url: url, context: "password") }
-        if let url = snapshot.passkeyUrl { return .portal(url: url, context: "passkey") }
+        if let url = snapshot.verificationUrl {
+            return .portal(url: url, context: "verification")
+        }
+        if let url = snapshot.passwordUrl {
+            return .portal(url: url, context: "password")
+        }
+        if let url = snapshot.passkeyUrl {
+            return .portal(url: url, context: "passkey")
+        }
         return nil
     }
 }
@@ -381,7 +395,7 @@ extension ParaManager {
         _ url: String,
         context: String,
         session: WebAuthenticationSession,
-        pending: PendingAuthCall,
+        pending _: PendingAuthCall,
         stepFinished: (AuthV2Snapshot) -> Bool = { $0.isPastVerification }
     ) async throws -> URL? {
         do {
@@ -449,7 +463,9 @@ extension ParaManager {
         }
         // cancelAuthFlow is a no-op from these phases, and waits out its timeout from guest mode.
         let idlePhases: Set<String?> = ["unauthenticated", "error"]
-        if idlePhases.contains(snapshot.authPhase) || snapshot.corePhase == "guest_mode" { return }
+        if idlePhases.contains(snapshot.authPhase) || snapshot.corePhase == "guest_mode" {
+            return
+        }
         try? await cancelAuthV2Flow()
     }
 
@@ -477,10 +493,18 @@ extension ParaManager {
         while true {
             let snapshot = try await fetchAuthV2Snapshot()
 
-            if isDone(snapshot) { return snapshot }
-            if failOnCoreError, let failure = snapshot.failure { throw ParaError.bridgeError(failure) }
-            if let failure = pending.failure { throw failure }
-            if Date() > deadline { throw ParaError.error("Timed out waiting for authentication to complete.") }
+            if isDone(snapshot) {
+                return snapshot
+            }
+            if failOnCoreError, let failure = snapshot.failure {
+                throw ParaError.bridgeError(failure)
+            }
+            if let failure = pending.failure {
+                throw failure
+            }
+            if Date() > deadline {
+                throw ParaError.error("Timed out waiting for authentication to complete.")
+            }
 
             try await Task.sleep(nanoseconds: 500_000_000)
         }
@@ -516,12 +540,16 @@ extension ParaManager {
 
 private extension Auth {
     var email: String? {
-        if case let .email(email) = self { return email }
+        if case let .email(email) = self {
+            return email
+        }
         return nil
     }
 
     var phone: String? {
-        if case let .phone(phone) = self { return phone }
+        if case let .phone(phone) = self {
+            return phone
+        }
         return nil
     }
 }

@@ -339,7 +339,8 @@ public class ParaWebView: NSObject, ObservableObject {
                 if let friendly = details?["message"] as? String ?? dict["message"] as? String, !friendly.isEmpty {
                     errorMessage = friendly
                 } else if let data = try? JSONSerialization.data(withJSONObject: dict, options: .prettyPrinted),
-                          let jsonStr = String(data: data, encoding: .utf8) {
+                          let jsonStr = String(data: data, encoding: .utf8)
+                {
                     errorMessage = jsonStr
                 } else {
                     errorMessage = String(describing: dict)
@@ -462,17 +463,17 @@ enum ParaWebViewError: Error, CustomStringConvertible, LocalizedError {
         }
     }
 
-    // Provide nicer strings for SwiftUI alerts and NSError bridging
+    /// Provide nicer strings for SwiftUI alerts and NSError bridging
     var errorDescription: String? {
         switch self {
         case .webViewNotReady:
-            return "WebView is not ready to accept requests."
+            "WebView is not ready to accept requests."
         case let .invalidArguments(msg):
-            return "Invalid arguments: \(msg)"
+            "Invalid arguments: \(msg)"
         case .requestTimeout:
-            return "The request timed out."
+            "The request timed out."
         case let .bridgeError(msg):
-            return msg // Return the raw error message without "Bridge error:" prefix
+            msg // Return the raw error message without "Bridge error:" prefix
         }
     }
 }
@@ -480,7 +481,10 @@ enum ParaWebViewError: Error, CustomStringConvertible, LocalizedError {
 /// A helper class to avoid retain cycles in script message handling
 private class LeakAvoider: NSObject, WKScriptMessageHandler {
     weak var delegate: WKScriptMessageHandler?
-    init(delegate: WKScriptMessageHandler?) { self.delegate = delegate }
+    init(delegate: WKScriptMessageHandler?) {
+        self.delegate = delegate
+    }
+
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         delegate?.userContentController(userContentController, didReceive: message)
     }

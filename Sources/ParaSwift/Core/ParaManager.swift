@@ -28,6 +28,7 @@ public class ParaManager: NSObject, ObservableObject {
             sessionPersistence.update(environment: environment, apiKey: apiKey)
         }
     }
+
     /// Para environment configuration.
     public var environment: ParaEnvironment {
         didSet {
@@ -53,18 +54,18 @@ public class ParaManager: NSObject, ObservableObject {
     let appScheme: String
     /// Track whether transmission keyshares have been loaded for the current session.
     /// This prevents unnecessary repeated calls to loadTransmissionKeyshares.
-    internal var transmissionKeysharesLoaded = false
+    var transmissionKeysharesLoaded = false
     /// Default web authentication session used for hosted auth flows.
-    internal var defaultWebAuthenticationSession: WebAuthenticationSession?
+    var defaultWebAuthenticationSession: WebAuthenticationSession?
     /// Handler called when a signing operation requires user approval via a review URL.
-    internal var transactionReviewHandler: ((String) -> Void)?
+    var transactionReviewHandler: ((String) -> Void)?
     /// Controller responsible for persisting session snapshots.
     private var sessionPersistence: SessionPersistenceStoring
     /// Last serialized session we saved locally to avoid redundant writes.
     private var lastPersistedSession: String?
     /// Tracks whether we already attempted to restore a stored session.
     private var attemptedSessionRestore = false
-    
+
     // MARK: - Initialization
 
     /// Creates a new Para manager instance.
@@ -86,7 +87,7 @@ public class ParaManager: NSObject, ObservableObject {
         paraWebView = ParaWebView(environment: environment, apiKey: apiKey)
         self.appScheme = appScheme ?? Bundle.main.bundleIdentifier!
         self.sessionPersistence = SessionPersistenceController()
-        
+
         super.init()
 
         self.sessionPersistence.update(environment: environment, apiKey: apiKey)
@@ -195,10 +196,11 @@ public class ParaManager: NSObject, ObservableObject {
             logger.error("Bridge error for \(method): \(error.localizedDescription)")
             // Convert ParaWebViewError to ParaError for better user experience
             switch error {
-            case .bridgeError(let message):
+            case let .bridgeError(message):
                 // Attempt to extract a concise message from a JSON payload produced by the bridge
                 if let data = message.data(using: .utf8),
-                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                {
                     let details = json["details"] as? [String: Any]
                     let userMessage = (details?["message"] as? String)
                         ?? (json["message"] as? String)
@@ -210,7 +212,7 @@ public class ParaManager: NSObject, ObservableObject {
                 throw ParaError.bridgeError("WebView is not ready")
             case .requestTimeout:
                 throw ParaError.bridgeTimeoutError
-            case .invalidArguments(let message):
+            case let .invalidArguments(message):
                 throw ParaError.error("Invalid arguments: \(message)")
             }
         } catch {
@@ -415,13 +417,12 @@ public class ParaManager: NSObject, ObservableObject {
                 logger.warning("Fetching wallets after restore failed: \(error.localizedDescription)")
             }
 
-            let isLoggedIn: Bool
-            if restoredAuthState?.userId != nil {
-                isLoggedIn = true
+            let isLoggedIn = if restoredAuthState?.userId != nil {
+                true
             } else if let fullyLoggedIn = try? await isFullyLoggedIn(), fullyLoggedIn {
-                isLoggedIn = true
+                true
             } else {
-                isLoggedIn = false
+                false
             }
 
             sessionState = isLoggedIn ? .activeLoggedIn : .active
@@ -431,9 +432,9 @@ public class ParaManager: NSObject, ObservableObject {
             return true
         } catch SessionPersistenceError.misconfigured {
             logger.warning("Session persistence misconfigured; skipping restore")
-        } catch SessionPersistenceError.keychainError(let status) {
+        } catch let SessionPersistenceError.keychainError(status) {
             logger.error("Keychain error during session restore: \(status, privacy: .public)")
-        } catch SessionPersistenceError.decoding(let error) {
+        } catch let SessionPersistenceError.decoding(error) {
             logger.error("Failed to decode persisted session: \(error.localizedDescription, privacy: .public)")
         } catch {
             logger.error("Unexpected restore error: \(error.localizedDescription, privacy: .public)")
@@ -507,20 +508,20 @@ public class ParaManager: NSObject, ObservableObject {
             logger.error("Failed to persist session (\(reason)): \(error.localizedDescription)")
         }
     }
-    
+
     /// Ensures transmission keyshares are loaded for the current session.
     /// This is automatically called by wallet-related operations to ensure
     /// wallet signers are properly loaded from the backend.
     /// - Note: This method is idempotent and tracks whether keyshares have already been loaded.
-    internal func ensureTransmissionKeysharesLoaded() async throws {
+    func ensureTransmissionKeysharesLoaded() async throws {
         // Skip if already loaded in this session
         if transmissionKeysharesLoaded {
             logger.debug("Transmission keyshares already loaded, skipping.")
             return
         }
-        
+
         logger.debug("Loading transmission keyshares for the first time in this session...")
-        
+
         do {
             // This method is defined in ParaManager+Auth.swift
             let sharesLoaded = try await loadTransmissionKeyshares()
@@ -572,7 +573,7 @@ public class ParaManager: NSObject, ObservableObject {
             phone: phone,
             displayName: authInfoDict["displayName"] as? String,
             pfpUrl: authInfoDict["pfpUrl"] as? String,
-            username: authInfoDict["username"] as? String,
+            username: authInfoDict["username"] as? String
         )
     }
 }

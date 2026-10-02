@@ -11,7 +11,9 @@ final class AuthV2Tests: XCTestCase {
         info: [String: Any]
     ) -> AuthV2Snapshot {
         var dict: [String: Any] = ["corePhase": corePhase, "authPhase": authPhase, "authStateInfo": info]
-        if let error { dict["error"] = error }
+        if let error {
+            dict["error"] = error
+        }
         return AuthV2Snapshot(dict)
     }
 

@@ -224,7 +224,7 @@ public extension ParaManager {
     /// - Returns: AuthState object containing information about the next steps
     internal func signUpOrLogIn(auth: Auth) async throws -> AuthState {
         try await ensureWebViewReady()
-        
+
         // Reset transmission keyshares flag when starting a new auth session
         // This ensures we'll load them fresh after authentication completes
         transmissionKeysharesLoaded = false
@@ -450,7 +450,7 @@ public extension ParaManager {
     func loginWithPasskey(
         authorizationController: AuthorizationController,
         email: String? = nil,
-        phone: String? = nil,
+        phone: String? = nil
     ) async throws {
         try await loginWithPasskey(
             authorizationController: authorizationController,
@@ -487,7 +487,7 @@ extension ParaManager {
             getWebChallengeResult,
             expectedType: String.self,
             method: "getWebChallenge",
-            key: "challenge",
+            key: "challenge"
         )
 
         // Get allowedPublicKeys from the bridge response
@@ -495,7 +495,7 @@ extension ParaManager {
             getWebChallengeResult,
             expectedType: [String]?.self,
             method: "getWebChallenge",
-            key: "allowedPublicKeys",
+            key: "allowedPublicKeys"
         ) ?? []
 
         // Log the number of keys we received
@@ -508,7 +508,7 @@ extension ParaManager {
         let signIntoPasskeyAccountResult = try await passkeysManager.signIntoPasskeyAccount(
             authorizationController: authorizationController,
             challenge: challenge,
-            allowedPublicKeys: allowedPublicKeys,
+            allowedPublicKeys: allowedPublicKeys
         )
 
         let id = signIntoPasskeyAccountResult.credentialID.base64URLEncodedString()
@@ -520,12 +520,12 @@ extension ParaManager {
             publicKey: id,
             authenticatorData: authenticatorData,
             clientDataJSON: clientDataJSON,
-            signature: signature,
+            signature: signature
         )
 
         let verifyWebChallengeResult = try await postMessage(
             method: "verifyWebChallenge",
-            payload: verifyArgs,
+            payload: verifyArgs
         )
 
         let userId = try decodeResult(verifyWebChallengeResult, expectedType: String.self, method: "verifyWebChallenge")
@@ -539,17 +539,17 @@ extension ParaManager {
         let loginArgs = LoginWithPasskeyArgs(
             userId: userId,
             credentialsId: id,
-            userHandle: signIntoPasskeyAccountResult.userID.base64URLEncodedString(),
+            userHandle: signIntoPasskeyAccountResult.userID.base64URLEncodedString()
         )
 
         let loginResult = try await postMessage(
             method: "loginWithPasskey",
-            payload: loginArgs,
+            payload: loginArgs
         )
         if let _ = loginResult as? [String: Any] {
             logger.debug("loginWithPasskey bridge call returned wallet data")
         }
-        
+
         // Mark transmission keyshares as loaded after successful passkey login
         // Passkey authentication automatically loads them on the backend
         transmissionKeysharesLoaded = true
@@ -577,7 +577,7 @@ public extension ParaManager {
         let result = try await passkeysManager.createPasskeyAccount(
             authorizationController: authorizationController,
             username: identifier,
-            userHandle: userHandle,
+            userHandle: userHandle
         )
 
         guard let rawAttestation = result.rawAttestationObject else {
@@ -595,7 +595,7 @@ public extension ParaManager {
             clientDataJson: clientDataJSONEncoded,
             credentialsId: credentialIDEncoded,
             userHandle: userHandleEncoded,
-            biometricsId: biometricsId,
+            biometricsId: biometricsId
         )
 
         _ = try await postMessage(method: "generatePasskey", payload: generateArgs)
@@ -667,7 +667,7 @@ public extension ParaManager {
     }
 }
 
-// Encode query values strictly so '+' never becomes space and special chars are preserved.
+/// Encode query values strictly so '+' never becomes space and special chars are preserved.
 private extension CharacterSet {
     static var urlQueryValueAllowedStrict: CharacterSet = {
         var cs = CharacterSet.urlQueryAllowed
@@ -732,8 +732,8 @@ private extension ParaManager {
         let callbackValue: String = appScheme.contains("://") ? appScheme : (appScheme + "://")
         let callbackScheme: String =
             URL(string: callbackValue)?.scheme
-            ?? callbackValue.split(separator: ":").first.map(String.init)
-            ?? appScheme
+                ?? callbackValue.split(separator: ":").first.map(String.init)
+                ?? appScheme
 
         // Preserve existing percent-encoding; only add/replace nativeCallbackUrl.
         var components = URLComponents(url: originalUrl, resolvingAgainstBaseURL: false)!
@@ -772,7 +772,8 @@ private extension ParaManager {
         } catch {
             let nsError = error as NSError
             if nsError.domain == ASWebAuthenticationSessionError.errorDomain,
-               nsError.code == ASWebAuthenticationSessionError.canceledLogin.rawValue {
+               nsError.code == ASWebAuthenticationSessionError.canceledLogin.rawValue
+            {
                 logger.warning("\(context.capitalized) authentication was cancelled by the user")
                 throw ParaError.error("Authentication cancelled")
             }
@@ -845,7 +846,7 @@ extension ParaManager {
                 throw parseError
             }
         }
-        
+
         // Mark transmission keyshares as loaded after successful external wallet login
         // External wallet authentication automatically loads them on the backend
         transmissionKeysharesLoaded = true
@@ -886,17 +887,18 @@ public extension ParaManager {
         let payload = Enable2faArgs(verificationCode: verificationCode)
         _ = try await postMessage(method: "enable2fa", payload: payload)
     }
-    
+
     /// Loads transmission keyshares into wallets after authentication
     /// This should be called after password authentication completes to ensure
     /// that wallet signers are properly loaded from the backend.
     func loadTransmissionKeyshares() async throws -> Int {
         try await ensureWebViewReady()
         let result = try await postMessage(method: "loadTransmissionKeyshares", payload: EmptyPayload())
-        
+
         // Parse the result to get the number of shares loaded
         if let resultDict = result as? [String: Any],
-           let sharesLoaded = resultDict["sharesLoaded"] as? Int {
+           let sharesLoaded = resultDict["sharesLoaded"] as? Int
+        {
             return sharesLoaded
         }
         return 0
@@ -935,7 +937,7 @@ public extension ParaManager {
             try await loginWithPasskey(
                 authorizationController: authorizationController,
                 email: authState.email,
-                phone: authState.phone,
+                phone: authState.phone
             )
             logger.debug("loginWithPasskey successful.")
             // `loginWithPasskey` internally sets sessionState and fetches wallets.
@@ -1106,7 +1108,7 @@ public extension ParaManager {
             try await generatePasskey(
                 identifier: identifier, // Use identifier from authState
                 biometricsId: passkeyId,
-                authorizationController: authorizationController,
+                authorizationController: authorizationController
             )
             logger.debug("Passkey generated successfully.")
             // Passkey signup - mark keyshares as loaded (they're loaded automatically)
