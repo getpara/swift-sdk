@@ -49,6 +49,15 @@ final class AuthV2Tests: XCTestCase {
         XCTAssertFalse(cancelled.isPastCredentialSetup)
     }
 
+    func testCosmosProofCarriesTheSignerAndPublicKey() throws {
+        let payload = CompleteExternalWalletV2Payload(signature: "sig", cosmosSigner: "cosmos1abc", cosmosPublicKeyHex: "02ab")
+        let json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(payload)) as? [String: String]
+        XCTAssertEqual(json, ["signature": "sig", "cosmosSigner": "cosmos1abc", "cosmosPublicKeyHex": "02ab"])
+
+        let evm = try JSONSerialization.jsonObject(with: JSONEncoder().encode(CompleteExternalWalletV2Payload(signature: "sig")))
+        XCTAssertEqual(evm as? [String: String], ["signature": "sig"])
+    }
+
     func testReturningPasskeyUserSignsInWithTheNativePasskey() {
         let state = snapshot(info: [
             "isNewUser": false,

@@ -238,8 +238,10 @@ extension ParaManager {
         let isNewUser: Bool
         do {
             let initial = try await signUpOrLogIn(auth: auth)
-            // Read before the hosted one-click path rewrites the stage to `.done`.
-            isNewUser = initial.stage == .verify || initial.stage == .signup
+            // Read before the hosted one-click path rewrites the stage to `.done`. An existing one-click user who must
+            // verify gets `.verify` with `nextStage: .login`, so read the stage the sign-in is heading to.
+            let heading = initial.nextStage ?? initial.stage
+            isNewUser = heading == .verify || heading == .signup
 
             if initial.loginUrl != nil, initial.stage != .done, (overrideSession ?? defaultWebAuthenticationSession) == nil {
                 throw ParaError.error("Missing WebAuthenticationSession. Call setDefaultWebAuthenticationSession(_:) or pass one in.")
@@ -355,7 +357,14 @@ extension ParaManager {
                     signedInWithNativePasskey = true
 
                 case let .portal(url, context):
-                    try await presentAuthV2Portal(url, context: context, session: session, pending: pending)
+                    let callbackURL = try await presentAuthV2Portal(url, context: context, session: session, pending: pending)
+                    // The code page can hand a passkey-protected account back too, when the start couldn't tell it
+                    // has one.
+                    signedInWithNativePasskey = try await signInWithHandedBackPasskey(
+                        callbackURL,
+                        authorizationController: authorizationController,
+                        cancelAuthCall: { authCall.cancel() }
+                    )
                 }
             }
 
@@ -406,6 +415,35 @@ extension ParaManager {
                 return nil
             }
             throw error
+        }
+    }
+
+    /// A returning account protected by its passkey, handed back by a portal page (OAuth, or the email/phone code page
+    /// when the start couldn't tell the account has a passkey). Native passkeys stay on the legacy biometrics routes
+    /// (and keep device custody), so drop the v2 flow and sign in with the passkey, holding it to the account the
+    /// portal resolved. A hand-back that names no account is refused: any passkey on the device would sign in.
+    /// Returns whether the passkey login ran; false when the page didn't hand back.
+    @MainActor
+    func signInWithHandedBackPasskey(
+        _ callbackURL: URL?,
+        authorizationController: AuthorizationController,
+        cancelAuthCall: () -> Void
+    ) async throws -> Bool {
+        switch AuthV2PortalHandBack.resolve(callbackURL) {
+        case .none:
+            return false
+        case .missingAccount:
+            throw ParaError.error("The sign-in page did not say which account to sign in to.")
+        case let .nativePasskey(userId):
+            try await cancelAuthV2Flow()
+            cancelAuthCall()
+            try await loginWithPasskey(
+                authorizationController: authorizationController,
+                email: nil,
+                phone: nil,
+                expectedUserId: userId
+            )
+            return true
         }
     }
 

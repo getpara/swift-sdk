@@ -126,7 +126,8 @@ public extension ParaManager {
         provider: String? = nil,
         chainId: String? = nil,
         uri: String? = nil,
-        signMessage: @escaping @MainActor (_ message: String) async throws -> String
+        signMessage: @escaping @MainActor (_ message: String) async throws -> String,
+        signCosmosMessage: (@MainActor (_ message: String) async throws -> CosmosSignedMessage)? = nil
     ) async throws -> AuthenticationResult {
         try await ensureWebViewReady()
 
@@ -143,7 +144,8 @@ public extension ParaManager {
                 wallet: wallet,
                 chainId: chainId,
                 uri: uri,
-                signMessage: signMessage
+                signMessage: signMessage,
+                signCosmosMessage: signCosmosMessage
             )
         }
 
@@ -174,8 +176,28 @@ private struct StartExternalWalletV2Payload: Encodable {
     let uri: String?
 }
 
-private struct CompleteExternalWalletV2Payload: Encodable {
+struct CompleteExternalWalletV2Payload: Encodable, Equatable {
     let signature: String
+    /// Cosmos only: the signer and public key the backend verifies the signature against.
+    var cosmosSigner: String?
+    var cosmosPublicKeyHex: String?
+}
+
+/// A Cosmos wallet's signature over the sign-in message, with the signer and public key the backend needs to verify
+/// it. Returned from `signCosmosMessage` in ``ParaManager/authenticateWithExternalWallet(address:type:provider:chainId:uri:signMessage:signCosmosMessage:)``.
+public struct CosmosSignedMessage: Sendable {
+    /// The signature over the sign-in message.
+    public let signature: String
+    /// The signer's bech32 address.
+    public let signer: String
+    /// The signer's public key, hex-encoded.
+    public let publicKeyHex: String
+
+    public init(signature: String, signer: String, publicKeyHex: String) {
+        self.signature = signature
+        self.signer = signer
+        self.publicKeyHex = publicKeyHex
+    }
 }
 
 /// Core's user id for a connection-only external wallet session, which is not a Para account.
@@ -233,22 +255,11 @@ extension ParaManager {
                 }
                 let callbackURL = try await presentAuthV2Portal(url, context: "OAuth", session: session, pending: pending)
 
-                let handBack = AuthV2PortalHandBack.resolve(callbackURL)
-                if handBack == .missingAccount {
-                    throw ParaError.error("The sign-in page did not say which account to sign in to.")
-                }
-                if case let .nativePasskey(userId) = handBack {
-                    // A returning account protected by its passkey. Native passkeys stay on the legacy biometrics
-                    // routes (and keep device custody), so drop the v2 flow and sign in with the passkey, holding
-                    // it to the account the provider resolved.
-                    try await cancelAuthV2Flow()
-                    authCall.cancel()
-                    try await loginWithPasskey(
-                        authorizationController: authorizationController,
-                        email: nil,
-                        phone: nil,
-                        expectedUserId: userId
-                    )
+                if try await signInWithHandedBackPasskey(
+                    callbackURL,
+                    authorizationController: authorizationController,
+                    cancelAuthCall: { authCall.cancel() }
+                ) {
                     signedInWithNativePasskey = true
                 } else {
                     try await completeAuthV2AfterPortal(
@@ -280,8 +291,15 @@ extension ParaManager {
         wallet: ExternalWalletInfo,
         chainId: String?,
         uri: String?,
-        signMessage: @MainActor (_ message: String) async throws -> String
+        signMessage: @MainActor (_ message: String) async throws -> String,
+        signCosmosMessage: (@MainActor (_ message: String) async throws -> CosmosSignedMessage)?
     ) async throws -> AuthenticationResult {
+        // The backend verifies a Cosmos signature against its signer and public key, so it needs both alongside it.
+        if wallet.type == .cosmos, signCosmosMessage == nil {
+            throw ParaError.error(
+                "A Cosmos wallet sign-in needs signCosmosMessage, which returns the signer and public key with the signature."
+            )
+        }
         try await resetAuthFlowForNewSignIn()
 
         let finished: ExternalWalletV2Result
@@ -299,13 +317,23 @@ extension ParaManager {
                 throw ParaError.bridgeError("Missing sign-in message for the external wallet.")
             }
 
-            let signature = try await signMessage(message)
+            let proof: CompleteExternalWalletV2Payload
+            if wallet.type == .cosmos, let signCosmosMessage {
+                let signed = try await signCosmosMessage(message)
+                proof = CompleteExternalWalletV2Payload(
+                    signature: signed.signature,
+                    cosmosSigner: signed.signer,
+                    cosmosPublicKeyHex: signed.publicKeyHex
+                )
+            } else {
+                proof = try await CompleteExternalWalletV2Payload(signature: signMessage(message))
+            }
 
             // Verifies the signature and waits for the session; a verify-only login has no wallets to create and
             // no credential to collect.
             let result = try await postMessage(
                 method: "completeNativeExternalWalletAuth",
-                payload: CompleteExternalWalletV2Payload(signature: signature),
+                payload: proof,
                 timeout: 180
             )
             guard let resolved = ExternalWalletV2Result.resolve(result) else {
