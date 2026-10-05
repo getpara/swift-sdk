@@ -577,7 +577,10 @@ extension ParaManager {
     }
 
     func authenticationResult(isNewUser: Bool, fallbackUserId: String? = nil) async throws -> AuthenticationResult {
-        guard let userId = try await getCurrentUserAuthDetails()?.userId ?? fallbackUserId else {
+        try await ensureWebViewReady()
+        let details = try await postMessage(method: "getCurrentSessionDetails", payload: EmptyAuthV2Payload())
+        // A native passkey can authenticate a phone account before the bridge has populated its optional authInfo.
+        guard let userId = (details as? [String: Any])?["userId"] as? String ?? fallbackUserId else {
             throw ParaError.error("Authentication finished without an active session.")
         }
         return AuthenticationResult(userId: userId, isNewUser: isNewUser)

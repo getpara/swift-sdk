@@ -28,6 +28,39 @@ final class AuthV2Tests: XCTestCase {
         XCTAssertNotNil(contract as Any)
     }
 
+    @MainActor
+    func testCompletedOAuthPasskeySessionDoesNotNeedAuthInfo() async throws {
+        // A phone-only account handed back by OAuth has a verified session ID, but no email to backfill authInfo.
+        let manager = AuthResultParaManager(sessionDetails: ["userId": "phone-user"])
+        let result = try await manager.authenticationResult(isNewUser: false)
+
+        XCTAssertEqual(result.userId, "phone-user")
+        XCTAssertFalse(result.isNewUser)
+    }
+
+    @MainActor
+    func testAuthenticationResultPrefersTheSessionIdToTheFallback() async throws {
+        let manager = AuthResultParaManager(sessionDetails: ["userId": "session-user"])
+        let result = try await manager.authenticationResult(isNewUser: true, fallbackUserId: "other-user")
+
+        XCTAssertEqual(result.userId, "session-user")
+        XCTAssertTrue(result.isNewUser)
+    }
+
+    @MainActor
+    func testAuthenticationResultStillRequiresAUserId() async throws {
+        let manager = AuthResultParaManager(sessionDetails: [:])
+        do {
+            _ = try await manager.authenticationResult(isNewUser: false)
+            XCTFail("An unauthenticated session must not produce an authentication result")
+        } catch let ParaError.error(message) {
+            XCTAssertEqual(message, "Authentication finished without an active session.")
+        }
+
+        let fallback = try await manager.authenticationResult(isNewUser: false, fallbackUserId: "fallback-user")
+        XCTAssertEqual(fallback.userId, "fallback-user")
+    }
+
     func testOwingCredentialSetupProvesVerificationButNotSetup() {
         let owing = snapshot(authPhase: "waiting_for_session", info: [
             "isNewUser": true, "isCredentialSetup": true, "passwordUrl": "https://portal/setup",
@@ -277,5 +310,28 @@ final class AuthV2Tests: XCTestCase {
             NativeAuthV2Capabilities(["oauth": true, "externalWallet": true]),
             NativeAuthV2Capabilities(oauth: true, externalWallet: true)
         )
+    }
+}
+
+@MainActor
+private final class AuthResultParaManager: ParaManager {
+    private let sessionDetails: [String: Any]
+
+    init(sessionDetails: [String: Any]) {
+        self.sessionDetails = sessionDetails
+        super.init(
+            environment: .dev(relyingPartyId: "test", jsBridgeUrl: URL(string: "about:blank")),
+            apiKey: "test",
+            appScheme: "test"
+        )
+        // This fixture answers bridge messages itself, so stop the real bridge's initialization task.
+        paraWebView.initializationError = ParaWebViewError.webViewNotReady
+    }
+
+    override func ensureWebViewReady() async throws {}
+
+    override func postMessage(method: String, payload _: Encodable, timeout _: TimeInterval?) async throws -> Any? {
+        XCTAssertEqual(method, "getCurrentSessionDetails")
+        return sessionDetails
     }
 }
