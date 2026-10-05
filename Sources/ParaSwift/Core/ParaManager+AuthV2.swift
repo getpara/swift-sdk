@@ -70,7 +70,7 @@ struct AuthV2Snapshot {
 
     /// The portal finished its verification step: the session is live, or a credential setup became owed.
     var isPastVerification: Bool {
-        isAuthenticated || credentialSetupStep != nil
+        isAuthenticated || authPhase == "authenticated" || credentialSetupStep != nil
     }
 
     /// The portal finished the credential-setup step: signed in, or no longer owing a credential while the flow is
@@ -122,12 +122,13 @@ enum AuthV2FirstStep: Equatable {
     case portal(url: String, context: String)
 
     static func resolve(_ snapshot: AuthV2Snapshot, nativePasskeySupported: Bool) -> AuthV2FirstStep? {
-        if !snapshot.isNewUser, snapshot.hasPasskey, nativePasskeySupported {
-            return .nativePasskey
-        }
-        // Core leaves the OTP URL null for a returning user who unlocks with a credential instead.
+        // Core keeps OTP available for enclave accounts, even when a passkey remains enrolled. Verifying in
+        // the portal lets core load their enclave shares instead of taking the device-custody passkey path.
         if let url = snapshot.verificationUrl {
             return .portal(url: url, context: "verification")
+        }
+        if !snapshot.isNewUser, snapshot.hasPasskey, nativePasskeySupported {
+            return .nativePasskey
         }
         if let url = snapshot.passwordUrl {
             return .portal(url: url, context: "password")

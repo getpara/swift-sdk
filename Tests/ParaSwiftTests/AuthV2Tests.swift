@@ -72,6 +72,14 @@ final class AuthV2Tests: XCTestCase {
         XCTAssertFalse(owing.isPastCredentialSetup)
     }
 
+    func testVerifiedSessionContinuesWhileWalletsAreBeingProvisioned() {
+        let provisioning = snapshot(corePhase: "wallet_flow", authPhase: "authenticated", info: [:])
+
+        XCTAssertTrue(provisioning.isPastVerification)
+        XCTAssertFalse(provisioning.isAuthenticated)
+        XCTAssertFalse(snapshot(corePhase: "wallet_flow", authPhase: "waiting_for_session", info: [:]).isPastVerification)
+    }
+
     func testCredentialSetupIsDoneOnceNoLongerOwedOnALiveFlow() {
         let settled = snapshot(authPhase: "waiting_for_session", info: ["isNewUser": true])
         let signedIn = snapshot(corePhase: "authenticated", authPhase: "authenticated", info: [:])
@@ -120,6 +128,20 @@ final class AuthV2Tests: XCTestCase {
         ])
 
         XCTAssertEqual(AuthV2FirstStep.resolve(state, nativePasskeySupported: true), .nativePasskey)
+    }
+
+    func testReturningEnclaveUserWithAnEnrolledPasskeyVerifiesInThePortal() {
+        let state = snapshot(info: [
+            "isNewUser": false,
+            "hasPasskey": true,
+            "passkeyUrl": "https://portal/loginAuth?flowId=f1",
+            "verificationUrl": "https://portal/v2/login/otp?flowId=f1",
+        ])
+
+        XCTAssertEqual(
+            AuthV2FirstStep.resolve(state, nativePasskeySupported: true),
+            .portal(url: "https://portal/v2/login/otp?flowId=f1", context: "verification")
+        )
     }
 
     func testReturningPasskeyUserFallsBackToThePortalWithoutNativePasskeys() {
