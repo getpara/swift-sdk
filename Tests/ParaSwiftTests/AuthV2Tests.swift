@@ -119,6 +119,17 @@ final class AuthV2Tests: XCTestCase {
         XCTAssertEqual(AuthV2CredentialSetupStep.resolve(state, nativePasskeySupported: false), .nativePasskey(biometricsId: "bio-1"))
     }
 
+    func testRecognizesALegacySignInParkedOnTwoFactor() {
+        XCTAssertTrue(ParaManager.isTwoFactorPark(["stage": "mfa", "userId": "u1", "mfa": ["mode": "verify"]]))
+        XCTAssertFalse(ParaManager.isTwoFactorPark(["stage": "login", "userId": "u1"]))
+        XCTAssertFalse(ParaManager.isTwoFactorPark(["stage": "done", "userId": "u1"]))
+        XCTAssertFalse(ParaManager.isTwoFactorPark(nil))
+    }
+
+    func testTwoFactorRequiredErrorExplainsItself() {
+        XCTAssertNotNil(ParaTwoFactorRequiredError().errorDescription)
+    }
+
     func testReturningPasskeyUserSignsInWithTheNativePasskey() {
         let state = snapshot(info: [
             "isNewUser": false,

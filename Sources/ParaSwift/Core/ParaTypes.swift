@@ -40,24 +40,37 @@ public enum ParaError: Error, CustomStringConvertible, LocalizedError {
         }
     }
 
-    // Provide concise strings for SwiftUI alerts and NSError bridging
+    /// Provide concise strings for SwiftUI alerts and NSError bridging
     public var errorDescription: String? {
         switch self {
         case let .bridgeError(info):
-            return info
+            info
         case .bridgeTimeoutError:
-            return "Request timed out. Please try again."
+            "Request timed out. Please try again."
         case let .error(info):
-            return info
+            info
         case let .notImplemented(feature):
-            return "Feature not implemented: \(feature)"
+            "Feature not implemented: \(feature)"
         case let .transactionDenied(id, _):
-            return "Transaction requires approval (pending: \(id))"
+            "Transaction requires approval (pending: \(id))"
         }
     }
 }
 
 /// Response type for 2FA setup operation
+/// Thrown by the stage-based sign-in methods (`initiateAuthFlow`, `handleVerificationCode`, `handleOAuth`,
+/// `loginExternalWallet`) when the account must complete login two-factor authentication, which those flows can't host.
+/// The SDK cancels the pending sign-in before throwing. Use `authenticateWithEmailOrPhone` or `authenticateWithOAuth`,
+/// which complete the second factor on a Para-hosted page once Para's updated authentication flow is enabled for your
+/// app. A separate type rather than a `ParaError` case, so existing exhaustive `switch`es over `ParaError` still compile.
+public struct ParaTwoFactorRequiredError: Error, LocalizedError {
+    public init() {}
+
+    public var errorDescription: String? {
+        "This account requires two-factor authentication to sign in, which this sign-in flow can't complete."
+    }
+}
+
 public enum TwoFactorSetupResponse {
     /// 2FA is already set up
     case alreadySetup

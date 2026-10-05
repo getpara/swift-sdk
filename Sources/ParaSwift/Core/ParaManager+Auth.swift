@@ -23,6 +23,19 @@ extension ParaManager {
         }
     }
 
+    /// Whether a stage-based sign-in result is parked on login 2FA (`stage: "mfa"`).
+    nonisolated static func isTwoFactorPark(_ result: Any?) -> Bool {
+        (result as? [String: Any])?["stage"] as? String == "mfa"
+    }
+
+    /// A legacy sign-in parked on login 2FA (`stage: "mfa"`) can't be finished from these flows: cancel it so core
+    /// isn't left parked for the next sign-in, and throw ``ParaTwoFactorRequiredError``.
+    func rejectIfTwoFactorRequired(_ result: Any?) async throws {
+        guard Self.isTwoFactorPark(result) else { return }
+        try? await cancelAuthV2Flow()
+        throw ParaTwoFactorRequiredError()
+    }
+
     private func parseAuthStateFromResult(_ result: Any?) throws -> AuthState {
         guard let resultDict = result as? [String: Any] else {
             throw ParaError.bridgeError("Invalid result format from authentication call")
@@ -232,6 +245,7 @@ public extension ParaManager {
         let payload = createSignUpOrLogInPayload(from: auth)
 
         let result = try await postMessage(method: "signUpOrLogIn", payload: payload)
+        try await rejectIfTwoFactorRequired(result)
         let authState = try parseAuthStateFromResult(result)
 
         if authState.stage == .verify || authState.stage == .login {
@@ -407,6 +421,7 @@ public extension ParaManager {
         // Log the raw result from the bridge before parsing
         let logger = Logger(subsystem: "com.paraSwift", category: "ParaManager.Verify")
         logger.debug("Raw result from verifyNewAccount bridge call received")
+        try await rejectIfTwoFactorRequired(result)
         let authState = try parseAuthStateFromResult(result)
 
         if authState.stage == .signup {
@@ -821,6 +836,7 @@ extension ParaManager {
 
         // Call the loginExternalWallet method
         let authStateResult = try await postMessage(method: "loginExternalWallet", payload: params)
+        try await rejectIfTwoFactorRequired(authStateResult)
 
         // Process the result
         // For connection-only wallets, the response is just { userId: "EXTERNAL_WALLET_CONNECTION_ONLY" }

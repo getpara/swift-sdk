@@ -128,6 +128,7 @@ extension ParaManager {
         let result = try await paraWebView.postMessage(method: "verifyOAuth", payload: verifyParams)
 
         // Step 5: Process the verification result
+        try await rejectIfTwoFactorRequired(result)
         let authState = try processOAuthResult(result, logger: logger)
         logger.debug("OAuth verification completed with stage: \(authState.stage.rawValue)")
 
