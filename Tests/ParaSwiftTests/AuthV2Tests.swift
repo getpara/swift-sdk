@@ -58,6 +58,26 @@ final class AuthV2Tests: XCTestCase {
         XCTAssertEqual(evm as? [String: String], ["signature": "sig"])
     }
 
+    func testSetupTakesAnOfferedFallbackWhenTheDeviceCannotCreateAPasskey() {
+        let state = snapshot(authPhase: "waiting_for_session", info: [
+            "isNewUser": true, "isCredentialSetup": true, "passkeyId": "bio-1", "passwordUrl": "https://portal/createPassword",
+        ])
+
+        XCTAssertEqual(
+            AuthV2CredentialSetupStep.resolve(state, nativePasskeySupported: false),
+            .portal(url: "https://portal/createPassword", context: "password setup")
+        )
+        XCTAssertEqual(AuthV2CredentialSetupStep.resolve(state, nativePasskeySupported: true), .nativePasskey(biometricsId: "bio-1"))
+    }
+
+    func testSetupStillTriesTheNativePasskeyWhenNothingElseIsOffered() {
+        let state = snapshot(authPhase: "waiting_for_session", info: [
+            "isNewUser": true, "isCredentialSetup": true, "passkeyId": "bio-1",
+        ])
+
+        XCTAssertEqual(AuthV2CredentialSetupStep.resolve(state, nativePasskeySupported: false), .nativePasskey(biometricsId: "bio-1"))
+    }
+
     func testReturningPasskeyUserSignsInWithTheNativePasskey() {
         let state = snapshot(info: [
             "isNewUser": false,

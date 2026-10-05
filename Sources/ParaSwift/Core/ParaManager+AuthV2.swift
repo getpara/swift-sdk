@@ -88,11 +88,13 @@ enum AuthV2CredentialSetupStep: Equatable {
     /// Open this portal create page.
     case portal(url: String, context: String)
 
-    /// Passkey first, matching the legacy signup preference; then password, then PIN for partners that only
-    /// offer PIN. The portal passkey page is a last resort for a projection without a pending passkey row.
-    static func resolve(_ snapshot: AuthV2Snapshot) -> AuthV2CredentialSetupStep? {
+    /// Passkey first, matching the legacy signup preference, where this device can create one; then password, then
+    /// PIN for partners that only offer PIN. A device that can't create a passkey (no passcode) takes an offered
+    /// password or PIN instead, and only falls back to the native passkey when nothing else is offered. The portal
+    /// passkey page is a last resort for a projection without a pending passkey row.
+    static func resolve(_ snapshot: AuthV2Snapshot, nativePasskeySupported: Bool = true) -> AuthV2CredentialSetupStep? {
         guard snapshot.isCredentialSetup else { return nil }
-        if let id = snapshot.passkeyId {
+        if let id = snapshot.passkeyId, nativePasskeySupported {
             return .nativePasskey(biometricsId: id)
         }
         if let url = snapshot.passwordUrl {
@@ -100,6 +102,9 @@ enum AuthV2CredentialSetupStep: Equatable {
         }
         if let url = snapshot.pinUrl {
             return .portal(url: url, context: "PIN setup")
+        }
+        if let id = snapshot.passkeyId {
+            return .nativePasskey(biometricsId: id)
         }
         if let url = snapshot.passkeyUrl {
             return .portal(url: url, context: "passkey setup")
@@ -466,7 +471,10 @@ extension ParaManager {
         let afterPortal = try await waitForAuthV2State(pending, timeout: 180) {
             $0.isAuthenticated || $0.credentialSetupStep != nil
         }
-        guard !afterPortal.isAuthenticated, let setupStep = afterPortal.credentialSetupStep else { return }
+        // Choose with the device's actual passkey support: a phone without a passcode can't create one.
+        guard !afterPortal.isAuthenticated,
+              let setupStep = AuthV2CredentialSetupStep.resolve(afterPortal, nativePasskeySupported: nativePasskeyAvailable())
+        else { return }
 
         switch setupStep {
         case let .nativePasskey(biometricsId):
