@@ -267,6 +267,8 @@ extension ParaManager {
                         break
                     } catch is CancellationError {
                         throw CancellationError()
+                    } catch let error as ParaTwoFactorRequiredError {
+                        throw error
                     } catch {
                         guard retries < maxVerificationRetries, try await canRetryVerificationCode() else { throw error }
                         retries += 1

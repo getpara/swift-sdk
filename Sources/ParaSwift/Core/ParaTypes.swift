@@ -57,11 +57,10 @@ public enum ParaError: Error, CustomStringConvertible, LocalizedError {
     }
 }
 
-/// Response type for 2FA setup operation
 /// Thrown by the stage-based sign-in methods (`initiateAuthFlow`, `handleVerificationCode`, `handleOAuth`,
 /// `loginExternalWallet`) when the account must complete login two-factor authentication, which those flows can't host.
 /// The SDK cancels the pending sign-in before throwing. Use `authenticateWithEmailOrPhone` or `authenticateWithOAuth`,
-/// which complete the second factor on a Para-hosted page once Para's updated authentication flow is enabled for your
+/// which complete the second factor on a Para-hosted page once Para's updated authentication flow runs for your
 /// app. A separate type rather than a `ParaError` case, so existing exhaustive `switch`es over `ParaError` still compile.
 public struct ParaTwoFactorRequiredError: Error, LocalizedError {
     public init() {}
@@ -71,6 +70,7 @@ public struct ParaTwoFactorRequiredError: Error, LocalizedError {
     }
 }
 
+/// Response type for 2FA setup operation
 public enum TwoFactorSetupResponse {
     /// 2FA is already set up
     case alreadySetup
