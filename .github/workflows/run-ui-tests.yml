@@ -60,7 +60,7 @@ jobs:
           PR_BRANCH: ${{ github.head_ref }}
         run: |
           echo "Updating swift-sdk branch to $PR_BRANCH in project.pbxproj"
-          perl -0pi -e 's|(repositoryURL = "https://github.com/getpara/swift-sdk";\n\s+requirement = \{\n)\s+kind = upToNextMajorVersion;\n\s+minimumVersion = 2\.9\.0;|$1\t\t\t\tbranch = "'"$PR_BRANCH"'";\n\t\t\t\tkind = branch;|' example.xcodeproj/project.pbxproj
+          perl -0pi -e 's|(repositoryURL = "https://github.com/getpara/swift-sdk";\n\s+requirement = \{\n)\s+kind = upToNextMajorVersion;\n\s+minimumVersion = \d+\.\d+\.\d+;|$1\t\t\t\tbranch = "$ENV{PR_BRANCH}";\n\t\t\t\tkind = branch;| or die "Could not select swift-sdk PR branch\n";' example.xcodeproj/project.pbxproj
           echo "Updated swift-sdk dependency:"
           grep -A 5 'XCRemoteSwiftPackageReference "swift-sdk"' example.xcodeproj/project.pbxproj
 
@@ -69,12 +69,27 @@ jobs:
         run: |
           xcodebuild -resolvePackageDependencies
 
-      - name: Run UI Tests on Simulator
-        id: run-tests
+      - name: Configure sample app
         working-directory: examples-hub/mobile/with-swift
         env:
           PARA_API_KEY: ${{ secrets.PARA_API_KEY }}
           PARA_ENVIRONMENT: ${{ secrets.PARA_ENVIRONMENT }}
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          api_key = os.environ["PARA_API_KEY"].strip()
+          if not api_key:
+              raise SystemExit("PARA_API_KEY secret is missing")
+          environment = os.environ["PARA_ENVIRONMENT"].strip() or "sandbox"
+          with Path("example/Config.xcconfig").open("a") as config:
+              config.write(f"\nPARA_API_KEY = {api_key}\nPARA_ENVIRONMENT = {environment}\n")
+          PY
+
+      - name: Run UI Tests on Simulator
+        id: run-tests
+        working-directory: examples-hub/mobile/with-swift
         run: |
           set -o pipefail
           xcodebuild \

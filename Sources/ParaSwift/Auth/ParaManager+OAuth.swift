@@ -66,6 +66,18 @@ extension ParaManager {
             throw ParaError.error("Missing WebAuthenticationSession. Call setDefaultWebAuthenticationSession(_:) or pass one in.")
         }
 
+        try await runLegacyOAuth(provider: provider, session: session, authorizationController: authorizationController)
+    }
+
+    /// The legacy OAuth flow behind `handleOAuth`. Returns whether it created the account.
+    @discardableResult
+    func runLegacyOAuth(
+        provider: OAuthProvider,
+        session: WebAuthenticationSession,
+        authorizationController: AuthorizationController
+    ) async throws -> Bool {
+        let logger = Logger(subsystem: "com.paraSwift", category: "OAuth")
+
         // Step 1: Get OAuth verification
         logger.debug("Starting OAuth flow for provider: \(provider.rawValue)")
         let authState = try await verifyOAuth(provider: provider, webAuthenticationSession: session)
@@ -74,8 +86,9 @@ extension ParaManager {
         try await processOAuthAuthState(
             authState,
             authorizationController: authorizationController,
-            logger: logger,
+            logger: logger
         )
+        return authState.stage == .signup
     }
 
     // MARK: - Private OAuth Helper Methods
@@ -90,6 +103,7 @@ extension ParaManager {
         try await ensureWebViewReady()
 
         // Step 1: Prepare and get the OAuth URL
+        // swiftformat:disable:next redundantSelf - Logger interpolation is an escaping autoclosure
         logger.debug("Getting OAuth URL for provider: \(provider.rawValue) and appScheme: \(self.appScheme)")
         let oAuthParams = OAuthUrlParams(method: provider.rawValue, appScheme: appScheme)
 
@@ -107,7 +121,7 @@ extension ParaManager {
         // Step 4: Verify the OAuth response
         let verifyParams = VerifyOAuthParams(
             method: provider.rawValue,
-            deeplinkUrl: callbackUrlString,
+            deeplinkUrl: callbackUrlString
         )
 
         logger.debug("Calling verifyOAuth with provider: \(provider.rawValue)")
@@ -228,7 +242,7 @@ extension ParaManager {
     private func processOAuthAuthState(
         _ authState: AuthState,
         authorizationController: AuthorizationController,
-        logger: Logger,
+        logger: Logger
     ) async throws {
         switch authState.stage {
         case .login:
@@ -245,7 +259,7 @@ extension ParaManager {
             try await loginWithPasskey(
                 authorizationController: authorizationController,
                 email: authState.email,
-                phone: authState.phone,
+                phone: authState.phone
             )
 
             logger.debug("Login successful")
@@ -272,7 +286,7 @@ extension ParaManager {
             try await generatePasskey(
                 identifier: identifier,
                 biometricsId: passkeyId,
-                authorizationController: authorizationController,
+                authorizationController: authorizationController
             )
 
             logger.debug("Passkey generation completed successfully")
