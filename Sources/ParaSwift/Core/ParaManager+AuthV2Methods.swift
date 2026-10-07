@@ -71,6 +71,8 @@ public extension ParaManager {
     ///   - authorizationController: Runs native passkey creation and sign-in.
     ///   - webAuthenticationSession: Presents the provider and Para's hosted pages. Falls back to the default session.
     /// - Returns: The authenticated user.
+    /// - Throws: ``ParaTwoFactorRequiredError`` when the account must complete two-factor authentication and the
+    ///   sign-in runs Para's earlier flow, which can't host it.
     @MainActor
     func authenticateWithOAuth(
         provider: OAuthProvider,
@@ -119,6 +121,8 @@ public extension ParaManager {
     ///   - signMessage: Signs the message with the wallet (for MetaMask, ``MetaMaskConnector/signMessage(_:account:)``)
     ///     and returns the signature. Throw to cancel.
     /// - Returns: The authenticated user.
+    /// - Throws: ``ParaTwoFactorRequiredError`` when the account must complete two-factor authentication and the
+    ///   sign-in runs Para's earlier flow, which can't host it.
     @MainActor
     func authenticateWithExternalWallet(
         address: String,

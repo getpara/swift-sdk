@@ -119,6 +119,45 @@ final class AuthV2Tests: XCTestCase {
         XCTAssertEqual(AuthV2CredentialSetupStep.resolve(state, nativePasskeySupported: false), .nativePasskey(biometricsId: "bio-1"))
     }
 
+    func testRecognizesALegacySignInParkedOnTwoFactor() {
+        XCTAssertTrue(ParaManager.isTwoFactorPark(["stage": "mfa", "userId": "u1", "mfa": ["mode": "verify"]]))
+        XCTAssertFalse(ParaManager.isTwoFactorPark(["stage": "login", "userId": "u1"]))
+        XCTAssertFalse(ParaManager.isTwoFactorPark(["stage": "done", "userId": "u1"]))
+        XCTAssertFalse(ParaManager.isTwoFactorPark(nil))
+    }
+
+    func testTwoFactorRequiredErrorExplainsItself() {
+        let error = ParaTwoFactorRequiredError()
+        XCTAssertNil(error.mode)
+        XCTAssertEqual(error.methods, [])
+        XCTAssertNotNil(error.errorDescription)
+        XCTAssertEqual(error.description, error.errorDescription)
+    }
+
+    func testTwoFactorRequiredErrorReadsTheVerifyMode() {
+        let error = ParaTwoFactorRequiredError(mfa: ["mode": "verify", "step": "verify", "methods": ["totp"]])
+        XCTAssertEqual(error.mode, .verify)
+        XCTAssertEqual(error.methods, ["totp"])
+        XCTAssertEqual(error.description, error.errorDescription)
+    }
+
+    func testTwoFactorRequiredErrorReadsTheEnrollModeAndSaysSetupIsNeeded() {
+        let error = ParaTwoFactorRequiredError(mfa: ["mode": "enroll", "methods": ["totp", 7]])
+        XCTAssertEqual(error.mode, .enroll)
+        XCTAssertEqual(error.methods, ["totp"])
+        XCTAssertNotEqual(error.errorDescription, ParaTwoFactorRequiredError(mode: .verify).errorDescription)
+        XCTAssertEqual(error.description, error.errorDescription)
+    }
+
+    func testTwoFactorRequiredErrorToleratesMissingOrUnknownDetails() {
+        for mfa: Any? in [nil, NSNull(), [String: Any](), ["mode": "something-new"], ["mode": 1, "methods": "totp"]] {
+            let error = ParaTwoFactorRequiredError(mfa: mfa)
+            XCTAssertNil(error.mode)
+            XCTAssertEqual(error.methods, [])
+            XCTAssertEqual(error.errorDescription, ParaTwoFactorRequiredError().errorDescription)
+        }
+    }
+
     func testReturningPasskeyUserSignsInWithTheNativePasskey() {
         let state = snapshot(info: [
             "isNewUser": false,
