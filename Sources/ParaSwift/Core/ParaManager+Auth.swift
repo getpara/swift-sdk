@@ -33,7 +33,7 @@ extension ParaManager {
     func rejectIfTwoFactorRequired(_ result: Any?) async throws {
         guard Self.isTwoFactorPark(result) else { return }
         try? await cancelAuthV2Flow()
-        throw ParaTwoFactorRequiredError()
+        throw ParaTwoFactorRequiredError(mfa: (result as? [String: Any])?["mfa"])
     }
 
     private func parseAuthStateFromResult(_ result: Any?) throws -> AuthState {
@@ -805,6 +805,7 @@ public extension ParaManager {
     /// Logs in using an external wallet
     /// - Parameters:
     ///   - wallet: Information about the external wallet
+    /// - Throws: ``ParaTwoFactorRequiredError`` when the account must complete two-factor authentication to sign in.
     func loginExternalWallet(wallet: ExternalWalletInfo) async throws {
         try await performLoginExternalWallet(wallet: wallet)
     }
@@ -813,6 +814,7 @@ public extension ParaManager {
     /// - Parameters:
     ///   - externalAddress: The external wallet address
     ///   - type: The type of wallet (e.g. "EVM")
+    /// - Throws: ``ParaTwoFactorRequiredError`` when the account must complete two-factor authentication to sign in.
     func loginExternalWallet(externalAddress: String, type: String) async throws {
         let walletType = ExternalWalletType(rawValue: type) ?? .evm
         let wallet = ExternalWalletInfo(address: externalAddress, type: walletType)

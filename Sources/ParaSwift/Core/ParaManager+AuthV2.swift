@@ -165,6 +165,8 @@ public extension ParaManager {
     ///   - verificationCodeProvider: Collects the one-time code on the legacy flow. It's called again with the
     ///     error when a code is rejected, so the app can show it and ask for another. Throw to cancel.
     /// - Returns: The authenticated user.
+    /// - Throws: ``ParaTwoFactorRequiredError`` when the account must complete two-factor authentication and the
+    ///   sign-in runs Para's earlier flow, which can't host it.
     @MainActor
     func authenticateWithEmailOrPhone(
         auth: Auth,

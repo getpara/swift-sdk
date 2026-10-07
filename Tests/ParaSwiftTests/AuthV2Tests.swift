@@ -127,7 +127,35 @@ final class AuthV2Tests: XCTestCase {
     }
 
     func testTwoFactorRequiredErrorExplainsItself() {
-        XCTAssertNotNil(ParaTwoFactorRequiredError().errorDescription)
+        let error = ParaTwoFactorRequiredError()
+        XCTAssertNil(error.mode)
+        XCTAssertEqual(error.methods, [])
+        XCTAssertNotNil(error.errorDescription)
+        XCTAssertEqual(error.description, error.errorDescription)
+    }
+
+    func testTwoFactorRequiredErrorReadsTheVerifyMode() {
+        let error = ParaTwoFactorRequiredError(mfa: ["mode": "verify", "step": "verify", "methods": ["totp"]])
+        XCTAssertEqual(error.mode, .verify)
+        XCTAssertEqual(error.methods, ["totp"])
+        XCTAssertEqual(error.description, error.errorDescription)
+    }
+
+    func testTwoFactorRequiredErrorReadsTheEnrollModeAndSaysSetupIsNeeded() {
+        let error = ParaTwoFactorRequiredError(mfa: ["mode": "enroll", "methods": ["totp", 7]])
+        XCTAssertEqual(error.mode, .enroll)
+        XCTAssertEqual(error.methods, ["totp"])
+        XCTAssertNotEqual(error.errorDescription, ParaTwoFactorRequiredError(mode: .verify).errorDescription)
+        XCTAssertEqual(error.description, error.errorDescription)
+    }
+
+    func testTwoFactorRequiredErrorToleratesMissingOrUnknownDetails() {
+        for mfa: Any? in [nil, NSNull(), [String: Any](), ["mode": "something-new"], ["mode": 1, "methods": "totp"]] {
+            let error = ParaTwoFactorRequiredError(mfa: mfa)
+            XCTAssertNil(error.mode)
+            XCTAssertEqual(error.methods, [])
+            XCTAssertEqual(error.errorDescription, ParaTwoFactorRequiredError().errorDescription)
+        }
     }
 
     func testReturningPasskeyUserSignsInWithTheNativePasskey() {
