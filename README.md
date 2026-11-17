@@ -247,7 +247,7 @@ Make sure your views have access to these environment values when performing aut
 
 Para decides which sign-in flow runs for your app. There is nothing to configure or detect:
 
-*   Where Para's hosted sign-in flow is enabled, the user enters their one-time code (or password) on a Para-hosted page inside the `WebAuthenticationSession`. A new user then creates a passkey with the native prompt, or a password or PIN on a hosted page. A returning passkey user signs in with the native passkey prompt. `verificationCodeProvider` is not called.
+*   Where Para's updated authentication flow is enabled, the user enters their one-time code (or password) on a Para-hosted page inside the `WebAuthenticationSession`. A new user then creates a passkey with the native prompt, or a password or PIN on a hosted page. A returning passkey user signs in with the native passkey prompt. `verificationCodeProvider` is not called.
 *   Otherwise the SDK runs the earlier flow and asks your `verificationCodeProvider` for the code Para sent. If the code is rejected, the provider is called again with the error so you can show it and ask for another. Throw from the provider to cancel.
 
 ```swift
@@ -283,7 +283,7 @@ let result = try await paraManager.authenticateWithOAuth(
 )
 ```
 
-`authenticateWithExternalWallet` signs a user in with a wallet they already control. Where the hosted sign-in flow is enabled, the SDK asks `signMessage` to sign a sign-in message and verifies the signature. That session proves control of the address only: no embedded Para wallet is created, and it cannot use embedded Para wallets the account already has. Otherwise the call runs the same login as `loginExternalWallet` and `signMessage` is not called. A Cosmos wallet also needs the `signCosmosMessage` parameter.
+`authenticateWithExternalWallet` signs a user in with a wallet they already control. Where the updated flow is enabled, the SDK asks `signMessage` to sign a sign-in message and verifies the signature. That session proves control of the address only: no embedded Para wallet is created, and it cannot use embedded Para wallets the account already has. Otherwise the call runs the same login as `loginExternalWallet` and `signMessage` is not called. A Cosmos wallet also needs the `signCosmosMessage` parameter.
 
 ```swift
 try await metaMaskConnector.connect()
@@ -299,11 +299,11 @@ let result = try await paraManager.authenticateWithExternalWallet(
 )
 ```
 
-If a user is already signed in, these calls throw instead of starting a new sign-in: always for email and phone, and on the hosted flow for the other two. Call `logout()` first. The exception is the connection-only session left by `MetaMaskConnector.connect()`, which `authenticateWithExternalWallet` replaces for you. After a failed attempt you can call them again.
+If a user is already signed in, these calls throw instead of starting a new sign-in: always for email and phone, and on the updated flow for the other two. Call `logout()` first. The exception is the connection-only session left by `MetaMaskConnector.connect()`, which `authenticateWithExternalWallet` replaces for you. After a failed attempt you can call them again.
 
 **Two-factor authentication:**
 
-When an account has to complete two-factor authentication, the hosted sign-in flow shows that step on the Para-hosted page and the call returns as usual. The earlier flow cannot show it. There the SDK cancels the pending sign-in and throws `ParaTwoFactorRequiredError`. Its `mode` is `.verify` (the account has a second factor) or `.enroll` (it must set one up first), and `methods` lists the methods Para offered. The older methods below (`handleOAuth`, `loginExternalWallet` and the stage-based email and phone methods) always run the earlier flow, so they throw this error for such accounts.
+When an account has to complete two-factor authentication, the updated flow shows that step on the Para-hosted page and the call returns as usual. The earlier flow cannot show it. There the SDK cancels the pending sign-in and throws `ParaTwoFactorRequiredError`. Its `mode` is `.verify` (the account has a second factor) or `.enroll` (it must set one up first), and `methods` lists the methods Para offered. The older methods below (`handleOAuth`, `loginExternalWallet` and the stage-based email and phone methods) always run the earlier flow, so they throw this error for such accounts.
 
 The methods below keep working and remain available as an alternative.
 
