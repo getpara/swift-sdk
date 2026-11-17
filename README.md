@@ -241,6 +241,72 @@ Make sure your views have access to these environment values when performing aut
 @Environment(\.webAuthenticationSession) private var webAuthenticationSession // Needed for OAuth
 ```
 
+**Sign in with a single call (recommended, 2.11.0 and later):**
+
+`authenticateWithEmailOrPhone`, `authenticateWithOAuth` and `authenticateWithExternalWallet` each sign a user up or in with one call. They return an `AuthenticationResult` (`userId`, `isNewUser`) once the session is active.
+
+Para decides which sign-in flow runs for your app. There is nothing to configure or detect:
+
+*   Where Para's hosted sign-in flow is enabled, the user enters their one-time code (or password) on a Para-hosted page inside the `WebAuthenticationSession`. A new user then creates a passkey with the native prompt, or a password or PIN on a hosted page. A returning passkey user signs in with the native passkey prompt. `verificationCodeProvider` is not called.
+*   Otherwise the SDK runs the earlier flow and asks your `verificationCodeProvider` for the code Para sent. If the code is rejected, the provider is called again with the error so you can show it and ask for another. Throw from the provider to cancel.
+
+```swift
+// Para-hosted pages open in this session. Set it once, or pass webAuthenticationSession: to each call.
+paraManager.setDefaultWebAuthenticationSession(webAuthenticationSession)
+
+do {
+    let result = try await paraManager.authenticateWithEmailOrPhone(
+        auth: .email("user@example.com"), // or .phone("+15551234567"), full number with country code
+        authorizationController: authorizationController,
+        verificationCodeProvider: { previousError in
+            // Show your code entry UI and return what the user typed.
+            // previousError is set when the last code was rejected.
+            try await promptForCode(previousError) // Your own async function
+        }
+    )
+    print("Signed in \(result.userId), new user: \(result.isNewUser)")
+} catch let error as ParaTwoFactorRequiredError {
+    // See "Two-factor authentication" below
+    print(error.localizedDescription)
+} catch {
+    // Includes the user closing a hosted page or the passkey prompt
+    print("Sign-in failed: \(error.localizedDescription)")
+}
+```
+
+Social login takes a provider instead of a code provider. It needs a `WebAuthenticationSession` and throws if none is set or passed:
+
+```swift
+let result = try await paraManager.authenticateWithOAuth(
+    provider: .google, // or .apple, .discord
+    authorizationController: authorizationController
+)
+```
+
+`authenticateWithExternalWallet` signs a user in with a wallet they already control. Where the hosted sign-in flow is enabled, the SDK asks `signMessage` to sign a sign-in message and verifies the signature. That session proves control of the address only: no embedded Para wallet is created, and it cannot use embedded Para wallets the account already has. Otherwise the call runs the same login as `loginExternalWallet` and `signMessage` is not called. A Cosmos wallet also needs the `signCosmosMessage` parameter.
+
+```swift
+try await metaMaskConnector.connect()
+guard let account = metaMaskConnector.accounts.first else { return }
+
+let result = try await paraManager.authenticateWithExternalWallet(
+    address: account,
+    type: .evm,
+    provider: "metamask",
+    signMessage: { message in
+        try await metaMaskConnector.signMessage(message, account: account)
+    }
+)
+```
+
+If a user is already signed in, these calls throw instead of starting a new sign-in: always for email and phone, and on the hosted flow for the other two. Call `logout()` first. The exception is the connection-only session left by `MetaMaskConnector.connect()`, which `authenticateWithExternalWallet` replaces for you. After a failed attempt you can call them again.
+
+**Two-factor authentication:**
+
+When an account has to complete two-factor authentication, the hosted sign-in flow shows that step on the Para-hosted page and the call returns as usual. The earlier flow cannot show it. There the SDK cancels the pending sign-in and throws `ParaTwoFactorRequiredError`. Its `mode` is `.verify` (the account has a second factor) or `.enroll` (it must set one up first), and `methods` lists the methods Para offered. The older methods below (`handleOAuth`, `loginExternalWallet` and the stage-based email and phone methods) always run the earlier flow, so they throw this error for such accounts.
+
+The methods below keep working and remain available as an alternative.
+
 **1. Email Authentication:**
 
 Handles signup or login using an email address and passkeys. It manages the verification step if required.
