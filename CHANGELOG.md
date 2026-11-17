@@ -5,6 +5,9 @@
 - Added `authenticateWithOAuth(...)` and `authenticateWithExternalWallet(...)`, which run social and external-wallet sign-in to completion the same way. External-wallet sign-in verifies wallet ownership only and does not give access to embedded Para wallets (#48)
 - Added `ParaTwoFactorRequiredError`, thrown by `initiateAuthFlow`, `handleVerificationCode`, `handleOAuth` and `loginExternalWallet` when the account must complete two-factor authentication, which those methods cannot host. They previously failed with "Missing required fields" (#49)
 
+### Fixes
+- Fixed an intermittent "WebView failed to initialize" error on app launch. The SDK could send its init message before the bridge page was ready to receive it, leaving every call failing until the app was relaunched (#52)
+
 ### Changes
 - `postMessage(method:payload:)` accepts an optional `timeout:` for a single request (#48)
 
