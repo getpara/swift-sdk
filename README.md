@@ -241,186 +241,131 @@ Make sure your views have access to these environment values when performing aut
 @Environment(\.webAuthenticationSession) private var webAuthenticationSession // Needed for OAuth
 ```
 
-**1. Email Authentication:**
+**Sign in with a single call (recommended, 2.11.0 and later):**
 
-Handles signup or login using an email address and passkeys. It manages the verification step if required.
+`authenticateWithEmailOrPhone`, `authenticateWithOAuth` and `authenticateWithExternalWallet` each sign a user up or in with one call. They return an `AuthenticationResult` (`userId`, `isNewUser`) once the session is active.
+
+Para decides which sign-in flow runs for your app. There is nothing to configure or detect:
+
+*   Where Para's updated authentication flow is enabled, the user enters their one-time code (or password) on a Para-hosted page inside the `WebAuthenticationSession`. A new user then creates a passkey with the native prompt, or a password or PIN on a hosted page. A returning passkey user signs in with the native passkey prompt. `verificationCodeProvider` is not called.
+*   Otherwise the SDK runs the earlier flow and asks your `verificationCodeProvider` for the code Para sent. If the code is rejected, the provider is called again with the error so you can show it and ask for another. Throw from the provider to cancel.
 
 ```swift
-import SwiftUI
-import ParaSwift
+// Para-hosted pages open in this session. Set it once, or pass webAuthenticationSession: to each call.
+paraManager.setDefaultWebAuthenticationSession(webAuthenticationSession)
 
-struct EmailLoginView: View {
-    @EnvironmentObject var paraManager: ParaManager
-    @EnvironmentObject var appRootManager: AppRootManager // Your state manager
-    @Environment(\.authorizationController) private var authorizationController
-
-    @State private var email = ""
-    @State private var verificationCode = ""
-    @State private var needsVerification = false
-    @State private var isLoading = false
-    @State private var errorMessage: String?
-
-    func authenticate() {
-        isLoading = true
-        errorMessage = nil
-        Task {
-            let result = await paraManager.handleEmailAuth(
-                email: email,
-                verificationCode: needsVerification ? verificationCode : nil,
-                authorizationController: authorizationController
-            )
-            isLoading = false
-
-            switch result.status {
-            case .success:
-                appRootManager.currentRoot = .home // Navigate to home
-            case .needsVerification:
-                needsVerification = true // Show verification code input
-                errorMessage = "Please check your email for a verification code."
-            case .error:
-                errorMessage = result.errorMessage ?? "An unknown error occurred."
-                needsVerification = false // Reset verification state on error
-            }
+do {
+    let result = try await paraManager.authenticateWithEmailOrPhone(
+        auth: .email("user@example.com"), // or .phone("+15551234567"), full number with country code
+        authorizationController: authorizationController,
+        verificationCodeProvider: { previousError in
+            // Show your code entry UI and return what the user typed.
+            // previousError is set when the last code was rejected.
+            try await promptForCode(previousError) // Your own async function
         }
+    )
+    print("Signed in \(result.userId), new user: \(result.isNewUser)")
+} catch let error as ParaTwoFactorRequiredError {
+    // See "Two-factor authentication" below
+    print(error.localizedDescription)
+} catch {
+    // Includes the user closing a hosted page or the passkey prompt
+    print("Sign-in failed: \(error.localizedDescription)")
+}
+```
+
+Social login takes a provider instead of a code provider. It needs a `WebAuthenticationSession` and throws if none is set or passed:
+
+```swift
+let result = try await paraManager.authenticateWithOAuth(
+    provider: .google, // or .apple, .discord
+    authorizationController: authorizationController
+)
+```
+
+`authenticateWithExternalWallet` signs a user in with a wallet they already control. Where the updated flow is enabled, the SDK asks `signMessage` to sign a sign-in message and verifies the signature. That session proves control of the address only: no embedded Para wallet is created, and it cannot use embedded Para wallets the account already has. Otherwise the call runs the same login as `loginExternalWallet` and `signMessage` is not called. A Cosmos wallet also needs the `signCosmosMessage` parameter.
+
+```swift
+try await metaMaskConnector.connect()
+guard let account = metaMaskConnector.accounts.first else { return }
+
+let result = try await paraManager.authenticateWithExternalWallet(
+    address: account,
+    type: .evm,
+    provider: "metamask",
+    signMessage: { message in
+        try await metaMaskConnector.signMessage(message, account: account)
     }
+)
+```
 
-    var body: some View {
-        VStack {
-            TextField("Email", text: $email)
-                .keyboardType(.emailAddress)
-                .autocapitalization(.none)
-                .disableAutocorrection(true)
-                .disabled(isLoading || needsVerification)
+If a user is already signed in, these calls throw instead of starting a new sign-in: always for email and phone, and on the updated flow for the other two. Call `logout()` first. The exception is the connection-only session left by `MetaMaskConnector.connect()`, which `authenticateWithExternalWallet` replaces for you. After a failed attempt you can call them again.
 
-            if needsVerification {
-                TextField("Verification Code", text: $verificationCode)
-                    .keyboardType(.numberPad)
-                    .disabled(isLoading)
-                Button("Resend Code") {
-                    Task { try? await paraManager.resendVerificationCode() }
-                }
-                .disabled(isLoading)
-            }
+**Two-factor authentication:**
 
-            if let error = errorMessage {
-                Text(error).foregroundColor(.red)
-            }
+When an account has to complete two-factor authentication, the updated flow shows that step on the Para-hosted page and the call returns as usual. The earlier flow cannot show it. There the SDK cancels the pending sign-in and throws `ParaTwoFactorRequiredError`. Its `mode` is `.verify` (the account has a second factor) or `.enroll` (it must set one up first), and `methods` lists the methods Para offered. The older methods below (`handleOAuth`, `loginExternalWallet` and the stage-based email and phone methods) always run the earlier flow, so they throw this error for such accounts.
 
-            Button(needsVerification ? "Verify Code" : "Continue with Email") {
-                authenticate()
-            }
-            .disabled(isLoading || email.isEmpty || (needsVerification && verificationCode.isEmpty))
-            .buttonStyle(.borderedProminent)
+The methods below keep working and remain available as an alternative.
 
-            if isLoading { ProgressView() }
+**1. Email Authentication:**
 
-            // Optional: Direct Passkey Login Button
-            Button("Log In with Existing Passkey") {
-                 isLoading = true
-                 Task {
-                     do {
-                         // Use nil authInfo to prompt for any passkey associated with the relying party
-                         try await paraManager.loginWithPasskey(authorizationController: authorizationController, authInfo: nil)
-                         appRootManager.currentRoot = .home
-                     } catch {
-                         errorMessage = "Passkey login failed: \(error.localizedDescription)"
-                     }
-                     isLoading = false
-                 }
-            }
-            .buttonStyle(.bordered)
-            .disabled(isLoading)
-        }
-        .padding()
+The stage-based methods let you drive each step yourself. `initiateAuthFlow` returns an `AuthState` whose `stage` says what to do next.
+
+```swift
+// Start the flow. With a default WebAuthenticationSession set, a Para-hosted
+// sign-in finishes inside this call and the stage comes back as .done.
+let state = try await paraManager.initiateAuthFlow(auth: .email(email))
+
+switch state.stage {
+case .done:
+    break // Signed in
+case .login:
+    // Existing user: signs in with their passkey or password
+    try await paraManager.handleLogin(
+        authState: state,
+        authorizationController: authorizationController
+    )
+case .verify:
+    // Para sent a code. Show a code field, then call verify(code:) below.
+    // paraManager.resendVerificationCode() sends another one.
+    break
+case .signup:
+    try await paraManager.handleSignup(
+        authState: state,
+        method: .passkey, // or .password
+        authorizationController: authorizationController
+    )
+}
+
+func verify(code: String) async throws {
+    let verified = try await paraManager.handleVerificationCode(verificationCode: code)
+    if verified.stage == .signup {
+        try await paraManager.handleSignup(
+            authState: verified,
+            method: .passkey,
+            authorizationController: authorizationController
+        )
     }
 }
 ```
 
-**2. Phone Number Authentication:**
-
-Similar to email, but uses a phone number. Requires formatting the number correctly.
+A user who already has a passkey can also sign in directly:
 
 ```swift
-import SwiftUI
-import ParaSwift
+try await paraManager.loginWithPasskey(
+    authorizationController: authorizationController,
+    email: email,
+    phone: nil
+)
+```
 
-struct PhoneLoginView: View {
-    @EnvironmentObject var paraManager: ParaManager
-    @EnvironmentObject var appRootManager: AppRootManager
-    @Environment(\.authorizationController) private var authorizationController
+**2. Phone Number Authentication:**
 
-    @State private var phoneNumber = "" // User enters national number
-    @State private var countryCode = "1" // User selects country code (e.g., "1" for US/Canada)
-    @State private var verificationCode = ""
-    @State private var needsVerification = false
-    @State private var isLoading = false
-    @State private var errorMessage: String?
+The same flow with a phone number. Pass the full number including the country code.
 
-    // You'll need UI to select the country code
-
-    func authenticate() {
-        isLoading = true
-        errorMessage = nil
-        Task {
-            // Note: paraManager.handlePhoneAuth expects the *national* number and country code separately.
-            let result = await paraManager.handlePhoneAuth(
-                phoneNumber: phoneNumber, // e.g., "5551234567"
-                countryCode: countryCode, // e.g., "1"
-                verificationCode: needsVerification ? verificationCode : nil,
-                authorizationController: authorizationController
-            )
-            isLoading = false
-
-            switch result.status {
-            case .success:
-                appRootManager.currentRoot = .home
-            case .needsVerification:
-                needsVerification = true
-                errorMessage = "Please check your phone for a verification code."
-            case .error:
-                errorMessage = result.errorMessage ?? "An unknown error occurred."
-                needsVerification = false
-            }
-        }
-    }
-
-    var body: some View {
-        VStack {
-            // UI for country code selection (e.g., Picker or custom view)
-            HStack {
-                 Text("+\(countryCode)") // Display selected country code
-                 TextField("Phone Number", text: $phoneNumber)
-                     .keyboardType(.phonePad)
-                     .disabled(isLoading || needsVerification)
-            }
-
-            if needsVerification {
-                TextField("Verification Code", text: $verificationCode)
-                    .keyboardType(.numberPad)
-                    .disabled(isLoading)
-                Button("Resend Code") {
-                    Task { try? await paraManager.resendVerificationCode() }
-                }
-                .disabled(isLoading)
-            }
-
-            if let error = errorMessage {
-                Text(error).foregroundColor(.red)
-            }
-
-            Button(needsVerification ? "Verify Code" : "Continue with Phone") {
-                authenticate()
-            }
-            .disabled(isLoading || phoneNumber.isEmpty || (needsVerification && verificationCode.isEmpty))
-            .buttonStyle(.borderedProminent)
-
-            if isLoading { ProgressView() }
-
-             // Optional: Direct Passkey Login Button (same as email example)
-        }
-        .padding()
-    }
-}
+```swift
+let state = try await paraManager.initiateAuthFlow(auth: .phone("+15551234567"))
+// Handle state.stage as in the email example
 ```
 
 **3. OAuth Authentication (Google, Discord, Apple):**
@@ -445,18 +390,17 @@ struct OAuthLoginView: View {
         isLoading = true
         errorMessage = nil
         Task {
-            let result = await paraManager.handleOAuth(
-                provider: provider,
-                webAuthenticationSession: webAuthenticationSession,
-                authorizationController: authorizationController
-            )
-            isLoading = false
-
-            if result.success {
+            do {
+                try await paraManager.handleOAuth(
+                    provider: provider,
+                    webAuthenticationSession: webAuthenticationSession,
+                    authorizationController: authorizationController
+                )
                 appRootManager.currentRoot = .home
-            } else {
-                errorMessage = result.errorMessage ?? "OAuth failed."
+            } catch {
+                errorMessage = "OAuth failed: \(error.localizedDescription)"
             }
+            isLoading = false
         }
     }
 
@@ -537,7 +481,7 @@ Create and fetch user wallets.
 
 ```swift
 // Create a new EVM wallet (passkey must be set up first)
-// This is often done automatically during signup flows (handleEmailAuth, etc.)
+// This is often done automatically during signup flows (handleSignup, etc.)
 Button("Create EVM Wallet") {
     Task {
         do {
