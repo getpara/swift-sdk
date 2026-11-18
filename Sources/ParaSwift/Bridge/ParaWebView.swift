@@ -281,12 +281,21 @@ public class ParaWebView: NSObject, ObservableObject {
             return
         }
 
+        // `didFinish` can fire before the bridge's module script has run. The bridge has no message listener
+        // until then, so an init message posted early is dropped and the web view never becomes ready.
+        // Importing the same module again resolves once it has run. `void` keeps the result serializable.
         let script = """
-        console.log('Para Swift SDK: Sending init message');
-        window.postMessage({
-          messageType: 'Para#init',
-          arguments: \(jsonString)
-        });
+        void (async () => {
+          const bridge = document.querySelector('script[type="module"][src]');
+          if (bridge) {
+            try { await import(bridge.src); } catch (_) {}
+          }
+          console.log('Para Swift SDK: Sending init message');
+          window.postMessage({
+            messageType: 'Para#init',
+            arguments: \(jsonString)
+          });
+        })();
         """
 
         logger.debug("Executing Para#init script")
