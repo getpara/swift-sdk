@@ -1,3 +1,16 @@
+# Release 2.11.0 (Tue Nov 17 2026)
+
+### Features
+- Added `authenticateWithEmailOrPhone(...)`, a single call that signs a user up or in with email or phone and returns an `AuthenticationResult` (`userId`, `isNewUser`). Where Para's new sign-in flow is enabled for the app, the code, password and two-factor steps run on Para's hosted pages and passkeys stay native; otherwise it uses the existing flow and asks the app for the one-time code through `verificationCodeProvider` (#48)
+- Added `authenticateWithOAuth(...)` and `authenticateWithExternalWallet(...)`, which run social and external-wallet sign-in to completion the same way. External-wallet sign-in verifies wallet ownership only and does not give access to embedded Para wallets (#48)
+- Added `ParaTwoFactorRequiredError`, thrown by `initiateAuthFlow`, `handleVerificationCode`, `handleOAuth` and `loginExternalWallet` when the account must complete two-factor authentication, which those methods cannot host. They previously failed with "Missing required fields" (#49)
+
+### Fixes
+- Fixed an intermittent "WebView failed to initialize" error on app launch. The SDK could send its init message before the bridge page was ready to receive it, leaving every call failing until the app was relaunched (#52)
+
+### Changes
+- `postMessage(method:payload:)` accepts an optional `timeout:` for a single request (#48)
+
 # Release 2.10.0 (Mon Aug 31 2026)
 
 ### Features

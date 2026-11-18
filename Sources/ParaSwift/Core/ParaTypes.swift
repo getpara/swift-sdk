@@ -3,7 +3,7 @@ import Foundation
 /// Current package version.
 public enum ParaPackage {
     /// Package version of the Swift SDK
-    public static let version = "2.0.0"
+    public static let version = "2.11.0"
 }
 
 /// Specifies the intended authentication method.
