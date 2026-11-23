@@ -370,6 +370,51 @@ public class ParaWebView: NSObject, ObservableObject {
     }
 }
 
+extension ParaWebView {
+    /// Whether `url` is the bridge page or another URL on the same origin (scheme, host and port).
+    nonisolated static func isBridgeOrigin(_ url: URL?, bridgeUrl: URL) -> Bool {
+        guard let url else { return false }
+        if url == bridgeUrl { return true }
+        return isBridgeOrigin(scheme: url.scheme ?? "", host: url.host ?? "", port: url.port ?? 0, bridgeUrl: bridgeUrl)
+    }
+
+    /// Whether an origin is the bridge origin. A port of 0 means the scheme's default port.
+    nonisolated static func isBridgeOrigin(scheme: String, host: String, port: Int, bridgeUrl: URL) -> Bool {
+        guard let bridgeScheme = bridgeUrl.scheme?.lowercased(),
+              let bridgeHost = bridgeUrl.host?.lowercased(), !bridgeHost.isEmpty
+        else { return false }
+
+        let scheme = scheme.lowercased()
+        return scheme == bridgeScheme
+            && host.lowercased() == bridgeHost
+            && effectivePort(port, scheme: scheme) == effectivePort(bridgeUrl.port ?? 0, scheme: bridgeScheme)
+    }
+
+    private nonisolated static func effectivePort(_ port: Int, scheme: String) -> Int {
+        if port != 0 { return port }
+        switch scheme {
+        case "https": return 443
+        case "http": return 80
+        default: return 0
+        }
+    }
+
+    /// Clears readiness and fails the requests that were waiting on the previous bridge document.
+    private func resetBridgeState() {
+        guard isReady || isParaInitialized || !pendingRequests.isEmpty else { return }
+        logger.warning("Bridge document changed, resetting bridge state")
+        isReady = false
+        isParaInitialized = false
+
+        let pending = pendingRequests
+        pendingRequests.removeAll()
+        for entry in pending.values {
+            entry.timeoutTask?.cancel()
+            entry.continuation.resume(throwing: ParaWebViewError.bridgeError("The bridge page was reloaded"))
+        }
+    }
+}
+
 /// Represents an empty payload for bridge calls with no arguments
 struct EmptyPayload: Encodable {}
 
@@ -383,6 +428,8 @@ extension ParaWebView: WKNavigationDelegate {
     /// Called when content starts arriving
     public func webView(_: WKWebView, didCommit _: WKNavigation!) {
         logger.debug("WebView committed navigation")
+        // A new main document has no initialized bridge and never saw the requests sent to the previous one.
+        resetBridgeState()
     }
 
     /// Called when the WebView finishes loading
@@ -408,6 +455,13 @@ extension ParaWebView: WKNavigationDelegate {
     /// Called to handle navigation policy decisions
     public func webView(_: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         logger.debug("Navigation policy decision for: \(navigationAction.request.url?.absoluteString ?? "unknown")")
+        // The web view only ever shows the bridge page, so its main frame stays on the bridge origin.
+        let isMainFrame = navigationAction.targetFrame?.isMainFrame ?? true
+        if isMainFrame, !Self.isBridgeOrigin(navigationAction.request.url, bridgeUrl: environment.jsBridgeUrl) {
+            logger.warning("Blocked navigation away from the bridge origin")
+            decisionHandler(.cancel)
+            return
+        }
         decisionHandler(.allow)
     }
 }
@@ -435,6 +489,15 @@ extension ParaWebView: WKScriptMessageHandler {
 
         guard message.name == "callback" else {
             logger.warning("Received unknown message handler: \(message.name)")
+            return
+        }
+
+        // Bridge responses come from the bridge page itself: the main frame, on the bridge origin.
+        let origin = message.frameInfo.securityOrigin
+        guard message.frameInfo.isMainFrame,
+              Self.isBridgeOrigin(scheme: origin.protocol, host: origin.host, port: origin.port, bridgeUrl: environment.jsBridgeUrl)
+        else {
+            logger.warning("Ignored a bridge callback from an unexpected frame or origin")
             return
         }
 
