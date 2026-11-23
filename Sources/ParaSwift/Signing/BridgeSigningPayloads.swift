@@ -10,7 +10,7 @@ public enum BridgeChainType: String, Codable {
 }
 
 /// A JSON value used by EIP-712 domains and messages.
-public enum BridgeJSONValue: Codable, Equatable {
+public enum BridgeJSONValue: Codable, Equatable, Sendable {
     case string(String)
     case integer(Int)
     case decimal(Double)
@@ -18,6 +18,41 @@ public enum BridgeJSONValue: Codable, Equatable {
     case null
     case array([BridgeJSONValue])
     case object([String: BridgeJSONValue])
+
+    public subscript(key: String) -> BridgeJSONValue? {
+        guard case let .object(dict) = self else { return nil }
+        return dict[key]
+    }
+
+    init?(any value: Any) {
+        if value is NSNull {
+            self = .null
+        } else if let bool = value as? Bool {
+            self = .boolean(bool)
+        } else if let number = value as? NSNumber {
+            if CFGetTypeID(number) == CFBooleanGetTypeID() {
+                self = .boolean(number.boolValue)
+            } else if CFNumberIsFloatType(number) {
+                self = .decimal(number.doubleValue)
+            } else {
+                self = .integer(number.intValue)
+            }
+        } else if let string = value as? String {
+            self = .string(string)
+        } else if let array = value as? [Any] {
+            self = .array(array.compactMap(BridgeJSONValue.init(any:)))
+        } else if let dict = value as? [String: Any] {
+            var converted: [String: BridgeJSONValue] = [:]
+            for (key, item) in dict {
+                if let jsonValue = BridgeJSONValue(any: item) {
+                    converted[key] = jsonValue
+                }
+            }
+            self = .object(converted)
+        } else {
+            return nil
+        }
+    }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
@@ -78,6 +113,39 @@ public enum BridgeJSONValue: Codable, Equatable {
         case let .array(value): try container.encode(value)
         case let .object(value): try container.encode(value)
         }
+    }
+
+    /// Encodes arbitrary JSON payloads without EIP-712 safe-integer validation.
+    func encodeUnvalidated(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case let .string(value):
+            try container.encode(value)
+        case let .integer(value):
+            try container.encode(value)
+        case let .decimal(value):
+            if value.isFinite {
+                try container.encode(value)
+            } else {
+                try container.encode(String(describing: value))
+            }
+        case let .boolean(value):
+            try container.encode(value)
+        case .null:
+            try container.encodeNil()
+        case let .array(value):
+            try container.encode(value.map(UnvalidatedBridgeJSONValue.init))
+        case let .object(value):
+            try container.encode(value.mapValues(UnvalidatedBridgeJSONValue.init))
+        }
+    }
+}
+
+struct UnvalidatedBridgeJSONValue: Encodable {
+    let value: BridgeJSONValue
+
+    func encode(to encoder: Encoder) throws {
+        try value.encodeUnvalidated(to: encoder)
     }
 }
 
