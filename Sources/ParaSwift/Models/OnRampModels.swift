@@ -453,19 +453,37 @@ public struct ParaPendingOffRampDeposit: Codable, Sendable, Equatable {
     public let asset: String?
     public let network: String?
     public let updatedAt: String?
+    public let chainId: String?
+    public let contractAddress: String?
+    public let fiat: String?
+    public let fiatQuantity: String?
+    public let providerOrderId: String?
+    public let purchaseId: String?
 
     public init(
         destinationAddress: String,
         assetQuantity: String,
         asset: String? = nil,
         network: String? = nil,
-        updatedAt: String? = nil
+        updatedAt: String? = nil,
+        chainId: String? = nil,
+        contractAddress: String? = nil,
+        fiat: String? = nil,
+        fiatQuantity: String? = nil,
+        providerOrderId: String? = nil,
+        purchaseId: String? = nil
     ) {
         self.destinationAddress = destinationAddress
         self.assetQuantity = assetQuantity
         self.asset = asset
         self.network = network
         self.updatedAt = updatedAt
+        self.chainId = chainId
+        self.contractAddress = contractAddress
+        self.fiat = fiat
+        self.fiatQuantity = fiatQuantity
+        self.providerOrderId = providerOrderId
+        self.purchaseId = purchaseId
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -474,6 +492,12 @@ public struct ParaPendingOffRampDeposit: Codable, Sendable, Equatable {
         case asset
         case network
         case updatedAt
+        case chainId
+        case contractAddress
+        case fiat
+        case fiatQuantity
+        case providerOrderId
+        case purchaseId
     }
 
     public init(from decoder: Decoder) throws {
@@ -489,6 +513,12 @@ public struct ParaPendingOffRampDeposit: Codable, Sendable, Equatable {
         asset = try container.decodeIfPresent(String.self, forKey: .asset)
         network = try container.decodeIfPresent(String.self, forKey: .network)
         updatedAt = try container.decodeIfPresent(String.self, forKey: .updatedAt)
+        chainId = try container.decodeFlexibleStringIfPresent(forKey: .chainId)
+        contractAddress = try container.decodeIfPresent(String.self, forKey: .contractAddress)
+        fiat = try container.decodeIfPresent(String.self, forKey: .fiat)
+        fiatQuantity = try container.decodeFlexibleStringIfPresent(forKey: .fiatQuantity)
+        providerOrderId = try container.decodeIfPresent(String.self, forKey: .providerOrderId)
+        purchaseId = try container.decodeIfPresent(String.self, forKey: .purchaseId)
     }
 }
 

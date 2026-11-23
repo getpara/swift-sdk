@@ -174,14 +174,30 @@ final class OnRampTests: XCTestCase {
             XCTAssertTrue(msg.contains("Invalid arguments:"))
         }
 
-        // Structured bridge error -> ParaError.bridgeError with unwrapped details.data message/code/status
+        var createOrderRequestId: String?
+        manager.paraWebView.javascriptEvaluator = { script, completion in
+            completion(nil, nil)
+            guard let prefixRange = script.range(of: "window.postMessage("),
+                  let suffixRange = script.range(of: ");", options: .backwards),
+                  prefixRange.upperBound < suffixRange.lowerBound,
+                  let data = String(script[prefixRange.upperBound ..< suffixRange.lowerBound]).data(using: .utf8),
+                  let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  payload["methodName"] as? String == "createOnRampOrder",
+                  let id = payload["requestId"] as? String
+            else {
+                return
+            }
+            createOrderRequestId = id
+        }
         let callTask = Task {
             try await manager.postMessage(method: "createOnRampOrder", payload: EmptyPayload(), timeout: 10.0)
         }
-        while manager.paraWebView.pendingRequestIds.isEmpty {
+        let waitDeadline = Date().addingTimeInterval(5.0)
+        while createOrderRequestId == nil, Date() < waitDeadline {
             await Task.yield()
         }
-        let reqId = try XCTUnwrap(manager.paraWebView.pendingRequestIds.first)
+        manager.paraWebView.javascriptEvaluator = nil
+        let reqId = try XCTUnwrap(createOrderRequestId)
         manager.paraWebView.handleCallback(response: [
             "method": "createOnRampOrder",
             "requestId": reqId,
@@ -797,6 +813,80 @@ final class OnRampTests: XCTestCase {
         XCTAssertEqual(offRampResult.txHash, "0xfallback")
         XCTAssertEqual(offRampResult.onRampPurchase?.id, "pur-off")
         XCTAssertEqual(offRampResult.onRampPurchase?.type, .unknown("SWAP_OUT"))
+    }
+
+    func testPendingOffRampDepositDecodingAndEncoding() throws {
+        let numericPayload = Data(#"""
+        {
+          "destinationAddress": "0xdeposit",
+          "assetQuantity": 150.5,
+          "asset": "USDC",
+          "network": "BASE",
+          "updatedAt": "2026-11-23T05:30:00.000Z",
+          "chainId": 8453,
+          "contractAddress": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+          "fiat": "USD",
+          "fiatQuantity": 150.25,
+          "providerOrderId": "prov-ord-9",
+          "purchaseId": "pur-9"
+        }
+        """#.utf8)
+        let decodedNumeric = try JSONDecoder().decode(ParaPendingOffRampDeposit.self, from: numericPayload)
+        let expectedNumeric = ParaPendingOffRampDeposit(
+            destinationAddress: "0xdeposit",
+            assetQuantity: "150.5",
+            asset: "USDC",
+            network: "BASE",
+            updatedAt: "2026-11-23T05:30:00.000Z",
+            chainId: "8453",
+            contractAddress: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+            fiat: "USD",
+            fiatQuantity: "150.25",
+            providerOrderId: "prov-ord-9",
+            purchaseId: "pur-9"
+        )
+        XCTAssertEqual(decodedNumeric, expectedNumeric)
+
+        let roundTrippedData = try JSONEncoder().encode(decodedNumeric)
+        let roundTripped = try JSONDecoder().decode(ParaPendingOffRampDeposit.self, from: roundTrippedData)
+        XCTAssertEqual(roundTripped, expectedNumeric)
+
+        let stringPayload = Data(#"""
+        {
+          "destinationAddress": "So11111111111111111111111111111111111111112",
+          "assetQuantity": "42",
+          "chainId": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+          "fiatQuantity": "250.00",
+          "providerOrderId": "prov-sol-1",
+          "purchaseId": "pur-sol-1"
+        }
+        """#.utf8)
+        let decodedString = try JSONDecoder().decode(ParaPendingOffRampDeposit.self, from: stringPayload)
+        XCTAssertEqual(decodedString.chainId, "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp")
+        XCTAssertEqual(decodedString.fiatQuantity, "250.00")
+        XCTAssertEqual(decodedString.providerOrderId, "prov-sol-1")
+        XCTAssertEqual(decodedString.purchaseId, "pur-sol-1")
+
+        let minimalPayload = Data(#"""
+        {
+          "destinationAddress": "0xminimal",
+          "assetQuantity": "10"
+        }
+        """#.utf8)
+        let decodedMinimal = try JSONDecoder().decode(ParaPendingOffRampDeposit.self, from: minimalPayload)
+        XCTAssertEqual(
+            decodedMinimal,
+            ParaPendingOffRampDeposit(destinationAddress: "0xminimal", assetQuantity: "10")
+        )
+        XCTAssertNil(decodedMinimal.asset)
+        XCTAssertNil(decodedMinimal.network)
+        XCTAssertNil(decodedMinimal.updatedAt)
+        XCTAssertNil(decodedMinimal.chainId)
+        XCTAssertNil(decodedMinimal.contractAddress)
+        XCTAssertNil(decodedMinimal.fiat)
+        XCTAssertNil(decodedMinimal.fiatQuantity)
+        XCTAssertNil(decodedMinimal.providerOrderId)
+        XCTAssertNil(decodedMinimal.purchaseId)
     }
 
     func testBraleAndCoinbaseModelsDecodeAndEncode() throws {
