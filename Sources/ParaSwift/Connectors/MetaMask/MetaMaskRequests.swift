@@ -45,10 +45,13 @@ struct OriginatorInfo: Codable {
 
 /// Request parameters for signing messages
 struct SignMessageRequest: Codable {
+    /// JSON-RPC id. MetaMask echoes it in its reply, which ties the reply to this request.
+    let id: String
     let params: [String]
     let method: String
 
-    init(params: [String]) {
+    init(id: String, params: [String]) {
+        self.id = id
         self.params = params
         method = "personal_sign"
     }
@@ -61,10 +64,13 @@ struct SignMessageRequest: Codable {
 
 /// Request parameters for sending transactions
 struct SendTransactionRequest: Codable {
+    /// JSON-RPC id. MetaMask echoes it in its reply, which ties the reply to this request.
+    let id: String
     let params: [[String: String]]
     let method: String
 
-    init(params: [[String: String]]) {
+    init(id: String, params: [[String: String]]) {
+        self.id = id
         self.params = params
         method = "eth_sendTransaction"
     }

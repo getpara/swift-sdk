@@ -34,12 +34,24 @@ public class MetaMaskConnector: ObservableObject {
     @Published public private(set) var chainId: String?
 
     private var currentMessageType: MetaMaskMessageType?
+    /// JSON-RPC id of the pending sign or send request. Any app can open `<appScheme>://mmsdk`, so a reply only
+    /// counts when it echoes this id, which MetaMask does for the request it answers.
+    private var pendingRequestId: String?
+    /// The pending `personal_sign` request, kept so the returned signature can be checked against its account.
+    private var pendingSignRequest: (message: String, account: String)?
+    /// Opens a MetaMask URL. Tests replace it; nil uses `UIApplication`.
+    var urlOpener: ((URL) throws -> Void)?
     private lazy var originatorInfo: OriginatorInfo = .init(url: appUrl, apiVersion: config.apiVersion, platform: "ios", title: config.appName, dappId: config.appId)
 
     // MARK: - Continuation Management
 
     private var continuation: Any? {
-        didSet { currentMessageType = continuation != nil ? currentMessageType : nil }
+        didSet {
+            guard continuation == nil else { return }
+            currentMessageType = nil
+            pendingRequestId = nil
+            pendingSignRequest = nil
+        }
     }
 
     private func withContinuation<T>(type: MetaMaskMessageType, _ body: (CheckedContinuation<T, Error>) throws -> Void) async throws -> T {
@@ -140,6 +152,10 @@ public class MetaMaskConnector: ObservableObject {
                   let messageData = Data(base64Encoded: messageParam)
             else {
                 logger.error("Deep link is missing required parameters.")
+                if currentMessageType == .signMessage || currentMessageType == .sendTransaction {
+                    // It cannot be matched to the pending request, so it must not cancel it either.
+                    return false
+                }
                 throw MetaMaskError.invalidResponse
             }
 
@@ -149,6 +165,12 @@ public class MetaMaskConnector: ObservableObject {
                 logger.debug("Decoded connect response: chainId=\(response.data.chainId), accounts=\(response.data.accounts)")
                 handleConnectResult(response)
             case .signMessage, .sendTransaction:
+                guard let header = try? JSONDecoder().decode(MetaMaskReplyHeader.self, from: messageData),
+                      isReplyToPendingRequest(header)
+                else {
+                    logger.debug("Ignoring deep link that does not answer the pending request.")
+                    return false
+                }
                 let response = try JSONDecoder().decode(MetaMaskResponse<String>.self, from: messageData)
                 logger.debug("Decoded signMessage/transaction response successfully.")
                 handleResponse(response)
@@ -161,6 +183,17 @@ public class MetaMaskConnector: ObservableObject {
             complete(with: MetaMaskError.invalidResponse)
             return false
         }
+    }
+
+    /// Whether a reply answers the pending sign or send request. MetaMask echoes the request id as `data.id`.
+    /// A reply with another id, or with none, is not the answer and is ignored. The one exception is an error
+    /// without an id, which MetaMask sends when it cannot read a request; accepting it only cancels the request.
+    private func isReplyToPendingRequest(_ header: MetaMaskReplyHeader) -> Bool {
+        guard let pendingRequestId else { return false }
+        guard let replyId = header.data.id else {
+            return header.data.hasError && !header.data.hasResult
+        }
+        return replyId == pendingRequestId
     }
 
     private func handleResponse<T>(_ response: MetaMaskResponse<T>) {
@@ -178,6 +211,13 @@ public class MetaMaskConnector: ObservableObject {
         case let (.connect, connectResponse as ConnectResponse):
             handleConnectResult(connectResponse)
         case let (.signMessage, signature as String):
+            guard let request = pendingSignRequest,
+                  PersonalSignVerifier.isValid(signature: signature, message: request.message, account: request.account)
+            else {
+                logger.error("Signature does not match the requested account.")
+                complete(with: MetaMaskError.invalidResponse)
+                return
+            }
             complete(with: signature as! T)
         case let (.sendTransaction, txHash as String):
             complete(with: txHash as! T)
@@ -188,6 +228,12 @@ public class MetaMaskConnector: ObservableObject {
 
     private func handleConnectResult(_ response: ConnectResponse) {
         logger.debug("Handling connect result: chainId=\(response.data.chainId), accounts=\(response.data.accounts)")
+        guard let account = response.data.accounts.first, PersonalSignVerifier.isAddress(account) else {
+            logger.error("No valid address found in connect response")
+            complete(with: MetaMaskError.invalidResponse)
+            return
+        }
+
         chainId = response.data.chainId
         accounts = response.data.accounts
         isConnected = true
@@ -246,10 +292,13 @@ public class MetaMaskConnector: ObservableObject {
         // Set this as the active instance for deep link handling
         Self.activeInstance = self
 
-        let request = SignMessageRequest(params: [message, account])
+        let requestId = Self.makeRequestId()
+        let request = SignMessageRequest(id: requestId, params: [message, account])
         let encodedMessage = try request.encode()
 
         return try await withContinuation(type: .signMessage) { (_: CheckedContinuation<String, Error>) in
+            self.pendingRequestId = requestId
+            self.pendingSignRequest = (message, account)
             do {
                 let url = try makeMetaMaskURL(host: "mmsdk", message: encodedMessage, account: "\(account)@\(chainId ?? "")")
                 logger.debug("SignMessage URL: \(url.absoluteString)")
@@ -273,10 +322,12 @@ public class MetaMaskConnector: ObservableObject {
         // Set this as the active instance for deep link handling
         Self.activeInstance = self
 
-        let request = SendTransactionRequest(params: [transaction])
+        let requestId = Self.makeRequestId()
+        let request = SendTransactionRequest(id: requestId, params: [transaction])
         let encodedMessage = try request.encode()
 
         return try await withContinuation(type: .sendTransaction) { (_: CheckedContinuation<String, Error>) in
+            self.pendingRequestId = requestId
             do {
                 let url = try makeMetaMaskURL(host: "mmsdk", message: encodedMessage, account: "\(account)@\(chainId ?? "")")
                 logger.debug("SendTransaction URL: \(url.absoluteString)")
@@ -303,7 +354,17 @@ public class MetaMaskConnector: ObservableObject {
 // MARK: - URL Construction
 
 private extension MetaMaskConnector {
+    /// A fresh, unguessable JSON-RPC id. No underscore: MetaMask treats ids containing `_` as parts of a batch
+    /// and does not send those replies back over the deep link.
+    static func makeRequestId() -> String {
+        UUID().uuidString
+    }
+
     private func openMetaMaskURL(_ url: URL) throws {
+        if let urlOpener {
+            try urlOpener(url)
+            return
+        }
         if !UIApplication.shared.canOpenURL(url) {
             logger.debug("MetaMask is not installed. Opening App Store...")
             let appStoreURL = URL(string: "https://apps.apple.com/us/app/metamask-blockchain-wallet/id1438144202")!
