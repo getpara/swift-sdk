@@ -281,22 +281,7 @@ public class ParaWebView: NSObject, ObservableObject {
             return
         }
 
-        // `didFinish` can fire before the bridge's module script has run. The bridge has no message listener
-        // until then, so an init message posted early is dropped and the web view never becomes ready.
-        // Importing the same module again resolves once it has run. `void` keeps the result serializable.
-        let script = """
-        void (async () => {
-          const bridge = document.querySelector('script[type="module"][src]');
-          if (bridge) {
-            try { await import(bridge.src); } catch (_) {}
-          }
-          console.log('Para Swift SDK: Sending init message');
-          window.postMessage({
-            messageType: 'Para#init',
-            arguments: \(jsonString)
-          });
-        })();
-        """
+        let script = Self.buildInitScript(argumentsJSON: jsonString)
 
         logger.debug("Executing Para#init script")
 
@@ -308,6 +293,24 @@ public class ParaWebView: NSObject, ObservableObject {
                 self?.logger.debug("Para#init script executed, waiting for response...")
             }
         }
+    }
+
+    /// Builds the JS snippet that waits for every external module script on the bridge page
+    /// (including Vite dev server modules like `/@vite/client`) before posting `Para#init`.
+    /// `void` ensures `WKWebView.evaluateJavaScript` evaluates to `undefined` rather than failing
+    /// to serialize the returned Promise (`WKErrorJavaScriptResultTypeIsUnsupported`).
+    nonisolated static func buildInitScript(argumentsJSON: String) -> String {
+        """
+        void (async () => {
+          const scripts = Array.from(document.querySelectorAll('script[type="module"][src]'));
+          await Promise.all(scripts.map((s) => import(s.src).catch(() => {})));
+          console.log('Para Swift SDK: Sending init message');
+          window.postMessage({
+            messageType: 'Para#init',
+            arguments: \(argumentsJSON)
+          });
+        })();
+        """
     }
 
     /// Handles callbacks from the JavaScript bridge
