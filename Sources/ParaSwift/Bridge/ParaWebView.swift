@@ -295,6 +295,24 @@ public class ParaWebView: NSObject, ObservableObject {
         }
     }
 
+    /// Builds the JS snippet that waits for every external module script on the bridge page
+    /// (including Vite dev server modules like `/@vite/client`) before posting `Para#init`.
+    /// `void` ensures `WKWebView.evaluateJavaScript` evaluates to `undefined` rather than failing
+    /// to serialize the returned Promise (`WKErrorJavaScriptResultTypeIsUnsupported`).
+    nonisolated static func buildInitScript(argumentsJSON: String) -> String {
+        """
+        void (async () => {
+          const scripts = Array.from(document.querySelectorAll('script[type="module"][src]'));
+          await Promise.all(scripts.map((s) => import(s.src).catch(() => {})));
+          console.log('Para Swift SDK: Sending init message');
+          window.postMessage({
+            messageType: 'Para#init',
+            arguments: \(argumentsJSON)
+          });
+        })();
+        """
+    }
+
     /// Handles callbacks from the JavaScript bridge
     /// - Parameter response: The response data from JavaScript
     private func handleCallback(response: [String: Any]) {
@@ -429,22 +447,6 @@ extension ParaWebView: WKScriptMessageHandler {
             return
         }
         handleCallback(response: resp)
-    }
-
-    /// Builds the JS snippet that waits for every external module script on the bridge page
-    /// (including Vite dev server modules like `/@vite/client`) before posting `Para#init`.
-    nonisolated static func buildInitScript(argumentsJSON: String) -> String {
-        """
-        void (async () => {
-          const scripts = Array.from(document.querySelectorAll('script[type="module"][src]'));
-          await Promise.all(scripts.map((s) => import(s.src).catch(() => {})));
-          console.log('Para Swift SDK: Sending init message');
-          window.postMessage({
-            messageType: 'Para#init',
-            arguments: \(argumentsJSON)
-          });
-        })();
-        """
     }
 }
 
