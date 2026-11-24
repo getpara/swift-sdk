@@ -120,7 +120,7 @@ final class OnRampTests: XCTestCase {
         )
 
         do {
-            _ = try await manager.postMessage(method: "createOnRampOrder", payload: EmptyPayload(), timeout: nil)
+            _ = try await manager.postMessage(method: "createHostedOnRampOrder", payload: EmptyPayload(), timeout: nil)
             XCTFail("Expected ParaError.bridgeError")
         } catch let ParaError.bridgeError(msg) {
             XCTAssertEqual(msg, #"{"message":"verbatim"} (code: RAW_JSON, status: 400)"#)
@@ -182,7 +182,7 @@ final class OnRampTests: XCTestCase {
                   prefixRange.upperBound < suffixRange.lowerBound,
                   let data = String(script[prefixRange.upperBound ..< suffixRange.lowerBound]).data(using: .utf8),
                   let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  payload["methodName"] as? String == "createOnRampOrder",
+                  payload["methodName"] as? String == "createHostedOnRampOrder",
                   let id = payload["requestId"] as? String
             else {
                 return
@@ -190,7 +190,7 @@ final class OnRampTests: XCTestCase {
             createOrderRequestId = id
         }
         let callTask = Task {
-            try await manager.postMessage(method: "createOnRampOrder", payload: EmptyPayload(), timeout: 10.0)
+            try await manager.postMessage(method: "createHostedOnRampOrder", payload: EmptyPayload(), timeout: 10.0)
         }
         let waitDeadline = Date().addingTimeInterval(5.0)
         while createOrderRequestId == nil, Date() < waitDeadline {
@@ -199,7 +199,7 @@ final class OnRampTests: XCTestCase {
         manager.paraWebView.javascriptEvaluator = nil
         let reqId = try XCTUnwrap(createOrderRequestId)
         manager.paraWebView.handleCallback(response: [
-            "method": "createOnRampOrder",
+            "method": "createHostedOnRampOrder",
             "requestId": reqId,
             "error": [
                 "message": "Request failed with status code 422",
@@ -475,7 +475,7 @@ final class OnRampTests: XCTestCase {
 
         let start = Date()
         let callTask = Task {
-            try await webView.postMessage(method: "createOnRampOrder", payload: EmptyPayload(), timeout: 30.0)
+            try await webView.postMessage(method: "createHostedOnRampOrder", payload: EmptyPayload(), timeout: 30.0)
         }
 
         while webView.pendingRequestIds.isEmpty {
@@ -484,7 +484,7 @@ final class OnRampTests: XCTestCase {
         let requestId = try XCTUnwrap(webView.pendingRequestIds.first)
 
         webView.handleCallback(response: [
-            "method": "createOnRampOrder",
+            "method": "createHostedOnRampOrder",
             "requestId": requestId,
             "error": [
                 "message": "Unsupported asset",
@@ -754,22 +754,21 @@ final class OnRampTests: XCTestCase {
 
         let orderResultJSON = Data(#"""
         {
-          "onRampPurchase": {
-            "id": "pur-123",
-            "userId": "user-1",
-            "type": "SELL",
-            "walletId": "wallet-1",
-            "walletType": "EVM",
-            "status": "FAILED",
-            "provider": "MOONPAY",
-            "fiat": "USD",
-            "fiatQuantity": 100,
-            "asset": "USDC",
-            "assetQuantity": 99.5,
-            "network": "BASE",
-            "paymentMethod": "WIDGET",
-            "testMode": true
-          },
+          "id": "pur-123",
+          "userId": "user-1",
+          "type": "SELL",
+          "walletId": "wallet-1",
+          "walletType": "EVM",
+          "status": "FAILED",
+          "provider": "MOONPAY",
+          "fiat": "USD",
+          "fiatQuantity": 100,
+          "asset": "USDC",
+          "assetQuantity": 99.5,
+          "network": "BASE",
+          "paymentMethod": "WIDGET",
+          "launchToken": "secret-should-strip",
+          "testMode": true,
           "eventData": {
             "userId": "user-1",
             "purchaseId": "pur-123",
@@ -789,15 +788,19 @@ final class OnRampTests: XCTestCase {
           }
         }
         """#.utf8)
-        let getOrder = try JSONDecoder().decode(ParaGetOnRampOrderResult.self, from: orderResultJSON)
-        XCTAssertEqual(getOrder.onRampPurchase.status, .failed)
-        XCTAssertEqual(getOrder.onRampPurchase.type, .sell)
-        XCTAssertEqual(getOrder.onRampPurchase.fiatQuantity, "100")
-        XCTAssertEqual(getOrder.onRampPurchase.assetQuantity, "99.5")
+        let getOrder = try JSONDecoder().decode(ParaOnRampOrder.self, from: orderResultJSON)
+        XCTAssertEqual(getOrder.id, "pur-123")
+        XCTAssertEqual(getOrder.status, .failed)
+        XCTAssertEqual(getOrder.type, .sell)
+        XCTAssertEqual(getOrder.fiatQuantity, "100")
+        XCTAssertEqual(getOrder.assetQuantity, "99.5")
         XCTAssertEqual(getOrder.eventData?.purchaseId, "pur-123")
         XCTAssertEqual(getOrder.eventData?.direction, .sell)
         XCTAssertEqual(getOrder.pendingDeposit?.destinationAddress, "0xdeposit")
         XCTAssertEqual(getOrder.pendingDeposit?.assetQuantity, "100")
+        let encodedOrderData = try JSONEncoder().encode(getOrder)
+        let encodedOrderDict = try JSONSerialization.jsonObject(with: encodedOrderData) as? [String: Any]
+        XCTAssertNil(encodedOrderDict?["launchToken"])
 
         let offRampFallbackJSON = Data(#"""
         {
@@ -1154,15 +1157,15 @@ final class OnRampTests: XCTestCase {
         XCTAssertEqual(manager.recordedPayload(for: "getOnRampCatalog")?["search"] as? String, "USDC")
         XCTAssertEqual(manager.recordedPayload(for: "getOnRampCatalog")?["testMode"] as? Bool, true)
 
-        // Canonical nested createOnRampOrder payload: { walletId?, externalWalletAddress?, nativeCallbackUrl?, params: { ... } }
-        manager.stub("createOnRampOrder") { _ in
+        // Canonical nested createHostedOnRampOrder payload: { walletId?, externalWalletAddress?, nativeCallbackUrl?, params: { ... } }
+        manager.stub("createHostedOnRampOrder") { _ in
             [
                 "onRampPurchase": ["id": "pur-1", "status": "INITIATED", "provider": "STRIPE", "type": "BUY"],
                 "portalUrl": "https://portal.getpara.com/wallet/u1/on-ramp/pur-1#rampLaunchToken=tok",
             ]
         }
-        let created = try await manager.createOnRampOrder(
-            ParaCreateOnRampOrderParams(
+        let created = try await manager.createHostedOnRampOrder(
+            ParaCreateHostedOnRampOrderParams(
                 walletId: "w-1",
                 walletType: "EVM",
                 provider: .stripe,
@@ -1176,7 +1179,7 @@ final class OnRampTests: XCTestCase {
             )
         )
         XCTAssertEqual(created.onRampPurchase.id, "pur-1")
-        let createPayload = try XCTUnwrap(manager.recordedPayload(for: "createOnRampOrder"))
+        let createPayload = try XCTUnwrap(manager.recordedPayload(for: "createHostedOnRampOrder"))
         XCTAssertEqual(createPayload["walletId"] as? String, "w-1")
         XCTAssertEqual(createPayload["nativeCallbackUrl"] as? String, "myapp://callback")
         XCTAssertNil(createPayload["provider"])
@@ -1191,7 +1194,8 @@ final class OnRampTests: XCTestCase {
         // getOnRampOrder supports both walletId and externalWalletAddress, and rejects missing both
         manager.stub("getOnRampOrder") { _ in
             [
-                "onRampPurchase": ["id": "pur-1", "status": "INITIATED"],
+                "id": "pur-1",
+                "status": "INITIATED",
                 "pendingDeposit": NSNull(),
             ]
         }
@@ -1201,7 +1205,7 @@ final class OnRampTests: XCTestCase {
             walletType: "EVM",
             address: "0xabc"
         )
-        XCTAssertEqual(fetched.onRampPurchase.id, "pur-1")
+        XCTAssertEqual(fetched.id, "pur-1")
         XCTAssertEqual(manager.recordedPayload(for: "getOnRampOrder")?["purchaseId"] as? String, "pur-1")
 
         _ = try await manager.getOnRampOrder(
@@ -1229,6 +1233,37 @@ final class OnRampTests: XCTestCase {
         } catch {
             // Expected
         }
+
+        // parseCoinbaseApplePayEvent parses valid events, rejects non-onramp events, and checks allowedOrigins
+        let commitSuccess = ParaManager.parseCoinbaseApplePayEvent(
+            #"{"eventName":"onramp_api.commit_success"}"#,
+            origin: "https://pay.coinbase.com",
+            allowedOrigins: ["https://pay.coinbase.com/buy/select-asset?sessionToken=tok"]
+        )
+        XCTAssertEqual(commitSuccess, ParaCoinbaseApplePayEvent(eventName: "onramp_api.commit_success", data: nil))
+
+        let typeError = ParaManager.parseCoinbaseApplePayEvent(
+            #"{"type":"onramp_api.load_error","data":{"errorCode":"APPLE_PAY_UNAVAILABLE","errorMessage":"Not supported"}}"#
+        )
+        XCTAssertEqual(
+            typeError,
+            ParaCoinbaseApplePayEvent(
+                eventName: "onramp_api.load_error",
+                data: ParaCoinbaseApplePayEventErrorDetail(
+                    errorCode: "APPLE_PAY_UNAVAILABLE",
+                    errorMessage: "Not supported"
+                )
+            )
+        )
+
+        XCTAssertNil(ParaManager.parseCoinbaseApplePayEvent(#"{"eventName":"other.event"}"#))
+        XCTAssertNil(
+            ParaManager.parseCoinbaseApplePayEvent(
+                #"{"eventName":"onramp_api.cancel"}"#,
+                origin: "https://evil.example.com",
+                allowedOrigins: ["https://pay.coinbase.com/checkout"]
+            )
+        )
 
         // Canonical nested sendOffRampDeposit payload: { onRampPurchase: { ... }, depositRequest: { ... } }
         manager.stub("sendOffRampDeposit") { _ in

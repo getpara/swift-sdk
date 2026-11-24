@@ -522,8 +522,8 @@ public struct ParaPendingOffRampDeposit: Codable, Sendable, Equatable {
     }
 }
 
-/// Parameters passed to `createOnRampOrder`.
-public struct ParaCreateOnRampOrderParams: Codable, Sendable, Equatable {
+/// Parameters passed to `createHostedOnRampOrder`.
+public struct ParaCreateHostedOnRampOrderParams: Codable, Sendable, Equatable {
     public let walletId: String?
     public let externalWalletAddress: String?
     public let walletType: String?
@@ -584,8 +584,8 @@ public struct ParaCreateOnRampOrderParams: Codable, Sendable, Equatable {
     }
 }
 
-/// Result returned by `createOnRampOrder`.
-public struct ParaCreateOnRampOrderResult: Codable, Sendable, Equatable {
+/// Result returned by `createHostedOnRampOrder`.
+public struct ParaCreateHostedOnRampOrderResult: Codable, Sendable, Equatable {
     public let onRampPurchase: ParaOnRampPurchase
     public let portalUrl: String
 
@@ -595,20 +595,190 @@ public struct ParaCreateOnRampOrderResult: Codable, Sendable, Equatable {
     }
 }
 
-/// Result returned by `getOnRampOrder`.
-public struct ParaGetOnRampOrderResult: Codable, Sendable, Equatable {
-    public let onRampPurchase: ParaOnRampPurchase
+/// Flat order returned by `getOnRampOrder`: purchase fields plus optional event and pending off-ramp deposit metadata.
+public struct ParaOnRampOrder: Codable, Sendable, Equatable {
+    private let purchase: ParaOnRampPurchase
     public let eventData: ParaOnRampEventPayload?
     public let pendingDeposit: ParaPendingOffRampDeposit?
 
+    public var id: String {
+        purchase.id
+    }
+
+    public var userId: String? {
+        purchase.userId
+    }
+
+    public var type: ParaOnRampPurchaseType? {
+        purchase.type
+    }
+
+    public var walletId: String? {
+        purchase.walletId
+    }
+
+    public var walletType: String? {
+        purchase.walletType
+    }
+
+    public var externalWalletAddress: String? {
+        purchase.externalWalletAddress
+    }
+
+    public var address: String? {
+        purchase.address
+    }
+
+    public var status: ParaOnRampPurchaseStatus? {
+        purchase.status
+    }
+
+    public var provider: ParaOnRampProvider? {
+        purchase.provider
+    }
+
+    public var providerKey: String? {
+        purchase.providerKey
+    }
+
+    public var fiat: String? {
+        purchase.fiat
+    }
+
+    public var fiatCurrency: String? {
+        purchase.fiatCurrency
+    }
+
+    public var fiatQuantity: String? {
+        purchase.fiatQuantity
+    }
+
+    public var asset: String? {
+        purchase.asset
+    }
+
+    public var assetQuantity: String? {
+        purchase.assetQuantity
+    }
+
+    public var network: String? {
+        purchase.network
+    }
+
+    public var providerAssetCode: String? {
+        purchase.providerAssetCode
+    }
+
+    public var assetImplementationId: String? {
+        purchase.assetImplementationId
+    }
+
+    public var paymentMethod: ParaOnRampPaymentMethod? {
+        purchase.paymentMethod
+    }
+
+    public var transactionHash: String? {
+        purchase.transactionHash
+    }
+
+    public var testMode: Bool? {
+        purchase.testMode
+    }
+
     public init(
-        onRampPurchase: ParaOnRampPurchase,
+        id: String,
+        userId: String? = nil,
+        type: ParaOnRampPurchaseType? = nil,
+        walletId: String? = nil,
+        walletType: String? = nil,
+        externalWalletAddress: String? = nil,
+        address: String? = nil,
+        status: ParaOnRampPurchaseStatus? = nil,
+        provider: ParaOnRampProvider? = nil,
+        providerKey: String? = nil,
+        fiat: String? = nil,
+        fiatCurrency: String? = nil,
+        fiatQuantity: String? = nil,
+        asset: String? = nil,
+        assetQuantity: String? = nil,
+        network: String? = nil,
+        providerAssetCode: String? = nil,
+        assetImplementationId: String? = nil,
+        paymentMethod: ParaOnRampPaymentMethod? = nil,
+        transactionHash: String? = nil,
+        testMode: Bool? = nil,
         eventData: ParaOnRampEventPayload? = nil,
         pendingDeposit: ParaPendingOffRampDeposit? = nil
     ) {
-        self.onRampPurchase = onRampPurchase
+        purchase = ParaOnRampPurchase(
+            id: id,
+            userId: userId,
+            type: type,
+            walletId: walletId,
+            walletType: walletType,
+            externalWalletAddress: externalWalletAddress,
+            address: address,
+            status: status,
+            provider: provider,
+            providerKey: providerKey,
+            fiat: fiat,
+            fiatCurrency: fiatCurrency,
+            fiatQuantity: fiatQuantity,
+            asset: asset,
+            assetQuantity: assetQuantity,
+            network: network,
+            providerAssetCode: providerAssetCode,
+            assetImplementationId: assetImplementationId,
+            paymentMethod: paymentMethod,
+            transactionHash: transactionHash,
+            launchToken: nil,
+            testMode: testMode
+        )
         self.eventData = eventData
         self.pendingDeposit = pendingDeposit
+    }
+
+    private enum ExtraCodingKeys: String, CodingKey {
+        case eventData
+        case pendingDeposit
+    }
+
+    public init(from decoder: Decoder) throws {
+        let decoded = try ParaOnRampPurchase(from: decoder)
+        purchase = ParaOnRampPurchase(
+            id: decoded.id,
+            userId: decoded.userId,
+            type: decoded.type,
+            walletId: decoded.walletId,
+            walletType: decoded.walletType,
+            externalWalletAddress: decoded.externalWalletAddress,
+            address: decoded.address,
+            status: decoded.status,
+            provider: decoded.provider,
+            providerKey: decoded.providerKey,
+            fiat: decoded.fiat,
+            fiatCurrency: decoded.fiatCurrency,
+            fiatQuantity: decoded.fiatQuantity,
+            asset: decoded.asset,
+            assetQuantity: decoded.assetQuantity,
+            network: decoded.network,
+            providerAssetCode: decoded.providerAssetCode,
+            assetImplementationId: decoded.assetImplementationId,
+            paymentMethod: decoded.paymentMethod,
+            transactionHash: decoded.transactionHash,
+            launchToken: nil,
+            testMode: decoded.testMode
+        )
+        let extra = try decoder.container(keyedBy: ExtraCodingKeys.self)
+        eventData = try extra.decodeIfPresent(ParaOnRampEventPayload.self, forKey: .eventData)
+        pendingDeposit = try extra.decodeIfPresent(ParaPendingOffRampDeposit.self, forKey: .pendingDeposit)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        try purchase.encode(to: encoder)
+        var extra = encoder.container(keyedBy: ExtraCodingKeys.self)
+        try extra.encodeIfPresent(eventData, forKey: .eventData)
+        try extra.encodeIfPresent(pendingDeposit, forKey: .pendingDeposit)
     }
 }
 
@@ -1263,5 +1433,29 @@ public struct ParaOnRampPortalCallback: Sendable, Equatable {
         self.rawStatus = rawStatus
         self.purchaseId = purchaseId
         self.error = error
+    }
+}
+
+/// Error payload attached to a Coinbase Apple Pay WKWebView postMessage event.
+public struct ParaCoinbaseApplePayEventErrorDetail: Codable, Sendable, Equatable {
+    public let errorCode: String?
+    public let errorMessage: String?
+
+    public init(errorCode: String? = nil, errorMessage: String? = nil) {
+        self.errorCode = errorCode
+        self.errorMessage = errorMessage
+    }
+}
+
+/// Parsed event posted by a Coinbase headless Apple Pay payment page inside a WKWebView.
+public struct ParaCoinbaseApplePayEvent: Codable, Sendable, Equatable {
+    public static let eventPrefix = "onramp_api."
+
+    public let eventName: String
+    public let data: ParaCoinbaseApplePayEventErrorDetail?
+
+    public init(eventName: String, data: ParaCoinbaseApplePayEventErrorDetail? = nil) {
+        self.eventName = eventName
+        self.data = data
     }
 }

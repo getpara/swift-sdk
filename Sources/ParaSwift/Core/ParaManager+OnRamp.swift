@@ -298,8 +298,8 @@ public extension ParaManager {
         return try decodeOnRampDecodable(result, as: ParaOnRampCatalogResponse.self, method: "getOnRampCatalog")
     }
 
-    /// Creates an on-ramp or off-ramp order and returns the purchase plus its hosted portal launch URL.
-    func createOnRampOrder(_ params: ParaCreateOnRampOrderParams) async throws -> ParaCreateOnRampOrderResult {
+    /// Creates a hosted portal on-ramp or off-ramp order and returns the purchase plus its portal launch URL.
+    func createHostedOnRampOrder(_ params: ParaCreateHostedOnRampOrderParams) async throws -> ParaCreateHostedOnRampOrderResult {
         try await ensureWebViewReady()
         let wirePayload = CreateOnRampOrderBridgeArgs(
             walletId: params.walletId,
@@ -323,8 +323,8 @@ public extension ParaManager {
                 testMode: params.testMode
             )
         )
-        let result = try await postMessage(method: "createOnRampOrder", payload: wirePayload)
-        return try decodeOnRampDecodable(result, as: ParaCreateOnRampOrderResult.self, method: "createOnRampOrder")
+        let result = try await postMessage(method: "createHostedOnRampOrder", payload: wirePayload)
+        return try decodeOnRampDecodable(result, as: ParaCreateHostedOnRampOrderResult.self, method: "createHostedOnRampOrder")
     }
 
     /// Launches the hosted on-ramp portal URL in an authentication browser session and returns the callback URL, or `nil` if cancelled.
@@ -386,7 +386,7 @@ public extension ParaManager {
         externalWalletAddress: String? = nil,
         walletType: String? = nil,
         address: String? = nil
-    ) async throws -> ParaGetOnRampOrderResult {
+    ) async throws -> ParaOnRampOrder {
         let normalizedWalletId = nonEmptyTrimmed(walletId)
         let normalizedExternalWalletAddress = nonEmptyTrimmed(externalWalletAddress)
         let normalizedAddress = nonEmptyTrimmed(address)
@@ -405,7 +405,7 @@ public extension ParaManager {
             address: normalizedAddress
         )
         let result = try await postMessage(method: "getOnRampOrder", payload: args)
-        return try decodeOnRampDecodable(result, as: ParaGetOnRampOrderResult.self, method: "getOnRampOrder")
+        return try decodeOnRampDecodable(result, as: ParaOnRampOrder.self, method: "getOnRampOrder")
     }
 
     /// Signs and submits the on-chain deposit transaction for an off-ramp order.
@@ -552,6 +552,60 @@ public extension ParaManager {
             return status
         }
         throw ParaError.bridgeError("KEY_ERROR<settleCoinbaseOnrampPurchase-status>: Missing or invalid status in response")
+    }
+
+    /// Parses a WKScriptMessage JSON payload from a Coinbase headless Apple Pay payment page.
+    nonisolated static func parseCoinbaseApplePayEvent(
+        _ rawMessage: String,
+        origin: String? = nil,
+        allowedOrigins: [String]? = nil
+    ) -> ParaCoinbaseApplePayEvent? {
+        if let allowedOrigins {
+            guard let callerOrigin = normalizedURLOrigin(from: origin),
+                  allowedOrigins.contains(where: { normalizedURLOrigin(from: $0) == callerOrigin })
+            else {
+                return nil
+            }
+        }
+
+        guard let data = rawMessage.data(using: .utf8),
+              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            return nil
+        }
+
+        let candidateName = (dict["eventName"] as? String) ?? (dict["type"] as? String)
+        guard let eventName = candidateName,
+              eventName.hasPrefix(ParaCoinbaseApplePayEvent.eventPrefix)
+        else {
+            return nil
+        }
+
+        var detail: ParaCoinbaseApplePayEventErrorDetail?
+        if let rawData = dict["data"] as? [String: Any] {
+            let errorCode = rawData["errorCode"] as? String
+            let errorMessage = rawData["errorMessage"] as? String
+            if errorCode != nil || errorMessage != nil {
+                detail = ParaCoinbaseApplePayEventErrorDetail(errorCode: errorCode, errorMessage: errorMessage)
+            }
+        }
+
+        return ParaCoinbaseApplePayEvent(eventName: eventName, data: detail)
+    }
+
+    private nonisolated static func normalizedURLOrigin(from raw: String?) -> String? {
+        guard let raw,
+              let components = URLComponents(string: raw),
+              let scheme = components.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              let host = components.host?.lowercased(),
+              !host.isEmpty
+        else {
+            return nil
+        }
+        let defaultPort = scheme == "https" ? 443 : 80
+        let portSuffix = components.port.flatMap { $0 == defaultPort ? nil : ":\($0)" } ?? ""
+        return "\(scheme)://\(host)\(portSuffix)"
     }
 
     /// Parses status, purchaseId, and error query parameters from an on-ramp portal return deep link.
