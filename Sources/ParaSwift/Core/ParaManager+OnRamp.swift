@@ -714,7 +714,7 @@ extension ParaManager {
         return trimmed
     }
 
-    private func decodeOnRampDecodable<T: Decodable>(_ result: Any?, as type: T.Type, method: String) throws -> T {
+    func decodeOnRampDecodable<T: Decodable>(_ result: Any?, as type: T.Type, method: String) throws -> T {
         guard let result, !(result is NSNull) else {
             throw ParaError.bridgeError("METHOD_ERROR<\(method)>: Empty response from bridge")
         }
