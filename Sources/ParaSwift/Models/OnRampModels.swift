@@ -343,7 +343,6 @@ public struct ParaOnRampPurchase: Codable, Sendable, Equatable {
     public let assetImplementationId: String?
     public let paymentMethod: ParaOnRampPaymentMethod?
     public let transactionHash: String?
-    public let launchToken: String?
     public let testMode: Bool?
 
     public init(
@@ -367,7 +366,6 @@ public struct ParaOnRampPurchase: Codable, Sendable, Equatable {
         assetImplementationId: String? = nil,
         paymentMethod: ParaOnRampPaymentMethod? = nil,
         transactionHash: String? = nil,
-        launchToken: String? = nil,
         testMode: Bool? = nil
     ) {
         self.id = id
@@ -390,7 +388,6 @@ public struct ParaOnRampPurchase: Codable, Sendable, Equatable {
         self.assetImplementationId = assetImplementationId
         self.paymentMethod = paymentMethod
         self.transactionHash = transactionHash
-        self.launchToken = launchToken
         self.testMode = testMode
     }
 
@@ -415,7 +412,6 @@ public struct ParaOnRampPurchase: Codable, Sendable, Equatable {
         case assetImplementationId
         case paymentMethod
         case transactionHash
-        case launchToken
         case testMode
     }
 
@@ -441,7 +437,6 @@ public struct ParaOnRampPurchase: Codable, Sendable, Equatable {
         assetImplementationId = try container.decodeIfPresent(String.self, forKey: .assetImplementationId)
         paymentMethod = try container.decodeIfPresent(ParaOnRampPaymentMethod.self, forKey: .paymentMethod)
         transactionHash = try container.decodeIfPresent(String.self, forKey: .transactionHash)
-        launchToken = try container.decodeIfPresent(String.self, forKey: .launchToken)
         testMode = try container.decodeIfPresent(Bool.self, forKey: .testMode)
     }
 }
@@ -731,7 +726,6 @@ public struct ParaOnRampOrder: Codable, Sendable, Equatable {
             assetImplementationId: assetImplementationId,
             paymentMethod: paymentMethod,
             transactionHash: transactionHash,
-            launchToken: nil,
             testMode: testMode
         )
         self.eventData = eventData
@@ -766,7 +760,6 @@ public struct ParaOnRampOrder: Codable, Sendable, Equatable {
             assetImplementationId: decoded.assetImplementationId,
             paymentMethod: decoded.paymentMethod,
             transactionHash: decoded.transactionHash,
-            launchToken: nil,
             testMode: decoded.testMode
         )
         let extra = try decoder.container(keyedBy: ExtraCodingKeys.self)
