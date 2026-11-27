@@ -50,6 +50,10 @@ public class ParaManager: NSObject, ObservableObject {
     let passkeysManager: PasskeysManager
     /// Web view interface for communicating with Para services.
     let paraWebView: ParaWebView
+    /// Thread-safe broadcaster for unsolicited on-ramp events.
+    nonisolated let onRampEventBroadcaster: OnRampEventBroadcaster
+    /// Injectable portal presenter seam for testing `launchOnRampPortal`.
+    var onRampPortalPresenter: OnRampPortalPresenting?
     /// App scheme for authentication callbacks.
     let appScheme: String
     /// Track whether transmission keyshares have been loaded for the current session.
@@ -84,7 +88,9 @@ public class ParaManager: NSObject, ObservableObject {
         self.environment = environment
         self.apiKey = apiKey
         passkeysManager = PasskeysManager(relyingPartyIdentifier: environment.relyingPartyId)
-        paraWebView = ParaWebView(environment: environment, apiKey: apiKey)
+        let webView = ParaWebView(environment: environment, apiKey: apiKey)
+        paraWebView = webView
+        onRampEventBroadcaster = webView.onRampEventBroadcaster
         self.appScheme = appScheme ?? Bundle.main.bundleIdentifier!
         self.sessionPersistence = SessionPersistenceController()
 
@@ -120,7 +126,8 @@ public class ParaManager: NSObject, ObservableObject {
         }
 
         if self.paraWebView.initializationError != nil || self.paraWebView.lastError != nil {
-            logger.error("WebView initialization failed: \(self.paraWebView.initializationError?.localizedDescription ?? self.paraWebView.lastError?.localizedDescription ?? "unknown")")
+            let reason = self.paraWebView.initializationError?.localizedDescription ?? self.paraWebView.lastError?.localizedDescription ?? "unknown"
+            logger.error("WebView initialization failed: \(ParaWebView.redactLogMessage(reason))")
             await MainActor.run {
                 self.objectWillChange.send()
                 self.sessionState = .inactive
@@ -193,31 +200,28 @@ public class ParaManager: NSObject, ObservableObject {
             let result: Any? = try await self.paraWebView.postMessage(method: method, payload: payload, timeout: timeout)
             return result
         } catch let error as ParaWebViewError {
-            logger.error("Bridge error for \(method): \(error.localizedDescription)")
-            // Convert ParaWebViewError to ParaError for better user experience
-            switch error {
-            case let .bridgeError(message):
-                // Attempt to extract a concise message from a JSON payload produced by the bridge
-                if let data = message.data(using: .utf8),
-                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-                {
-                    let details = json["details"] as? [String: Any]
-                    let userMessage = (details?["message"] as? String)
-                        ?? (json["message"] as? String)
-                        ?? message
-                    throw ParaError.bridgeError(userMessage)
-                }
-                throw ParaError.bridgeError(message)
-            case .webViewNotReady:
-                throw ParaError.bridgeError("WebView is not ready")
-            case .requestTimeout:
-                throw ParaError.bridgeTimeoutError
-            case let .invalidArguments(message):
-                throw ParaError.error("Invalid arguments: \(message)")
-            }
+            try mapParaWebViewError(error, method: method)
+        } catch let error as ParaBridgeErrorPayload {
+            logger.error("Bridge error for \(method): \(ParaWebView.redactLogMessage(error.formattedMessage))")
+            throw ParaError.bridgeError(error.formattedMessage)
         } catch {
-            logger.error("Bridge error for \(method): \(error.localizedDescription)")
+            logger.error("Bridge error for \(method): \(ParaWebView.redactLogMessage(error.localizedDescription))")
             throw error
+        }
+    }
+
+    func mapParaWebViewError(_ error: ParaWebViewError, method: String) throws -> Never {
+        logger.error("Bridge error for \(method): \(ParaWebView.redactLogMessage(error.localizedDescription))")
+        // Convert ParaWebViewError to ParaError for better user experience
+        switch error {
+        case let .bridgeError(message):
+            throw ParaError.bridgeError(message)
+        case .webViewNotReady:
+            throw ParaError.bridgeError("WebView is not ready")
+        case .requestTimeout:
+            throw ParaError.bridgeTimeoutError
+        case let .invalidArguments(message):
+            throw ParaError.error("Invalid arguments: \(message)")
         }
     }
 
