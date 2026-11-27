@@ -1321,11 +1321,16 @@ final class OnRampTests: XCTestCase {
                 walletId: "w-1",
                 assetImplementationId: "impl-1",
                 amountUsd: "100.00",
-                customer: ParaBraleAchCustomer(legalName: "Ada Lovelace")
+                customer: ParaBraleAchCustomer(legalName: "Ada Lovelace"),
+                redirectUri: "https://app.example.com/plaid-oauth"
             )
         )
         XCTAssertEqual(braleCheckout.id, "chk-1")
         XCTAssertEqual(manager.recordedPayload(for: "createBraleAchCheckout")?["platform"] as? String, "ios")
+        XCTAssertEqual(
+            manager.recordedPayload(for: "createBraleAchCheckout")?["redirectUri"] as? String,
+            "https://app.example.com/plaid-oauth"
+        )
 
         _ = try await manager.createBraleAchCheckout(
             ParaCreateBraleAchCheckoutParams(
@@ -1335,6 +1340,7 @@ final class OnRampTests: XCTestCase {
             )
         )
         XCTAssertEqual(manager.recordedPayload(for: "createBraleAchCheckout")?["platform"] as? String, "web")
+        XCTAssertNil(manager.recordedPayload(for: "createBraleAchCheckout")?["redirectUri"])
 
         manager.stub("linkBraleAchBank") { _ in
             [

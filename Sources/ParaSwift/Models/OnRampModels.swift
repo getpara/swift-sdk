@@ -881,6 +881,7 @@ public struct ParaCreateBraleAchCheckoutParams: Codable, Sendable, Equatable {
     public let linkNewBank: Bool?
     public let testMode: Bool?
     public let platform: String?
+    public let redirectUri: String?
 
     public init(
         walletId: String,
@@ -889,7 +890,8 @@ public struct ParaCreateBraleAchCheckoutParams: Codable, Sendable, Equatable {
         customer: ParaBraleAchCustomer? = nil,
         linkNewBank: Bool? = nil,
         testMode: Bool? = nil,
-        platform: String? = nil
+        platform: String? = nil,
+        redirectUri: String? = nil
     ) {
         self.walletId = walletId
         self.assetImplementationId = assetImplementationId
@@ -898,6 +900,7 @@ public struct ParaCreateBraleAchCheckoutParams: Codable, Sendable, Equatable {
         self.linkNewBank = linkNewBank
         self.testMode = testMode
         self.platform = platform
+        self.redirectUri = redirectUri
     }
 
     func withPlatform(_ platform: String) -> ParaCreateBraleAchCheckoutParams {
@@ -908,7 +911,8 @@ public struct ParaCreateBraleAchCheckoutParams: Codable, Sendable, Equatable {
             customer: customer,
             linkNewBank: linkNewBank,
             testMode: testMode,
-            platform: platform
+            platform: platform,
+            redirectUri: redirectUri
         )
     }
 }
