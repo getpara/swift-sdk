@@ -132,6 +132,7 @@ public struct ParaHeadlessOnRampPaymentView: UIViewRepresentable {
     @MainActor
     public final class Coordinator {
         private var mountedKey: String?
+        private var mountedApplePay: ParaHeadlessOnRampApplePayRequest?
         private var handle: MeldWidgetHandle?
         private var onReady: ((String?) -> Void)?
         private var onPaymentSubmitted: ((String?) -> Void)?
@@ -156,10 +157,11 @@ public struct ParaHeadlessOnRampPaymentView: UIViewRepresentable {
             into container: UIView
         ) {
             let nextKey = "\(environment.rawValue)|\(order.purchaseId)|\(order.orderId ?? "")"
-            guard mountedKey != nextKey else { return }
+            guard mountedKey != nextKey || mountedApplePay != applePay else { return }
 
             unmount()
             mountedKey = nextKey
+            mountedApplePay = applePay
             ParaHeadlessOnRampPaymentHelper.configure(environment: environment)
 
             do {
@@ -234,6 +236,7 @@ public struct ParaHeadlessOnRampPaymentView: UIViewRepresentable {
             handle?.unmount()
             handle = nil
             mountedKey = nil
+            mountedApplePay = nil
         }
     }
 }

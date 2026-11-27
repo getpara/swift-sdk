@@ -57,5 +57,33 @@ final class ParaSwiftMeldTests: XCTestCase {
             into: container
         )
         XCTAssertEqual(reportedCodes.count, 2)
+
+        let applePayA = ParaHeadlessOnRampApplePayRequest(
+            amount: Decimal(string: "25.00")!,
+            walletAddress: "0x1111111111111111111111111111111111111111",
+            clientIpAddress: "203.0.113.10",
+            summaryItemLabel: "Buy USDC"
+        )
+        let applePayB = ParaHeadlessOnRampApplePayRequest(
+            amount: Decimal(string: "30.00")!,
+            walletAddress: "0x1111111111111111111111111111111111111111",
+            clientIpAddress: "203.0.113.10",
+            summaryItemLabel: "Buy USDC"
+        )
+        XCTAssertNotEqual(applePayA, applePayB)
+
+        coordinator.mountIfNeeded(
+            order: unsupportedOrder,
+            environment: .sandbox,
+            applePay: applePayA,
+            into: container
+        )
+        coordinator.mountIfNeeded(
+            order: unsupportedOrder,
+            environment: .sandbox,
+            applePay: applePayB,
+            into: container
+        )
+        XCTAssertEqual(reportedCodes.count, 4)
     }
 }
