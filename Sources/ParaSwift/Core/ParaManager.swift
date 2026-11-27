@@ -202,12 +202,17 @@ public class ParaManager: NSObject, ObservableObject {
         } catch let error as ParaWebViewError {
             try mapParaWebViewError(error, method: method)
         } catch let error as ParaBridgeErrorPayload {
+            paraWebView.recordBridgeErrorPayload(error)
             logger.error("Bridge error for \(method): \(ParaWebView.redactLogMessage(error.formattedMessage))")
             throw ParaError.bridgeError(error.formattedMessage)
         } catch {
             logger.error("Bridge error for \(method): \(ParaWebView.redactLogMessage(error.localizedDescription))")
             throw error
         }
+    }
+
+    func consumeLastBridgeErrorPayload(matchingFormattedMessage formattedMessage: String) -> ParaBridgeErrorPayload? {
+        paraWebView.consumeBridgeErrorPayload(matchingFormattedMessage: formattedMessage)
     }
 
     func mapParaWebViewError(_ error: ParaWebViewError, method: String) throws -> Never {

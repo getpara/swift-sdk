@@ -12,10 +12,15 @@ let package = Package(
             name: "ParaSwift",
             targets: ["ParaSwift"],
         ),
+        .library(
+            name: "ParaSwiftMeld",
+            targets: ["ParaSwiftMeld"],
+        ),
     ],
     dependencies: [
         .package(url: "https://github.com/attaswift/BigInt.git", .upToNextMinor(from: "5.4.0")),
         .package(url: "https://github.com/marmelroy/PhoneNumberKit", from: "4.0.0"),
+        .package(url: "https://github.com/meldeng/meldsdk-ios", from: "0.12.0"),
     ],
     targets: [
         // Targets are the basic building blocks of a package, defining a module or a test suite.
@@ -27,9 +32,20 @@ let package = Package(
                 "PhoneNumberKit",
             ],
         ),
+        .target(
+            name: "ParaSwiftMeld",
+            dependencies: [
+                "ParaSwift",
+                .product(name: "MeldSDK", package: "meldsdk-ios"),
+            ],
+        ),
         .testTarget(
             name: "ParaSwiftTests",
             dependencies: ["ParaSwift"],
+        ),
+        .testTarget(
+            name: "ParaSwiftMeldTests",
+            dependencies: ["ParaSwiftMeld", "ParaSwift"],
         ),
     ],
 )

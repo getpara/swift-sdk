@@ -1,5 +1,5 @@
 {
-  "originHash" : "a77c592bb613d7daade42f93fb5feac18979abbfafd574d1b93a0bc025c9bc5f",
+  "originHash" : "951ceb4de5512b563e798c569b902db8088ab2b9dd86d7ddfc1359a6a3fe4d4e",
   "pins" : [
     {
       "identity" : "bigint",
@@ -11,12 +11,48 @@
       }
     },
     {
+      "identity" : "meldsdk-ios",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/meldeng/meldsdk-ios",
+      "state" : {
+        "revision" : "a46c34890542da548b1a0e8af70aaf0ebeb9592a",
+        "version" : "0.12.2"
+      }
+    },
+    {
       "identity" : "phonenumberkit",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/marmelroy/PhoneNumberKit",
       "state" : {
         "revision" : "288b99e9e99926bc8be41220802df83c059fac9b",
         "version" : "4.0.2"
+      }
+    },
+    {
+      "identity" : "primer-sdk-3ds-ios",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/primer-io/primer-sdk-3ds-ios",
+      "state" : {
+        "revision" : "ad54a0f6f621acfee79f86dbd7fa3abe4f3a9edc",
+        "version" : "2.9.0"
+      }
+    },
+    {
+      "identity" : "primer-sdk-ios",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/primer-io/primer-sdk-ios",
+      "state" : {
+        "revision" : "912dab23f9d9e0a0bb5defad732e4712e195c70e",
+        "version" : "2.54.0"
+      }
+    },
+    {
+      "identity" : "stripe-ios-spm",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/stripe/stripe-ios-spm",
+      "state" : {
+        "revision" : "18508f5216629b2c100e8fc3a7f686e7d71aa498",
+        "version" : "26.11.0"
       }
     }
   ],
