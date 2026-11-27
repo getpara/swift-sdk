@@ -186,6 +186,8 @@ public class ParaWebView: NSObject, ObservableObject {
     private let requestTimeout: TimeInterval
 
     private nonisolated let pendingRequestStore = PendingBridgeRequestStore()
+    private var bridgeErrorPayloads: [String: ParaBridgeErrorPayload] = [:]
+    private var bridgeErrorPayloadOrder: [String] = []
     private var isParaInitialized = false
     nonisolated let onRampEventBroadcaster = OnRampEventBroadcaster()
 
@@ -197,6 +199,25 @@ public class ParaWebView: NSObject, ObservableObject {
 
     nonisolated var activeOnRampEventSubscriberCount: Int {
         onRampEventBroadcaster.subscriberCount
+    }
+
+    func recordBridgeErrorPayload(_ payload: ParaBridgeErrorPayload) {
+        let key = payload.formattedMessage
+        bridgeErrorPayloads[key] = payload
+        bridgeErrorPayloadOrder.removeAll { $0 == key }
+        bridgeErrorPayloadOrder.append(key)
+        if bridgeErrorPayloadOrder.count > 16 {
+            let evicted = bridgeErrorPayloadOrder.removeFirst()
+            bridgeErrorPayloads.removeValue(forKey: evicted)
+        }
+    }
+
+    func consumeBridgeErrorPayload(matchingFormattedMessage formattedMessage: String) -> ParaBridgeErrorPayload? {
+        guard let payload = bridgeErrorPayloads.removeValue(forKey: formattedMessage) else {
+            return nil
+        }
+        bridgeErrorPayloadOrder.removeAll { $0 == formattedMessage }
+        return payload
     }
 
     var javascriptEvaluator: ((String, @escaping (Any?, Error?) -> Void) -> Void)?
@@ -604,6 +625,7 @@ public class ParaWebView: NSObject, ObservableObject {
         if let errorPayload = Self.parseBridgeError(response["error"]) {
             let redacted = Self.redactLogMessage(errorPayload.formattedMessage)
             logger.error("Bridge error received: method=\(method ?? "unknown") error=\(redacted)")
+            recordBridgeErrorPayload(errorPayload)
             entry.continuation.resume(throwing: ParaWebViewError.bridgeError(errorPayload.formattedMessage))
             return
         }
