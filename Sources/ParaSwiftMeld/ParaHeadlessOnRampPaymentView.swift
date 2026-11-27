@@ -166,6 +166,7 @@ public struct ParaHeadlessOnRampPaymentView: UIViewRepresentable {
                 let parsedOrder = try MeldOrder.from(jsonData: order.encodedOrderData())
                 let capabilities = Meld.capabilities(for: parsedOrder)
                 if capabilities.surface == "unsupported" {
+                    unmount()
                     onError?(
                         MeldErrorCode.paymentMethodUnavailable,
                         ParaHeadlessOnRampPaymentErrorOptions(attemptMayExist: false, loadFailed: false, recoverable: false)
@@ -199,6 +200,7 @@ public struct ParaHeadlessOnRampPaymentView: UIViewRepresentable {
                             self?.onMeldError?(meldError)
                             let loadFailed = meldError.code == MeldErrorCode.providerLoadFailed
                             if !meldError.recoverable || loadFailed {
+                                self?.unmount()
                                 let attemptMayExist = !loadFailed && (meldError.attemptMayExist || MeldErrorCode.attemptMayExist(meldError.code))
                                 self?.onError?(
                                     meldError.code,
@@ -220,6 +222,7 @@ public struct ParaHeadlessOnRampPaymentView: UIViewRepresentable {
                     handlers: handlers
                 )
             } catch {
+                unmount()
                 onError?(
                     "MOUNT_FAILED",
                     ParaHeadlessOnRampPaymentErrorOptions(attemptMayExist: false, loadFailed: true, recoverable: false)

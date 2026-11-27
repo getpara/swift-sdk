@@ -437,12 +437,195 @@ final class HeadlessOnRampTests: XCTestCase {
     }
 
     @MainActor
+    func testCheckoutConsumesStructuredErrorsFromRealParaWebViewAndIgnoresLateAndCancelledCallbacks() async throws {
+        // Real ParaWebView -> ParaManager -> ParaHeadlessOnRampCheckout structured error consumption
+        let manager = CallbackDrivenParaManager()
+        manager.stub("getHeadlessOnRampQuote") { _, webView, reqId in
+            webView.handleCallback(response: [
+                "method": "getHeadlessOnRampQuote",
+                "requestId": reqId,
+                "error": [
+                    "message": "Below minimum",
+                    "code": "ONRAMP_AMOUNT_OUT_OF_RANGE",
+                    "status": 400,
+                    "details": ["data": ["minAmount": 15]],
+                ],
+            ])
+        }
+
+        let e2eCheckout = ParaHeadlessOnRampCheckout(
+            client: manager,
+            walletId: "w-1",
+            assetImplementationId: "impl-usdc",
+            amountUsd: "5.00",
+            provider: .banxa,
+            paymentMethod: .card,
+            pollIntervalNanoseconds: 5_000_000
+        )
+        await e2eCheckout.start()
+        XCTAssertEqual(e2eCheckout.step, .failure)
+        XCTAssertEqual(e2eCheckout.error, "Minimum amount is $15")
+
+        // Late onPaymentError and failPayment after onPaymentSubmitted is already tracking are ignored
+        var unmountCount = 0
+        let trackingClient = MockHeadlessOnRampClient()
+        trackingClient.requirementsResult = ParaHeadlessOnRampRequirementsResult(
+            eligible: true,
+            missingSteps: [],
+            agreements: []
+        )
+        trackingClient.onGetOrder = { id, _ in ParaOnRampOrder(id: id, userId: "u-1", status: .initiated) }
+        let trackingCheckout = ParaHeadlessOnRampCheckout(
+            client: trackingClient,
+            walletId: "w-1",
+            assetImplementationId: "impl-usdc",
+            amountUsd: "50.00",
+            provider: .banxa,
+            paymentMethod: .card,
+            unmountPayment: { unmountCount += 1 },
+            pollIntervalNanoseconds: 5_000_000_000
+        )
+        await trackingCheckout.start()
+        await trackingCheckout.confirm()
+        trackingCheckout.onPaymentSubmitted()
+        let unmountsAfterSubmit = unmountCount
+        XCTAssertEqual(trackingCheckout.step, .processing)
+
+        trackingCheckout.onPaymentError(code: "PAYMENT_REJECTED")
+        trackingCheckout.failPayment("Late mount error")
+        XCTAssertEqual(trackingCheckout.step, .processing)
+        XCTAssertNil(trackingCheckout.error)
+        XCTAssertEqual(unmountCount, unmountsAfterSubmit)
+
+        // cancel() invalidates in-flight confirm/start mutations while allowing a fresh start()
+        trackingCheckout.cancel()
+        await trackingCheckout.start()
+        XCTAssertEqual(trackingCheckout.step, .processing)
+
+        // Requirements-not-met & closed-order structured details through real ParaWebView/ParaManager
+        let e2eClosedManager = CallbackDrivenParaManager()
+        e2eClosedManager.stub("getHeadlessOnRampQuote") { _, webView, reqId in
+            webView.handleCallback(response: [
+                "method": "getHeadlessOnRampQuote",
+                "requestId": reqId,
+                "responseData": [
+                    "quote": [
+                        "provider": "BANXA",
+                        "paymentMethod": "CARD",
+                        "sourceAmount": 50.0,
+                        "sourceCurrency": "USD",
+                        "destinationAmount": 49.0,
+                        "exchangeRate": 1.0,
+                        "fees": ["network": 0.5, "transaction": 0.5, "partner": 0.0, "total": 1.0],
+                    ],
+                ],
+            ])
+        }
+        e2eClosedManager.stub("getHeadlessOnRampRequirements") { _, webView, reqId in
+            webView.handleCallback(response: [
+                "method": "getHeadlessOnRampRequirements",
+                "requestId": reqId,
+                "responseData": ["eligible": true, "missingSteps": [], "agreements": []],
+            ])
+        }
+        e2eClosedManager.stub("createHeadlessOnRampOrder") { _, webView, reqId in
+            webView.handleCallback(response: [
+                "method": "createHeadlessOnRampOrder",
+                "requestId": reqId,
+                "error": [
+                    "message": "Requirements missing",
+                    "code": "ONRAMP_REQUIREMENTS_NOT_MET",
+                    "status": 409,
+                    "details": ["data": ["missingSteps": ["VERIFICATION"]]],
+                ],
+            ])
+        }
+        let kycCheckout = ParaHeadlessOnRampCheckout(
+            client: e2eClosedManager,
+            walletId: "w-1",
+            assetImplementationId: "impl-usdc",
+            amountUsd: "50.00",
+            provider: .banxa,
+            paymentMethod: .card
+        )
+        await kycCheckout.start()
+        XCTAssertEqual(kycCheckout.step, .review)
+        await kycCheckout.confirm()
+        XCTAssertEqual(kycCheckout.step, .verificationRequired)
+
+        e2eClosedManager.stub("createHeadlessOnRampOrder") { _, webView, reqId in
+            webView.handleCallback(response: [
+                "method": "createHeadlessOnRampOrder",
+                "requestId": reqId,
+                "error": [
+                    "message": "Order closed",
+                    "code": "ONRAMP_ORDER_CLOSED",
+                    "status": 409,
+                    "details": ["data": ["purchaseId": "pur-e2e-closed"]],
+                ],
+            ])
+        }
+        e2eClosedManager.stub("getOnRampOrder") { _, webView, reqId in
+            webView.handleCallback(response: [
+                "method": "getOnRampOrder",
+                "requestId": reqId,
+                "responseData": ["id": "pur-e2e-closed", "userId": "u-1", "status": "FINISHED"],
+            ])
+        }
+        await kycCheckout.start()
+        await kycCheckout.confirm()
+        XCTAssertEqual(kycCheckout.step, .success)
+    }
+
+    @MainActor
     private func waitUntil(timeoutSeconds: TimeInterval = 2.0, condition: () -> Bool) async throws {
         let deadline = Date().addingTimeInterval(timeoutSeconds)
         while !condition(), Date() < deadline {
             try await Task.sleep(nanoseconds: 10_000_000)
         }
         XCTAssertTrue(condition(), "Timed out waiting for checkout state transition")
+    }
+}
+
+@MainActor
+private final class CallbackDrivenParaManager: ParaManager {
+    private var handlers: [String: (String, ParaWebView, String) -> Void] = [:]
+
+    init() {
+        super.init(
+            environment: .dev(relyingPartyId: "test", jsBridgeUrl: URL(string: "about:blank")),
+            apiKey: "test-api-key",
+            appScheme: "myapp"
+        )
+        paraWebView.handleCallback(response: ["method": "Para#init"])
+        paraWebView.javascriptEvaluator = { [weak self] script, completion in
+            completion(nil, nil)
+            self?.dispatchScript(script)
+        }
+    }
+
+    func stub(_ method: String, handler: @escaping (String, ParaWebView, String) -> Void) {
+        handlers[method] = handler
+    }
+
+    override func ensureWebViewReady() async throws {}
+
+    private func dispatchScript(_ script: String) {
+        guard let jsonStart = script.range(of: "{"),
+              let jsonEnd = script.range(of: "}", options: .backwards),
+              jsonStart.lowerBound <= jsonEnd.lowerBound,
+              let data = String(script[jsonStart.lowerBound ... jsonEnd.lowerBound]).data(using: .utf8),
+              let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let methodName = payload["methodName"] as? String,
+              let requestId = payload["requestId"] as? String
+        else {
+            return
+        }
+        let handler = handlers[methodName]
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            handler?(methodName, self.paraWebView, requestId)
+        }
     }
 }
 

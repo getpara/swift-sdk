@@ -186,6 +186,7 @@ public final class ParaHeadlessOnRampCheckout: ObservableObject {
     private var acceptedKey: String?
     private var trackedPurchaseId: String?
     private var trackedWalletId: String?
+    private var operationGeneration: UInt64 = 0
     private var pollGeneration: UInt64 = 0
     private var pollAttempts = 0
     private var consecutivePollErrors = 0
@@ -225,6 +226,8 @@ public final class ParaHeadlessOnRampCheckout: ObservableObject {
     public func start() async {
         guard !isTracking else { return }
         isCancelled = false
+        operationGeneration &+= 1
+        let expectedGeneration = operationGeneration
         stopPolling()
         unmountPayment?()
         error = nil
@@ -252,10 +255,10 @@ public final class ParaHeadlessOnRampCheckout: ObservableObject {
 
         do {
             try await prefetchSdk?()
-            guard !isCancelled else { return }
+            guard !isCancelled, operationGeneration == expectedGeneration else { return }
 
             let quoteResult = try await client.getHeadlessOnRampQuote(quoteParams)
-            guard !isCancelled else { return }
+            guard !isCancelled, operationGeneration == expectedGeneration else { return }
 
             let requirements = try await client.getHeadlessOnRampRequirements(
                 ParaHeadlessOnRampRequirementsParams(
@@ -267,7 +270,7 @@ public final class ParaHeadlessOnRampCheckout: ObservableObject {
                     walletId: walletId
                 )
             )
-            guard !isCancelled else { return }
+            guard !isCancelled, operationGeneration == expectedGeneration else { return }
 
             quotedPurchase = QuotedHeadlessPurchase(params: quoteParams, walletId: walletId, amountUsd: amountUsd)
             quote = quoteResult.quote
@@ -287,7 +290,7 @@ public final class ParaHeadlessOnRampCheckout: ObservableObject {
                 moveTo(.review)
             }
         } catch {
-            guard !isCancelled else { return }
+            guard !isCancelled, operationGeneration == expectedGeneration else { return }
             fail(purchaseErrorMessage(from: error, amountUsd: amountUsd), retryAction: .start)
         }
     }
@@ -297,6 +300,7 @@ public final class ParaHeadlessOnRampCheckout: ObservableObject {
         guard let client, let quoted = quotedPurchase, !isTracking, !isConfirming else { return }
         guard canConfirmFromCurrentState else { return }
 
+        let expectedGeneration = operationGeneration
         isConfirming = true
         error = nil
         moveTo(.submitting)
@@ -313,7 +317,7 @@ public final class ParaHeadlessOnRampCheckout: ObservableObject {
                         codes: codes
                     )
                 )
-                guard !isCancelled else {
+                guard !isCancelled, operationGeneration == expectedGeneration else {
                     isConfirming = false
                     return
                 }
@@ -331,7 +335,7 @@ public final class ParaHeadlessOnRampCheckout: ObservableObject {
                     idempotencyKey: currentKey
                 )
             )
-            guard !isCancelled else {
+            guard !isCancelled, operationGeneration == expectedGeneration else {
                 isConfirming = false
                 return
             }
@@ -340,7 +344,7 @@ public final class ParaHeadlessOnRampCheckout: ObservableObject {
             isConfirming = false
             moveTo(.payment)
         } catch {
-            guard !isCancelled else {
+            guard !isCancelled, operationGeneration == expectedGeneration else {
                 isConfirming = false
                 return
             }
@@ -420,6 +424,7 @@ public final class ParaHeadlessOnRampCheckout: ObservableObject {
         code: String,
         options: ParaHeadlessOnRampPaymentErrorOptions = ParaHeadlessOnRampPaymentErrorOptions()
     ) {
+        guard !isTracking else { return }
         if !options.loadFailed, options.attemptMayExist {
             onPaymentSubmitted()
             return
@@ -438,6 +443,7 @@ public final class ParaHeadlessOnRampCheckout: ObservableObject {
         _ message: String,
         retryAction: ParaHeadlessOnRampRetryAction = .start
     ) {
+        guard !isTracking else { return }
         unmountPayment?()
         let allowedAction: ParaHeadlessOnRampRetryAction = retryAction == .none ? .none : .start
         fail(message, retryAction: allowedAction)
@@ -446,6 +452,8 @@ public final class ParaHeadlessOnRampCheckout: ObservableObject {
     /// Cancels active polling and unmounts the payment surface.
     public func cancel() {
         isCancelled = true
+        operationGeneration &+= 1
+        isConfirming = false
         stopPolling()
         unmountPayment?()
     }
@@ -453,6 +461,7 @@ public final class ParaHeadlessOnRampCheckout: ObservableObject {
     // MARK: - Polling
 
     private func trackClosedOrder(purchaseId: String, walletId: String) async {
+        let expectedGeneration = operationGeneration
         stopPolling()
         isTracking = true
         pollAttempts = 0
@@ -462,7 +471,7 @@ public final class ParaHeadlessOnRampCheckout: ObservableObject {
         moveTo(.processing)
 
         let result = await readTrackedOrder()
-        guard !isCancelled else { return }
+        guard !isCancelled, operationGeneration == expectedGeneration else { return }
 
         switch result {
         case .fatal:

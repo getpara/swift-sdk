@@ -43,5 +43,9 @@ let package = Package(
             name: "ParaSwiftTests",
             dependencies: ["ParaSwift"],
         ),
+        .testTarget(
+            name: "ParaSwiftMeldTests",
+            dependencies: ["ParaSwiftMeld", "ParaSwift"],
+        ),
     ],
 )

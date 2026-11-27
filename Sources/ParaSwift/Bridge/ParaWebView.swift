@@ -166,9 +166,6 @@ public class ParaWebView: NSObject, ObservableObject {
     /// The last error that occurred during WebView operations
     @Published public var lastError: Error?
 
-    /// Structured payload of the most recent bridge error for callers that inspect `code` or `details`
-    var lastBridgeErrorPayload: ParaBridgeErrorPayload?
-
     /// The Para environment configuration
     public var environment: ParaEnvironment
 

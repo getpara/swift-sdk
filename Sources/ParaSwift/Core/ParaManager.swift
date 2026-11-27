@@ -195,7 +195,6 @@ public class ParaManager: NSObject, ObservableObject {
     /// - Returns: The response from the bridge
     func postMessage(method: String, payload: Encodable, timeout: TimeInterval? = nil) async throws -> Any? {
         logger.debug("Calling bridge method: \(method)")
-        paraWebView.lastBridgeErrorPayload = nil
 
         do {
             let result: Any? = try await self.paraWebView.postMessage(method: method, payload: payload, timeout: timeout)
@@ -203,7 +202,7 @@ public class ParaManager: NSObject, ObservableObject {
         } catch let error as ParaWebViewError {
             try mapParaWebViewError(error, method: method)
         } catch let error as ParaBridgeErrorPayload {
-            paraWebView.lastBridgeErrorPayload = error
+            paraWebView.recordBridgeErrorPayload(error)
             logger.error("Bridge error for \(method): \(ParaWebView.redactLogMessage(error.formattedMessage))")
             throw ParaError.bridgeError(error.formattedMessage)
         } catch {
@@ -213,13 +212,7 @@ public class ParaManager: NSObject, ObservableObject {
     }
 
     func consumeLastBridgeErrorPayload(matchingFormattedMessage formattedMessage: String) -> ParaBridgeErrorPayload? {
-        guard let payload = paraWebView.lastBridgeErrorPayload,
-              payload.formattedMessage == formattedMessage
-        else {
-            return nil
-        }
-        paraWebView.lastBridgeErrorPayload = nil
-        return payload
+        paraWebView.consumeBridgeErrorPayload(matchingFormattedMessage: formattedMessage)
     }
 
     func mapParaWebViewError(_ error: ParaWebViewError, method: String) throws -> Never {
